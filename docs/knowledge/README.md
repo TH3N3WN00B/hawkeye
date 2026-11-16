@@ -38,6 +38,21 @@ update them in the same change when you learn something durable or an entry stop
   optional `HAWKEYE_BENCH_DAYS`; set `SQLITE_TMPDIR` off `/tmp`). It numbers ids through `IdAssigner`
   and archives with the default settings once a simulated minute. The 100M-event figures measured with
   the per-region format 1 no longer apply; re-run it for format 2.
+- Replay benchmark (`ReplayBenchmark`, opt-in; `scripts/bench/reference-export` turns a packed database
+  of the `ericlmao/CoreProtect` fork into the row files it reads). Verified 2026-11-16 on the owner's
+  reference database (1,398,675,414 packed rows over 59 days, 3,397,459,968 bytes, 2.43 B/row): Hawkeye
+  stores the same events in 1,517,871,104 bytes (1.085 B/event, 5,337 segments, bodies 1,490,269,827,
+  headers 19,135,618). Bulk mode packs about 270,000 events a second with 5 threads (about 85 minutes
+  in all); live mode (hot table plus archiver) about 18,000 and gives the same segments. The run is
+  split by `HAWKEYE_REPLAY_DAYS` with `HAWKEYE_REPLAY_RESUME=1` (20714-20729, 20730-20740, 20741-20773)
+  because a background command on this host ends after two hours. Lookups on the full database, warm,
+  host at load 6: a player's newest 10 events 18 ms, a later page at a block 9 ms, radius 5 at a busy
+  block 133 ms, the last hour 106 ms, a block with little history 270-320 ms, a block never touched in
+  the busiest chunk 3.9 s (14 s cold: one unit per segment, and SQLite reads the whole body to slice
+  it). Storing units as rows of their own would cut that read to the unit, for about 3% more bytes.
+- That reference database was copied while its server ran: the file is one page shorter than its header
+  says (the last page was in the write-ahead log) and SQLite calls it malformed. Appending one page of
+  zeros (8,192 bytes) to a copy makes every packed row readable.
 - Archive: SQLite, MySQL/MariaDB and PostgreSQL all slice a blob with 1-based `substr(body, from, len)`;
   `LENGTH` of a blob is its byte count on all three. `ROWS` is a reserved word in MySQL 8, so the flag
   column is `ordinals`. SQLite's `segment.id` is `AUTOINCREMENT` so a deleted segment's id is never

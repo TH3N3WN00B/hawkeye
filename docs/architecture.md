@@ -12,7 +12,7 @@ commit as the code.
 |---|---|---|
 | Code structure | Static state (`ConfigHandler` has 132 public statics), classes of 1,000-3,900 lines, hand-parsed commands, raw `Thread`s | Spring beans with constructor injection, layered packages checked by ArchUnit, Cloud 2 annotation commands, owned executors, no class near 1,000 lines |
 | Row size | `time int` (overflows 2038), separate x/y/z, `rowid`, 3+ B-tree indexes per table | One 64-bit id carries the second, the server and the rank in that second; one 64-bit packed position; two secondary indexes |
-| Old data | The fork packs cold SQLite data into segments; MySQL and the other engines keep full rows | Every engine packs settled events into immutable segments of 262,144 events (archive format 2) read by byte range; bytes per event against CoreProtect: TBD (replay benchmark) |
+| Old data | The fork packs cold SQLite data into segments; MySQL and the other engines keep full rows | Every engine packs settled events into immutable segments of 262,144 events (archive format 2) read by byte range. A real history of 1.40 billion events that takes 3.40 GB in the fork's SQLite database takes 1.52 GB in Hawkeye's: 1.09 bytes per event against 2.43 (`ReplayBenchmark`) |
 | Storage engines | Four engines and four query builders (DuckDB, ClickHouse, SQLite segments, MySQL) | One schema, one query builder, three dialects (SQLite, MySQL/MariaDB, PostgreSQL) behind a small `Dialect` seam |
 | Multi-server | One writer per database; id allocation is an in-memory counter that races under several writers | Ids are generated locally and never collide; dictionaries are insert-or-get against unique keys; any number of servers share one database |
 | Sharding | None | Each server writes to its home shard; network lookups fan out to every shard and merge by id |
@@ -77,7 +77,7 @@ All tables carry the configured prefix (default `hawkeye_`).
 | `event` | `id BIGINT`, `world INT`, `pos BIGINT`, `actor INT`, `action SMALLINT`, `subject INT`, `secondary INT NULL`, `amount INT NULL`, `flags SMALLINT`, `data BLOB NULL` | PK `id`, index `(world, pos)`, index `(actor)` |
 | `job` | network jobs (see below) | PK `id`, index `(target, status)` |
 | `lease` | `name`, `holder`, `expires` | PK `name` |
-| `segment` | `id` (auto-increment, never reused), `first_id BIGINT`, `last_id BIGINT`, `events INT`, `header` (small blob), `body` (SQLite `BLOB`, MySQL `LONGBLOB`, PostgreSQL `BYTEA` stored `EXTERNAL`) | PK `id`, index `(last_id)` |
+| `segment` | `id` (auto-increment, never reused), `first_id BIGINT`, `last_id BIGINT`, `events INT`, `header` (small blob), `body` (SQLite `BLOB`, MySQL `LONGBLOB`, PostgreSQL `BYTEA` stored `EXTERNAL`) | PK `id`, indexes `(last_id)` and `(first_id)` |
 | `segment_flag` | `segment`, `ordinals` (blob: ascending ordinals of the rolled-back rows, delta varints) | PK `segment` |
 
 - **Dictionaries.** Worlds, actors and types are interned to small integers. `type` holds every
@@ -173,8 +173,31 @@ Measured on 2.43 million replayed real events (bytes per event):
 | ... 1,048,576 events per segment | 1.09 |
 
 On SQLite, `StorageFootprintTest` (60,000 uniformly random block events, the worst case) measures 73
-bytes per hot event and 6.2 archived, against 80 for CoreProtect's relational layout. Full-scale
-numbers against CoreProtect: TBD (replay benchmark).
+bytes per hot event and 6.2 archived, against 80 for CoreProtect's relational layout.
+
+At full scale (`ReplayBenchmark`, 2026-11-16): every packed row of a real CoreProtect database of the
+`ericlmao/CoreProtect` fork (1,398,675,414 rows over 59 days, 98% hopper, piston and block activity,
+3.40 GB as that fork's SQLite file) replayed as the events Hawkeye would have captured, numbered by
+`IdAssigner` and packed with the default settings:
+
+| | Events | SQLite file | Bytes per event |
+|---|---|---|---|
+| CoreProtect fork | 1,398,675,414 packed + 181,684 waiting | 3,397,459,968 | 2.43 |
+| Hawkeye | 1,398,675,414 | 1,517,871,104 | 1.09 |
+
+Hawkeye's file is 5,337 segments (1.49 GB of bodies, 19 MB of headers) and 3 MB of dictionaries. By
+period, against the fork's packed segments alone (its entity tables, 0.58 GB, come on top): days 1-16
+0.93 against 1.76 bytes per event, days 17-27 0.87 against 1.74, days 28-60 (many kills) 1.39 against
+1.92. A kill's entity is a stand-in in the replay (the fork's own stored entity, about 15 bytes
+packed); Hawkeye's real snapshots measured 6.8 bytes per kill on a Paper server (docs/knowledge).
+A running server adds the hot table on top: the events not yet packed and, as free pages, its
+high-water mark (about 22 MB at the default segment size).
+
+Lookups on that database (5,337 segments, warm, a shared host under load): the newest 10 events of a
+player 18 ms, a later page at a block 9 ms, a radius of 5 around a busy block 133 ms, everything in
+the last hour 106 ms, a block with little history 270-320 ms. The worst case is a block that was never
+touched inside a chunk that is active in every segment: one unit per segment has to be read to know,
+3.9 s warm and 14 s cold, because SQLite reads a whole segment body to slice it.
 
 ### Indexes and query shapes
 
@@ -185,7 +208,7 @@ numbers against CoreProtect: TBD (replay benchmark).
 | User | `actor IN (...)` on `(actor)` plus the id range |
 | Time only | primary key range |
 | Purge | primary key range delete, in batches; archive segments by `first_id`, deleted or rewritten whole |
-| Archive candidates | `last_id >= ? AND first_id <= ?` on `(last_id)`, the flag row by its primary key; the body by `substr` byte ranges |
+| Archive candidates | `last_id >= ? AND first_id <= ?` on `(last_id)` (newest first) or `(first_id)` (oldest first); a later page adds `last_id <= ?` so it seeks to where the previous one ended; the flag row by its primary key; the body by `substr` byte ranges |
 
 InnoDB and SQLite append the primary key to secondary indexes, so `(world, pos)` and `(actor)` are
 already ordered by id within a key; PostgreSQL declares `id` explicitly.
