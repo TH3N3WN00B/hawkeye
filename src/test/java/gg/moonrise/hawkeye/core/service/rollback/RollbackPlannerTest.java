@@ -239,6 +239,73 @@ public class RollbackPlannerTest {
     }
 
     @Test
+    public void removedEntitiesAreRespawnedOnRollbackOnly() {
+        byte[] painting = {7, 7};
+        List<StoredEvent> events = List.of(
+                entity(1, Action.ENTITY_REMOVE, "minecraft:painting", new Payload.Entity(painting)),
+                entity(2, Action.ENTITY_REMOVE, "minecraft:item_frame", null));
+
+        RollbackPlan rollback = planner.plan(RollbackMode.ROLLBACK, events, ALL);
+        assertEquals(List.of(new PlannedChange.SpawnEntity(position(0, 64, 0), painting)),
+                rollback.changes().toList());
+        assertEquals(List.of(1L), rollback.eventIds());
+
+        assertTrue(planner.plan(RollbackMode.RESTORE, events, ALL).isEmpty());
+        assertTrue(planner.plan(RollbackMode.ROLLBACK, events, new PlanOptions(true, false, null)).isEmpty());
+    }
+
+    @Test
+    public void spawnedEntitiesAreRemovedByTheirUuidOnRollbackOnly() {
+        UUID golem = UUID.fromString("00000000-0000-0000-0000-0000000000b1");
+        List<StoredEvent> events = List.of(
+                entity(1, Action.ENTITY_SPAWN, "minecraft:iron_golem", new Payload.EntityRef(golem)),
+                entity(2, Action.ENTITY_SPAWN, "minecraft:zombie", null),
+                entity(3, Action.ENTITY_SPAWN, "minecraft:zombie", new Payload.Text("not a reference")));
+
+        RollbackPlan rollback = planner.plan(RollbackMode.ROLLBACK, events, ALL);
+        assertEquals(List.of(new PlannedChange.RemoveEntity(position(0, 64, 0), golem)), rollback.changes().toList());
+        assertEquals(List.of(1L), rollback.eventIds());
+        assertEquals(0, rollback.blocks());
+
+        assertTrue(planner.plan(RollbackMode.RESTORE, events, ALL).isEmpty());
+        assertTrue(planner.plan(RollbackMode.ROLLBACK, events, new PlanOptions(true, false, null)).isEmpty());
+        LookupQuery restore = planner.query(LookupQuery.at(new Area.Everywhere()), RollbackMode.RESTORE, ALL)
+                .orElseThrow();
+        assertFalse(restore.actions().contains(Action.ENTITY_SPAWN));
+        assertFalse(restore.actions().contains(Action.ENTITY_REMOVE));
+        LookupQuery noEntities = planner.query(LookupQuery.at(new Area.Everywhere()), RollbackMode.ROLLBACK,
+                new PlanOptions(true, false, null)).orElseThrow();
+        assertFalse(noEntities.actions().contains(Action.ENTITY_SPAWN));
+    }
+
+    @Test
+    public void aSpawnedEntityIsRemovedInTheChunkItWasSpawnedIn() {
+        UUID boat = UUID.fromString("00000000-0000-0000-0000-0000000000b2");
+        StoredEvent spawned = new StoredEvent(1, "server", "world", position(40, 64, -20), ALEX, Action.ENTITY_SPAWN,
+                "minecraft:oak_boat", null, 0, false, PayloadCodec.encode(new Payload.EntityRef(boat)));
+
+        ChunkPlan chunk = planner.plan(RollbackMode.ROLLBACK, List.of(spawned), ALL).chunks().getFirst();
+
+        assertEquals("world", chunk.world());
+        assertEquals(2, chunk.chunkX());
+        assertEquals(-2, chunk.chunkZ());
+    }
+
+    @Test
+    public void entityInteractionsAreNeverReversed() {
+        List<StoredEvent> events = new ArrayList<>();
+        long id = 1;
+        for (Action action : List.of(Action.ENTITY_SHEAR, Action.ENTITY_NAME, Action.ENTITY_LEASH,
+                Action.ENTITY_UNLEASH, Action.ENTITY_TAME, Action.ENTITY_DYE)) {
+            events.add(entity(id++, action, "minecraft:sheep", new Payload.Text("red")));
+        }
+        assertTrue(planner.plan(RollbackMode.ROLLBACK, events, ALL).isEmpty());
+        LookupQuery interactions = LookupQuery.at(new Area.Everywhere())
+                .withActions(EnumSet.of(Action.ENTITY_SHEAR, Action.ENTITY_DYE));
+        assertTrue(planner.query(interactions, RollbackMode.ROLLBACK, ALL).isEmpty());
+    }
+
+    @Test
     public void eventsThatAreNotReversibleAreIgnored() {
         List<StoredEvent> events = List.of(
                 block(1, Action.INTERACT, 0, 64, 0, "minecraft:lever[powered=true]", "minecraft:lever[powered=false]"),
@@ -286,21 +353,24 @@ public class RollbackPlannerTest {
     }
 
     @Test
-    public void aChunkChangesBlocksBeforeItemsAndEntities() {
+    public void aChunkChangesBlocksThenRespawnsThenItemsThenRemovals() {
+        UUID frame = UUID.fromString("00000000-0000-0000-0000-0000000000f1");
         List<StoredEvent> events = List.of(
-                kill(1, new Payload.Entity(new byte[] {1})),
-                item(2, Action.CONTAINER_DEPOSIT, DIAMOND, 1, null),
-                block(3, Action.BLOCK_BREAK, 0, 64, 0, CHEST, AIR),
-                block(4, Action.BLOCK_BREAK, 0, 63, 0, STONE, AIR));
+                entity(1, Action.ENTITY_SPAWN, "minecraft:item_frame", new Payload.EntityRef(frame)),
+                kill(2, new Payload.Entity(new byte[] {1})),
+                item(3, Action.CONTAINER_DEPOSIT, DIAMOND, 1, null),
+                block(4, Action.BLOCK_BREAK, 0, 64, 0, CHEST, AIR),
+                block(5, Action.BLOCK_BREAK, 0, 63, 0, STONE, AIR));
 
         List<PlannedChange> changes = planner.plan(RollbackMode.ROLLBACK, events, ALL).chunks().getFirst().changes();
 
-        assertEquals(4, changes.size());
+        assertEquals(5, changes.size());
         assertEquals(setBlock(0, 63, 0, STONE), changes.get(0));
         assertEquals(setBlock(0, 64, 0, CHEST), changes.get(1));
-        assertInstanceOf(PlannedChange.AdjustItems.class, changes.get(2));
-        assertInstanceOf(PlannedChange.SpawnEntity.class, changes.get(3));
-        assertArrayEquals(new byte[] {1}, ((PlannedChange.SpawnEntity) changes.get(3)).entity());
+        assertInstanceOf(PlannedChange.SpawnEntity.class, changes.get(2));
+        assertArrayEquals(new byte[] {1}, ((PlannedChange.SpawnEntity) changes.get(2)).entity());
+        assertInstanceOf(PlannedChange.AdjustItems.class, changes.get(3));
+        assertEquals(new PlannedChange.RemoveEntity(position(0, 64, 0), frame), changes.get(4));
     }
 
     @Test
@@ -333,8 +403,12 @@ public class RollbackPlannerTest {
     }
 
     private static StoredEvent kill(long id, @Nullable Payload payload) {
-        return new StoredEvent(id, "server", "world", position(0, 64, 0), ALEX, Action.ENTITY_KILL,
-                "minecraft:zombie", null, 0, false, payload == null ? null : PayloadCodec.encode(payload));
+        return entity(id, Action.ENTITY_KILL, "minecraft:zombie", payload);
+    }
+
+    private static StoredEvent entity(long id, Action action, String type, @Nullable Payload payload) {
+        return new StoredEvent(id, "server", "world", position(0, 64, 0), ALEX, action, type, null, 0, false,
+                payload == null ? null : PayloadCodec.encode(payload));
     }
 
     private static PlannedChange.SetBlock setBlock(int x, int y, int z, String state) {

@@ -25,6 +25,10 @@ import org.jetbrains.annotations.NotNull;
  * (what a break left, the placed or changed block). Sign edits only change text: a rollback writes
  * each side as it was before the oldest edit that changed it, a restore as it was after the newest.
  * A broken container gets its recorded contents back and a broken sign its text.
+ *
+ * <p>Entities change on rollback only: a killed or removed entity is spawned again from its recorded
+ * bytes, and a placed or spawned one is removed by its UUID. A restore leaves entity events alone and
+ * flagged, because it cannot tell the respawned entity from the original.
  */
 public final class PlanBuilder {
 
@@ -35,7 +39,8 @@ public final class PlanBuilder {
     private final @NotNull PlanOptions options;
     private final Map<BlockKey, List<StoredEvent>> blocks = new HashMap<>();
     private final Map<ItemKey, Integer> items = new LinkedHashMap<>();
-    private final List<Located> entities = new ArrayList<>();
+    private final List<Located> respawns = new ArrayList<>();
+    private final List<Located> removals = new ArrayList<>();
     private final List<Long> otherIds = new ArrayList<>();
 
     /**
@@ -62,7 +67,7 @@ public final class PlanBuilder {
             case BLOCK -> blocks.computeIfAbsent(new BlockKey(event.world(), event.position()),
                     key -> new ArrayList<>(2)).add(event);
             case CONTAINER -> addItems(event);
-            case ENTITY -> addKill(event);
+            case ENTITY -> addEntity(event);
             default -> {
                 // Item, message and session actions are never reversible.
             }
@@ -91,7 +96,9 @@ public final class PlanBuilder {
                         key.material(), bytes(key.item()), delta));
             }
         });
-        entities.forEach(located -> chunk(chunks, located.world(), located.change().position()).entities()
+        respawns.forEach(located -> chunk(chunks, located.world(), located.change().position()).respawns()
+                .add(located.change()));
+        removals.forEach(located -> chunk(chunks, located.world(), located.change().position()).removals()
                 .add(located.change()));
         List<ChunkPlan> ordered = chunks.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey(chunkOrder()))
@@ -116,14 +123,31 @@ public final class PlanBuilder {
         otherIds.add(event.id());
     }
 
-    private void addKill(@NotNull StoredEvent event) {
-        // A restore cannot kill the respawned entity again, so it leaves kills alone and flagged.
+    private void addEntity(@NotNull StoredEvent event) {
+        // A restore cannot tell a respawned entity from the original, so it leaves entity events alone and
+        // flagged.
         if (mode != RollbackMode.ROLLBACK || !options.restoreEntities()) {
             return;
         }
-        if (payload(event).orElse(null) instanceof Payload.Entity entity) {
-            entities.add(new Located(event.world(), new PlannedChange.SpawnEntity(event.position(), entity.bytes())));
-            otherIds.add(event.id());
+        Optional<Payload> payload = payload(event);
+        switch (event.action()) {
+            case ENTITY_KILL, ENTITY_REMOVE -> {
+                if (payload.orElse(null) instanceof Payload.Entity entity) {
+                    respawns.add(new Located(event.world(), new PlannedChange.SpawnEntity(event.position(),
+                            entity.bytes())));
+                    otherIds.add(event.id());
+                }
+            }
+            case ENTITY_SPAWN -> {
+                if (payload.orElse(null) instanceof Payload.EntityRef ref) {
+                    removals.add(new Located(event.world(), new PlannedChange.RemoveEntity(event.position(),
+                            ref.uuid())));
+                    otherIds.add(event.id());
+                }
+            }
+            default -> {
+                // The other entity actions (shear, name, leash, tame, dye) are not reversible.
+            }
         }
     }
 
@@ -207,7 +231,7 @@ public final class PlanBuilder {
             long position) {
         return chunks.computeIfAbsent(new ChunkKey(world, BlockPositions.chunkX(position),
                 BlockPositions.chunkZ(position)), key -> new ChunkChanges(new ArrayList<>(), new ArrayList<>(),
-                new ArrayList<>()));
+                new ArrayList<>(), new ArrayList<>()));
     }
 
     private @NotNull Comparator<ChunkKey> chunkOrder() {
@@ -273,14 +297,16 @@ public final class PlanBuilder {
     private record Located(@NotNull String world, @NotNull PlannedChange change) {
     }
 
-    private record ChunkChanges(@NotNull List<PlannedChange> blocks, @NotNull List<PlannedChange> items,
-            @NotNull List<PlannedChange> entities) {
+    private record ChunkChanges(@NotNull List<PlannedChange> blocks, @NotNull List<PlannedChange> respawns,
+            @NotNull List<PlannedChange> items, @NotNull List<PlannedChange> removals) {
 
         private @NotNull ChunkPlan plan(@NotNull ChunkKey key) {
-            List<PlannedChange> changes = new ArrayList<>(blocks.size() + items.size() + entities.size());
+            List<PlannedChange> changes = new ArrayList<>(blocks.size() + respawns.size() + items.size()
+                    + removals.size());
             blocks.stream().sorted(Comparator.comparingLong(PlannedChange::position)).forEach(changes::add);
+            changes.addAll(respawns);
             changes.addAll(items);
-            changes.addAll(entities);
+            changes.addAll(removals);
             return new ChunkPlan(key.world(), key.chunkX(), key.chunkZ(), changes);
         }
     }
