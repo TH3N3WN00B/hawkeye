@@ -55,4 +55,7 @@ public final class LookupMessages {
 
     @Comment("Reply when a network lookup could not read a shard. Placeholders: <shard>, <reason>.")
     private String shardUnavailable = "<yellow>Shard <shard> could not be read: <reason>";
+
+    @Comment("<pages> and <total> when the matching events could not be counted.")
+    private String unknownTotal = "?";
 }
