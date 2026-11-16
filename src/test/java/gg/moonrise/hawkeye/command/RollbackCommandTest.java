@@ -255,12 +255,26 @@ public class RollbackCommandTest {
     }
 
     @Test
-    public void otherServersAreRefusedForNow() {
+    public void aNetworkRollbackRunsAsAJobAndReportsEachServer() throws Exception {
         alex.addAttachment(plugin, Permissions.NETWORK, true);
+        Block block = broken(alex, 3, 64, 2, "minecraft:stone");
+        TestPlugins.flush();
+
         commands.run(alex, "hawkeye rollback u:alex t:1h s:#network");
-        RollbackTestSupport.tickUntilReply(server, alex, "only change this server's worlds");
+
+        List<String> replies = RollbackTestSupport.tickUntilReply(server, alex, "rollback done on server");
+        assertEquals(Material.STONE, block.getType());
+        assertTrue(replies.stream().anyMatch(line -> line.contains("Sent the rollback to server")), replies.toString());
+        assertTrue(event(3, 64, 2).rolledBack());
+    }
+
+    @Test
+    public void unknownServersAndNetworkPreviewsAreRefused() {
+        alex.addAttachment(plugin, Permissions.NETWORK, true);
         commands.run(alex, "hawkeye rollback u:alex t:1h s:creative");
-        RollbackTestSupport.tickUntilReply(server, alex, "only change this server's worlds");
+        RollbackTestSupport.tickUntilReply(server, alex, "No registered server matches");
+        commands.run(alex, "hawkeye rollback u:alex t:1h s:#network #preview");
+        RollbackTestSupport.tickUntilReply(server, alex, "#preview only works on this server");
     }
 
     @Test

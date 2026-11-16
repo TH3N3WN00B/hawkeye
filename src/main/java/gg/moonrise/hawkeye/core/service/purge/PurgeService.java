@@ -121,7 +121,8 @@ public final class PurgeService {
     private @NotNull CompletableFuture<Long> batches(@NotNull Shard home, long beforeMillis, @NotNull Set<Integer> worlds,
             int batchSize, long total) {
         return onQuery(() -> deleteBatch(home, beforeMillis, worlds, batchSize))
-                .thenCompose(deleted -> deleted < batchSize ? CompletableFuture.completedFuture(total + deleted)
+                // A batch deletes hot rows first, then archive segments; only an empty batch means done.
+                .thenCompose(deleted -> deleted == 0 ? CompletableFuture.completedFuture(total)
                         : batches(home, beforeMillis, worlds, batchSize, total + deleted));
     }
 

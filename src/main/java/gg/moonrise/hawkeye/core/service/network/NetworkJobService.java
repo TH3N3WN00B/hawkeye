@@ -149,6 +149,10 @@ public final class NetworkJobService implements Enableable {
         } catch (SQLException | RuntimeException e) {
             return new DispatchOutcome.Failed(reason(e));
         }
+        if (dispatched.contains(serverName())) {
+            // A job for this server needs no bus round trip.
+            pollSoon();
+        }
         return dispatched.isEmpty() ? new DispatchOutcome.NoServers() : new DispatchOutcome.Dispatched(dispatched);
     }
 
@@ -242,6 +246,9 @@ public final class NetworkJobService implements Enableable {
             running.remove(job.id());
         }
         bus.publish("done:" + job.issuerServer(), Long.toString(job.id()));
+        if (job.issuerServer().equals(serverName())) {
+            pollSoon();
+        }
     }
 
     private void checkWatched() {

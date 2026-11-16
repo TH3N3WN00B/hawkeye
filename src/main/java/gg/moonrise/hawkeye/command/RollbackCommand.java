@@ -7,6 +7,9 @@ import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.config.file.RollbackSettings;
 import gg.moonrise.hawkeye.config.message.GeneralMessages;
 import gg.moonrise.hawkeye.config.message.RollbackMessages;
+import gg.moonrise.hawkeye.core.service.network.DispatchOutcome;
+import gg.moonrise.hawkeye.core.service.network.JobWatcher;
+import gg.moonrise.hawkeye.core.service.network.NetworkJobService;
 import gg.moonrise.hawkeye.core.service.query.BuildResult;
 import gg.moonrise.hawkeye.core.service.query.QueryFlag;
 import gg.moonrise.hawkeye.core.service.query.QueryParameters;
@@ -17,6 +20,9 @@ import gg.moonrise.hawkeye.core.service.rollback.RollbackOutcome;
 import gg.moonrise.hawkeye.core.service.rollback.RollbackRequest;
 import gg.moonrise.hawkeye.core.service.rollback.RollbackService;
 import gg.moonrise.hawkeye.core.service.thread.ServerThreads;
+import gg.moonrise.hawkeye.entity.job.JobKind;
+import gg.moonrise.hawkeye.entity.job.JobResult;
+import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import gg.moonrise.moss.spring.SpringComponent;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import java.util.Locale;
@@ -28,6 +34,7 @@ import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.Player;
 import org.incendo.cloud.annotation.specifier.Greedy;
 import org.incendo.cloud.annotations.Argument;
 import org.incendo.cloud.annotations.Command;
@@ -51,6 +58,7 @@ public final class RollbackCommand implements PaperCommand {
     private final @NotNull QueryInput queryInput;
     private final @NotNull RollbackService rollbackService;
     private final @NotNull ServerThreads threads;
+    private final @NotNull NetworkJobService networkJobs;
 
     @Command(Permissions.ROOT + " rollback|rb [parameters]")
     @CommandDescription("Undoes recorded changes (#preview to preview them first)")
@@ -110,9 +118,56 @@ public final class RollbackCommand implements PaperCommand {
             Message.of(messages().getAreaRequired()).send(sender);
             return;
         }
+        if (!rollbackService.isLocal(built.get().query().servers())) {
+            dispatch(sender, mode, built.get().query(), given.has(QueryFlag.PREVIEW));
+            return;
+        }
         RollbackRequest request = new RollbackRequest(mode, built.get().query(), RollbackIssuer.of(sender),
                 given.has(QueryFlag.PREVIEW), new SenderListener(sender));
         reply(sender, rollbackService.run(request));
+    }
+
+    /**
+     * A rollback or restore on other servers: one network job per target server, each applied by its
+     * own server; every result is reported to the sender as it arrives.
+     */
+    private void dispatch(@NotNull CommandSender sender, @NotNull RollbackMode mode, @NotNull LookupQuery query,
+            boolean preview) {
+        RollbackMessages messages = messages();
+        if (preview) {
+            Message.of(messages.getNetworkPreview()).send(sender);
+            return;
+        }
+        JobKind kind = mode == RollbackMode.ROLLBACK ? JobKind.ROLLBACK : JobKind.RESTORE;
+        String issuer = sender instanceof Player player ? player.getName() : RollbackIssuer.CONSOLE;
+        JobWatcher watcher = (server, result) -> threads.runFor(sender, () -> tellJob(sender, mode, server, result));
+        networkJobs.dispatch(kind, query, issuer, watcher).whenComplete((outcome, error) -> threads.runFor(sender,
+                () -> {
+                    DispatchOutcome reply = outcome != null ? outcome : new DispatchOutcome.Failed(
+                            Objects.requireNonNullElse(error.getMessage(), error.getClass().getSimpleName()));
+                    switch (reply) {
+                        case DispatchOutcome.Dispatched dispatched -> Message.of(messages().getNetworkDispatched())
+                                .send(sender, mode(mode), Placeholder.unparsed("servers",
+                                        String.join(", ", dispatched.servers())));
+                        case DispatchOutcome.NoServers none -> Message.of(messages().getNetworkNoServers()).send(sender);
+                        case DispatchOutcome.NotReady notReady -> Message.of(general().getStorageNotReady()).send(sender);
+                        case DispatchOutcome.Failed failed -> Message.of(general().getOperationFailed()).send(sender,
+                                Placeholder.unparsed("reason", failed.reason()));
+                    }
+                }));
+    }
+
+    private void tellJob(@NotNull CommandSender sender, @NotNull RollbackMode mode, @NotNull String server,
+            @NotNull JobResult result) {
+        switch (result) {
+            case JobResult.Applied applied -> Message.of(messages().getNetworkJobFinished()).send(sender, mode(mode),
+                    Placeholder.unparsed("server", server),
+                    Placeholder.unparsed("blocks", Long.toString(applied.blocks())),
+                    Placeholder.unparsed("items", Long.toString(applied.items())),
+                    Placeholder.unparsed("entities", Long.toString(applied.entities())));
+            case JobResult.Failed failed -> Message.of(messages().getNetworkJobFailed()).send(sender, mode(mode),
+                    Placeholder.unparsed("server", server), Placeholder.unparsed("reason", failed.reason()));
+        }
     }
 
     private void reply(@NotNull CommandSender sender, @NotNull CompletableFuture<RollbackOutcome> outcome) {

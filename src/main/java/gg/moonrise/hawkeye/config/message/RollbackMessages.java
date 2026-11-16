@@ -66,6 +66,16 @@ public final class RollbackMessages {
     @Comment("Reply when a rollback or restore names other servers with s:, which this server cannot change.")
     private String networkUnsupported = "<red>Rollbacks and restores only change this server's worlds; leave out s:.";
 
+    @Comment("Reply when a network rollback or restore was sent. Placeholders: <mode>, <servers>.")
+    private String networkDispatched = "<gray>Sent the <mode> to <white><servers></white>; each server reports back "
+            + "when it is done.";
+
+    @Comment("Reply when s: matches no registered server.")
+    private String networkNoServers = "<red>No registered server matches s:; see /hawkeye network.";
+
+    @Comment("Reply to #preview with s: (a preview only works on this server).")
+    private String networkPreview = "<red>#preview only works on this server; leave out s: to preview.";
+
     @Comment("Sent when a preview was not applied in time. Placeholder: <mode>.")
     private String previewExpired = "<gray>Your <mode> preview expired; the real blocks are back.";
 }
