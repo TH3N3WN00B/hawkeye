@@ -10,12 +10,14 @@ import gg.moonrise.hawkeye.listener.Recorded;
 import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import java.util.List;
+import java.util.Map;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
@@ -72,6 +74,21 @@ public class ContainerListenerTest {
         assertEquals(Action.CONTAINER_DEPOSIT, deposit.action());
         assertEquals("minecraft:diamond", deposit.subject());
         assertEquals(2, deposit.amount());
+    }
+
+    @Test
+    public void aDragIsComparedLikeAClick() {
+        player.openInventory(chest);
+        ItemStack dragged = new ItemStack(Material.COAL, 8);
+        chest.setItem(0, new ItemStack(Material.COAL, 4));
+        chest.setItem(1, new ItemStack(Material.COAL, 4));
+        server.getPluginManager().callEvent(new InventoryDragEvent(player.getOpenInventory(), null, dragged, false,
+                Map.of(0, chest.getItem(0), 1, chest.getItem(1))));
+        server.getScheduler().performOneTick();
+
+        StoredEvent deposit = Recorded.only(Action.CONTAINER_DEPOSIT);
+        assertEquals("minecraft:coal", deposit.subject());
+        assertEquals(8, deposit.amount());
     }
 
     @Test
