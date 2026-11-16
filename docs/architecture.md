@@ -131,7 +131,7 @@ already ordered by id within a key; PostgreSQL declares `id` explicitly.
 | Queueing | Lock-free `EventQueue` (bounded; overflow is counted and reported, never blocks the game) |
 | Writing | One `Hawkeye-Writer` thread: drains the queue every `flush-interval` or at `batch-size`, resolves dictionaries, writes one transaction per batch, retries with back-off |
 | Lookups, rollback planning, purge, jobs | The bounded `Hawkeye-Query` executor |
-| Applying a rollback/restore/preview | The region that owns each chunk (`core.scheduler.ServerThreads`), a bounded number of blocks per tick |
+| Applying a rollback/restore/preview | The region that owns each chunk (`core.service.thread.ServerThreads`), a bounded number of blocks per tick |
 | Replies to a command sender | The sender's own thread |
 
 Every executor is owned by a bean with a `Disableable` shutdown path. Shutdown flushes the queue

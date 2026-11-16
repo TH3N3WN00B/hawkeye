@@ -46,6 +46,25 @@ update them in the same change when you learn something durable or an entry stop
 - MariaDB Connector/J reports matched rows, not inserted rows, for `ON DUPLICATE KEY UPDATE`, so an
   insert's update count is not "rows inserted" on MySQL; nothing relies on it.
 - Heavy builds on this host go through `rtk proxy t3-build ./gradlew ...` (shared build slots).
+- Cloud 2.0.0 recurses until `StackOverflowError` on an empty greedy `@Default("")`. Optional greedy
+  parameter lists are `[parameters]` with a `@Nullable` argument read as `""`; an optional `[arg]`
+  without `@Default` arrives as `null`.
+- Cloud resolves a named suggestion provider while it parses each command that references it, so the
+  bean declaring `@Suggestions(QueryInput.SUGGESTIONS)` (`LookupCommand`) is registered first
+  (`@Order(Ordered.HIGHEST_PRECEDENCE)`). A `@Suggestions` method can take a `CommandInput`, whose
+  `remainingInput()` is the whole greedy argument.
+- `Placeholder.parsed` values work inside MiniMessage tag arguments (click commands);
+  `Placeholder.unparsed` values do not.
+- CompletableFuture runs a dependent stage's `execute` on the thread that completes the source; an
+  executor that rejects throws there. `EventWriter` completes flush requests one by one inside a
+  guard so a caller's stage can never stop the writer thread.
+- MockBukkit 4.120: `Entity#teleportAsync` throws `UnimplementedOperationException`;
+  `PlayerMock#sendBlockChange` does nothing (subclass it to record what was sent);
+  `BlockMock#setBlockData` does not replace the block's state object, so restored container contents
+  and sign text cannot be checked there; region and entity tasks run on `performOneTick`. Its data
+  folder is predictable (`<tmp>/TestHawkeyePlugin-0.0.0`), so tests write a `config.yml` before
+  loading for start-only settings.
+- `PlayerInteractEvent#isCancelled` is deprecated in Paper 26.3; use `useInteractedBlock()`.
 
 ## Owner preferences
 
