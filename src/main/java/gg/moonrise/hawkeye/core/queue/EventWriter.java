@@ -119,7 +119,7 @@ public final class EventWriter implements Enableable, Disableable {
                 }
                 List<CompletableFuture<Void>> requests = takeRequests();
                 writeAvailable();
-                requests.forEach(request -> request.complete(null));
+                release(requests);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -127,7 +127,7 @@ public final class EventWriter implements Enableable, Disableable {
             log.error("The writer loop failed", e);
         } finally {
             shutdownDrain();
-            takeRequests().forEach(request -> request.complete(null));
+            release(takeRequests());
             stopped.complete(null);
         }
     }
@@ -181,7 +181,7 @@ public final class EventWriter implements Enableable, Disableable {
         long max = TimeUnit.SECONDS.toMillis(settings().maxRetryDelaySeconds());
         long delay = Math.min(max, MIN_RETRY_MILLIS << Math.min(consecutiveFailures, 10));
         // Anyone waiting on a flush reads what is stored rather than waiting out the outage.
-        takeRequests().forEach(request -> request.complete(null));
+        release(takeRequests());
         queue.awaitWork(delay);
     }
 
@@ -259,6 +259,20 @@ public final class EventWriter implements Enableable, Disableable {
                     file.getFileName());
         } catch (IOException e) {
             log.error("Could not spool {} unwritten event(s); they are lost", left.size(), e);
+        }
+    }
+
+    /**
+     * Completes flush requests. A caller's dependent stage runs here, on the writer thread, and may throw
+     * (an executor that rejects its task); that must never stop the writer.
+     */
+    private static void release(@NotNull List<CompletableFuture<Void>> requests) {
+        for (CompletableFuture<Void> request : requests) {
+            try {
+                request.complete(null);
+            } catch (RuntimeException e) {
+                log.warn("A flush waiter failed on the writer thread", e);
+            }
         }
     }
 
