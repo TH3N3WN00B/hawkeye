@@ -71,6 +71,11 @@ public final class ByteReader {
      * @return the value
      */
     public long readVarLong() {
+        int at = offset;
+        if (at < end && bytes[at] >= 0) {
+            offset = at + 1;
+            return bytes[at];
+        }
         long value = 0;
         for (int shift = 0; shift < 64; shift += 7) {
             int b = readByte();
@@ -152,6 +157,16 @@ public final class ByteReader {
      */
     public @NotNull String readString() {
         return new String(readBytes(), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Skips bytes.
+     *
+     * @param count how many bytes
+     */
+    public void skip(int count) {
+        require(count);
+        offset += count;
     }
 
     /**
