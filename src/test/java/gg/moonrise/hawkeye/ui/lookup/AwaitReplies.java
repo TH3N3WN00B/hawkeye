@@ -5,9 +5,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
+import net.kyori.adventure.text.Component;
 import org.bukkit.command.CommandSender;
 import org.jetbrains.annotations.NotNull;
 import org.mockbukkit.mockbukkit.ServerMock;
+import org.mockbukkit.mockbukkit.entity.PlayerMock;
 
 /**
  * Waits for replies that arrive asynchronously: lookups run on the query pool and reply through a
@@ -54,6 +56,32 @@ public final class AwaitReplies {
             }
             pause();
         }
+    }
+
+    /**
+     * Ticks until a player received at least {@code count} messages, keeping their components.
+     *
+     * @param server the mocked server
+     * @param player the player
+     * @param count  how many messages to wait for
+     * @return the messages
+     */
+    public static @NotNull List<Component> components(@NotNull ServerMock server, @NotNull PlayerMock player,
+            int count) {
+        List<Component> received = new ArrayList<>();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIMEOUT_SECONDS);
+        while (received.size() < count) {
+            server.getScheduler().performOneTick();
+            Component message;
+            while ((message = player.nextComponentMessage()) != null) {
+                received.add(message);
+            }
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("no reply within " + TIMEOUT_SECONDS + " s; received " + received);
+            }
+            pause();
+        }
+        return received;
     }
 
     /**

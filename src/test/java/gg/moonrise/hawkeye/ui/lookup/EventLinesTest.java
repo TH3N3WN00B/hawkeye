@@ -134,7 +134,7 @@ public class EventLinesTest {
     static List<String> commands(Component component) {
         List<String> commands = new ArrayList<>();
         walk(component, part -> {
-            ClickEvent click = part.clickEvent();
+            ClickEvent<?> click = part.clickEvent();
             if (click != null && click.payload() instanceof ClickEvent.Payload.Text text) {
                 commands.add(text.value());
             }
