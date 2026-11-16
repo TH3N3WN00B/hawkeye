@@ -1,0 +1,111 @@
+# Mob kills are recorded with their entities, looked up and rolled back on a real server: every mob
+# comes back alive at full health, the named and equipped ones as they were, and an armour stand at its
+# jockeys, spawn bonuses), so per-type counts are compared through the scoreboard, before and after.
+# It then moves identical named, enchanted swords through a hopper and breaks a full chest, for the item
+# payload measurement. Expects a flat overworld and logging.hoppers: true in the Hawkeye config.
+hawkeye status => connected
+forceload add 990 990 1130 1290
+gamerule spawn_mobs false
+gamerule advance_time false
+time set midnight
+scoreboard objectives add hk dummy
+hawkeye status
+hawkeye status
+kill @e[type=!player,x=960,y=-64,z=960,dx=200,dy=40,dz=360]
+fill 1070 -61 1120 1080 -59 1120 minecraft:air
+fill 1070 -61 1120 1080 -61 1120 minecraft:grass_block
+kill @e[type=!player,x=960,y=-64,z=960,dx=200,dy=40,dz=360]
+hawkeye status
+hawkeye purge t:1s => Purge done
+summon marker 1000 -60 1000 {Tags:["g"]}
+execute as @e[type=marker,tag=g] at @s run summon marker ~4 ~ ~ {Tags:["g"]}
+execute as @e[type=marker,tag=g] at @s run summon marker ~8 ~ ~ {Tags:["g"]}
+execute as @e[type=marker,tag=g] at @s run summon marker ~16 ~ ~ {Tags:["g"]}
+execute as @e[type=marker,tag=g] at @s run summon marker ~32 ~ ~ {Tags:["g"]}
+execute as @e[type=marker,tag=g] at @s run summon marker ~64 ~ ~ {Tags:["g"]}
+execute if entity @e[type=marker,tag=g,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Count: 32
+execute as @e[type=marker,tag=g] at @s run summon minecraft:zombie ~ ~ ~6
+execute as @e[type=marker,tag=g] at @s run summon minecraft:skeleton ~ ~ ~12
+execute as @e[type=marker,tag=g] at @s run summon minecraft:creeper ~ ~ ~18
+execute as @e[type=marker,tag=g] at @s run summon minecraft:spider ~ ~ ~24
+execute as @e[type=marker,tag=g] at @s run summon minecraft:enderman ~ ~ ~30
+execute as @e[type=marker,tag=g] at @s run summon minecraft:cow ~ ~ ~60
+execute as @e[type=marker,tag=g] at @s run summon minecraft:pig ~ ~ ~66
+execute as @e[type=marker,tag=g] at @s run summon minecraft:sheep ~ ~ ~72
+execute as @e[type=marker,tag=g] at @s run summon minecraft:chicken ~ ~ ~78
+execute as @e[type=marker,tag=g] at @s run summon minecraft:iron_golem ~ ~ ~250
+execute as @e[type=marker,tag=g] at @s run summon minecraft:villager ~ ~ ~262
+execute as @e[type=marker,tag=g,limit=16] at @s run summon minecraft:zombie ~ ~ ~36 {IsBaby:1b}
+execute as @e[type=marker,tag=g,limit=16] at @s run summon minecraft:cow ~ ~ ~84 {Age:-24000}
+execute as @e[type=marker,tag=g,limit=8] at @s run summon minecraft:zombie ~ ~ ~42 {CustomName:"Bob",PersistenceRequired:1b,equipment:{head:{id:"minecraft:diamond_helmet",count:1},mainhand:{id:"minecraft:iron_sword",count:1}},drop_chances:{head:0f,mainhand:0f}}
+execute as @e[type=marker,tag=g,limit=8] at @s run summon minecraft:sheep ~ ~ ~90 {CustomName:"Wooly",Color:14b}
+summon minecraft:armor_stand 1050.3 -60 1096.7 {Rotation:[37.5f,0f],ShowArms:1b,Tags:["probe"]}
+execute store result score zombie hk if entity @e[type=zombie,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute store result score skeleton hk if entity @e[type=skeleton,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute store result score creeper hk if entity @e[type=creeper,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute store result score spider hk if entity @e[type=spider,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute store result score enderman hk if entity @e[type=enderman,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute store result score cow hk if entity @e[type=cow,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute store result score pig hk if entity @e[type=pig,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute store result score sheep hk if entity @e[type=sheep,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute store result score chicken hk if entity @e[type=chicken,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute store result score iron_golem hk if entity @e[type=iron_golem,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute store result score villager hk if entity @e[type=villager,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute store result score all hk if entity @e[type=!marker,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+kill @e[type=!player,type=!marker,x=960,y=-64,z=960,dx=200,dy=40,dz=360]
+kill @e[type=item,x=960,y=-64,z=960,dx=200,dy=40,dz=360]
+kill @e[type=experience_orb,x=960,y=-64,z=960,dx=200,dy=40,dz=360]
+execute if entity @e[type=!marker,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test failed
+hawkeye lookup a:kill t:1h r:#world #count => Matching events:
+hawkeye lookup a:kill t:1h r:#world => killed
+hawkeye lookup a:kill t:1h r:#world i:villager => villager
+hawkeye rollback a:kill t:1h r:#world => Finished the rollback
+hawkeye status
+execute store result score zombie_after hk if entity @e[type=zombie,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute if score zombie hk = zombie_after hk => Test passed
+execute store result score skeleton_after hk if entity @e[type=skeleton,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute if score skeleton hk = skeleton_after hk => Test passed
+execute store result score creeper_after hk if entity @e[type=creeper,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute if score creeper hk = creeper_after hk => Test passed
+execute store result score spider_after hk if entity @e[type=spider,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute if score spider hk = spider_after hk => Test passed
+execute store result score enderman_after hk if entity @e[type=enderman,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute if score enderman hk = enderman_after hk => Test passed
+execute store result score cow_after hk if entity @e[type=cow,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute if score cow hk = cow_after hk => Test passed
+execute store result score pig_after hk if entity @e[type=pig,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute if score pig hk = pig_after hk => Test passed
+execute store result score sheep_after hk if entity @e[type=sheep,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute if score sheep hk = sheep_after hk => Test passed
+execute store result score chicken_after hk if entity @e[type=chicken,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute if score chicken hk = chicken_after hk => Test passed
+execute store result score iron_golem_after hk if entity @e[type=iron_golem,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute if score iron_golem hk = iron_golem_after hk => Test passed
+execute store result score villager_after hk if entity @e[type=villager,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute if score villager hk = villager_after hk => Test passed
+execute store result score all_after hk if entity @e[type=!marker,x=960,y=-64,z=960,dx=200,dy=40,dz=360] => Test passed
+execute if score all hk = all_after hk => Test passed
+execute if entity @e[type=zombie,name=Bob,x=960,y=-64,z=960,dx=200,dy=40,dz=360,nbt={PersistenceRequired:1b,equipment:{head:{id:"minecraft:diamond_helmet"},mainhand:{id:"minecraft:iron_sword"}}}] => Count: 8
+execute if entity @e[type=sheep,name=Wooly,x=960,y=-64,z=960,dx=200,dy=40,dz=360,nbt={Color:14b}] => Count: 8
+execute if entity @e[type=armor_stand,tag=probe,x=1050.3,y=-60,z=1096.7,distance=..0.001,y_rotation=37.4..37.6] => Count: 1
+execute if entity @e[type=armor_stand,tag=probe,nbt={ShowArms:1b}] => Count: 1
+execute if entity @e[type=zombie,x=960,y=-64,z=960,dx=200,dy=40,dz=360,nbt=!{Health:20.0f}] => Test failed
+execute if entity @e[type=skeleton,x=960,y=-64,z=960,dx=200,dy=40,dz=360,nbt=!{Health:20.0f}] => Test failed
+execute if entity @e[type=cow,x=960,y=-64,z=960,dx=200,dy=40,dz=360,nbt=!{Health:10.0f}] => Test failed
+execute if entity @e[type=iron_golem,x=960,y=-64,z=960,dx=200,dy=40,dz=360,nbt=!{Health:100.0f}] => Test failed
+execute if entity @e[type=villager,x=960,y=-64,z=960,dx=200,dy=40,dz=360,nbt=!{Health:20.0f}] => Test failed
+execute if entity @e[type=!marker,type=!armor_stand,x=960,y=-64,z=960,dx=200,dy=40,dz=360,nbt=!{Fire:0s}] => Test failed
+execute if entity @e[type=!marker,x=960,y=-64,z=960,dx=200,dy=40,dz=360,nbt=!{fall_distance:0.0d}] => Test failed
+setblock 1070 -59 1120 minecraft:chest{Items:[{Slot:0b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:1b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:2b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:3b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:4b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:5b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:6b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:7b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:8b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:9b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:10b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:11b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:12b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:13b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:14b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:15b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:16b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:17b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:18b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:19b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:20b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:21b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:22b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:23b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:24b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:25b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:26b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}}]}
+setblock 1070 -60 1120 minecraft:hopper[facing=down]
+setblock 1070 -61 1120 minecraft:chest
+hawkeye status
+hawkeye status
+hawkeye status
+hawkeye status
+execute if items block 1070 -61 1120 container.26 minecraft:diamond_sword[minecraft:custom_name="Excalibur"] => Test passed
+setblock 1080 -60 1120 minecraft:chest{Items:[{Slot:0b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:1b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:2b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:3b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:4b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:5b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:6b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:7b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:8b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:9b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:10b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:11b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:12b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:13b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:14b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:15b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:16b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:17b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:18b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:19b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:20b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:21b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:22b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:23b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:24b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:25b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}},{Slot:26b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":5,"minecraft:unbreaking":3},"minecraft:custom_name":"Excalibur"}}]}
+setblock 1080 -60 1120 minecraft:air destroy
+hawkeye lookup i:diamond_sword t:1h r:#world #count => Matching events:
+kill @e[type=marker,x=960,y=-64,z=960,dx=200,dy=40,dz=360]
+hawkeye status => connected

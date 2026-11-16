@@ -15,6 +15,7 @@ import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtFloat;
 import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtInt;
 import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtIntArray;
 import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtList;
+import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtLong;
 import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtShort;
 import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtString;
 import java.util.List;
@@ -28,11 +29,14 @@ public class EntitySnapshotsTest {
         NbtCompound normalized = EntitySnapshots.normalize(zombie(20f, 1), false, false).compound();
         for (String key : List.of("UUID", "Motion", "fall_distance", "Fire", "Air", "OnGround", "PortalCooldown",
                 "HurtTime", "HurtByTimestamp", "DeathTime", "WorldUUIDLeast", "WorldUUIDMost",
-                "current_impulse_context_reset_grace_time", "Spigot")) {
+                "current_impulse_context_reset_grace_time", "Spigot.ticksLived", "Paper.Origin",
+                "Paper.OriginWorld", "last_hurt_by_mob", "ticks_since_last_hurt_by_mob", "angry_at",
+                "anger_end_time", "EggLayTime")) {
             assertFalse(normalized.values().containsKey(key), key);
         }
-        NbtCompound paper = normalized.compound("Paper").orElseThrow();
-        assertEquals(Set.of("SpawnReason"), paper.values().keySet());
+        assertTrue(normalized.values().containsKey("Paper.SpawnReason"));
+        NbtCompound memories = normalized.compound("Brain").orElseThrow().compound("memories").orElseThrow();
+        assertEquals(Set.of("minecraft:home"), memories.values().keySet());
     }
 
     @Test
@@ -72,6 +76,20 @@ public class EntitySnapshotsTest {
         NbtList modifiers = (NbtList) health.get("modifiers").orElseThrow();
         assertEquals(List.of("minecraft:leader_zombie_bonus"), modifiers.values().stream()
                 .map(modifier -> ((NbtString) ((NbtCompound) modifier).get("id").orElseThrow()).value()).toList());
+    }
+
+    @Test
+    public void attributesAreSortedById() {
+        NbtRoot shuffled = new NbtRoot("", compound("attributes", NbtList.of(NbtTag.COMPOUND,
+                compound("id", new NbtString("minecraft:movement_speed"), "base", NbtDouble.of(0.23)),
+                compound("id", new NbtString("minecraft:armor"), "base", NbtDouble.of(2)),
+                compound("id", new NbtString("minecraft:max_health"), "base", NbtDouble.of(20)))));
+        NbtList attributes = (NbtList) EntitySnapshots.normalize(shuffled, true, false).compound().get("attributes")
+                .orElseThrow();
+        assertEquals(List.of("minecraft:armor", "minecraft:max_health", "minecraft:movement_speed"),
+                attributes.values().stream()
+                        .map(attribute -> ((NbtString) ((NbtCompound) attribute).get("id").orElseThrow()).value())
+                        .toList());
     }
 
     @Test
@@ -116,10 +134,18 @@ public class EntitySnapshotsTest {
                 "NoAI", new NbtByte((byte) 0),
                 "Tags", NbtList.of(NbtTag.STRING, new NbtString("farm")),
                 "current_impulse_context_reset_grace_time", new NbtInt(seed),
-                "Paper", compound("SpawnReason", new NbtString("NATURAL"), "Origin", NbtList.of(NbtTag.DOUBLE,
-                        NbtDouble.of(seed), NbtDouble.of(-60), NbtDouble.of(1)), "OriginWorld",
-                        new NbtIntArray(new int[] {seed, 1, 1, 1})),
-                "Spigot", compound("ticksLived", new NbtInt(100 * seed)),
+                "Paper.SpawnReason", new NbtString("NATURAL"),
+                "Paper.Origin", NbtList.of(NbtTag.DOUBLE, NbtDouble.of(seed), NbtDouble.of(-60), NbtDouble.of(1)),
+                "Paper.OriginWorld", new NbtIntArray(new int[] {seed, 1, 1, 1}),
+                "Spigot.ticksLived", new NbtInt(100 * seed),
+                "last_hurt_by_mob", new NbtIntArray(new int[] {seed, 5, 5, 5}),
+                "ticks_since_last_hurt_by_mob", new NbtInt(seed),
+                "angry_at", new NbtIntArray(new int[] {seed, 6, 6, 6}),
+                "anger_end_time", new NbtLong(1000L * seed),
+                "EggLayTime", new NbtInt(6000 + seed),
+                "Brain", compound("memories", compound("minecraft:golem_detected_recently", compound("value",
+                        new NbtByte((byte) 1), "ttl", new NbtLong(seed)), "minecraft:home", compound("value",
+                        new NbtString("home")))),
                 "WorldUUIDLeast", new NbtByte((byte) seed),
                 "WorldUUIDMost", new NbtByte((byte) seed),
                 "Health", NbtFloat.of(health),
