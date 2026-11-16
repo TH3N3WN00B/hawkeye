@@ -69,7 +69,7 @@ without relearning:
 | `u:` | Players, or sources with `#` | `u:Alex,Steve`, `u:#tnt` |
 | `t:` | How far back, or between two ages | `t:2h`, `t:3d12h`, `t:1h-2d` |
 | `r:` | Radius around you, a whole world, or everywhere | `r:10`, `r:10x5` (5 up and down), `r:#world_nether`, `r:#global` |
-| `a:` | Actions | `block`, `+block`, `-block`, `change`, `sign`, `click`, `container`, `+container`, `-container`, `item`, `+item`, `-item`, `kill`, `chat`, `command`, `session`, `+session`, `-session` |
+| `a:` | Actions | `block`, `+block`, `-block`, `change`, `sign`, `click`, `grow`, `container`, `+container`, `-container`, `item`, `+item`, `-item`, `craft`, `throw`, `trade`, `kill`, `entity`, `+entity`, `-entity`, `spawn`, `chat`, `command`, `book`, `gamemode`, `session`, `+session`, `-session` |
 | `i:` | Only these blocks, items or entities | `i:diamond_ore,chest` |
 | `e:` | Except these types or players | `e:stone,Steve` |
 | `s:` | Other servers | `s:creative`, `s:#network` |
@@ -98,18 +98,32 @@ inspector turns itself off if you lose `hawkeye.inspect`.
 ## What is recorded
 
 Every category has a switch in `config.yml` (`logging`); everything but hoppers is on by default.
+Changes the server reports without a cause are blamed on whoever caused them where Hawkeye can tell:
+TNT lit by redstone counts for the player who placed it, a wither for the player who built it, an
+end crystal for the player who hit it, flowing lava for the player who poured it, and a torch that
+falls off a wall for the player who broke the wall.
 
 | Category | Details |
 |---|---|
 | Blocks | Breaks (with container contents and sign text, both halves of doors, beds and tall plants), places, multi-block places, buckets (including waterlogging) |
-| Explosions | Every destroyed block, under the player who lit the TNT or fired the projectile, else the entity (`#creeper`) or `#explosion` |
-| Fire, fluids, pistons | Burning (`#fire`), lighting, flow (`#water`, `#lava`), stone and obsidian forming, piston moves as a break and a place by `#piston` |
-| Natural | Leaf decay, melting, snow and ice forming, grass/mycelium/vine/sculk spread, tree and mushroom growth (under the player when bone-mealed); crop growth is not recorded |
-| Entities | Endermen, falling blocks, trampled farmland, sheep, withers; kills with the entity for rollback |
+| Attached blocks | Torches, signs, rails, redstone, flowers, sugar cane and anything else that falls off when its support goes, under the remover of the support (else `#physics`) |
+| Explosions | Every destroyed block, the TNT block itself, and an exploding bed or respawn anchor, under the player who lit, placed, clicked or hit the cause, else the entity (`#creeper`) or `#explosion` |
+| Fire, fluids, pistons | Burning (`#fire`), lighting, flow (under the player who poured it, else `#water`/`#lava`), stone and obsidian forming, sponges, pistons (moves as a break and a place, destroyed blocks as breaks) |
+| Natural | Leaf decay, melting, snow and ice forming, grass/mycelium/vine/sculk spread, tree and mushroom growth (under the player when bone-mealed), bone meal, portals forming, cauldrons filling and drying |
+| Crop growth | A ripe crop or a newly grown block (melon, pumpkin, sugar cane, cactus, vines) as one compact `#growth` event; `crop-growth-stages` records every stage. Rollbacks never change growth |
 | Signs | Edits with the text before and after, per side |
-| Interactions | Doors, trapdoors, gates, levers, buttons, repeaters, comparators, note blocks, daylight detectors, recorded a tick later and only when the state changed |
-| Containers | Net change per kind of item while a container is open; hoppers and droppers (off by default, high volume) |
-| Items, chat, commands, sessions | Drops, pickups, chat, commands (`logging.redacted-commands` are stored without their arguments), joins and quits |
+| Interactions | Doors, trapdoors, gates, levers, buttons, repeaters, comparators, note blocks, daylight detectors (a tick later, only when the state changed); berries picked, pumpkins and beehives sheared, flower pots, dragon eggs |
+| Containers | Net change per kind of item while a container is open; jukeboxes, chiseled bookshelves, decorated pots, shelves and lecterns; items in item frames and on armour stands |
+| Dispensers and hoppers | Blocks and liquids a dispenser places or picks up (`#dispenser`); hopper transfers and ground pickups (off by default, high volume) |
+| Entities | Placed or spawned: armour stands, boats, minecarts, paintings, item frames, end crystals, spawn eggs, built golems and withers (with the consumed blocks), mobs released from buckets. Destroyed or taken: paintings, item frames, vehicles, end crystals, mobs caught in buckets. Kills |
+| Entity interactions | Shearing, naming (with the name), leashing, unleashing, taming, dyeing |
+| Items | Drops (and death drops), pickups (and arrows), crafting, thrown and shot items, worn-out tools, villager trades |
+| Chat, commands, books | Chat, commands, sign-click commands (`[sign]`), console commands (`#console`); `logging.redacted-commands` are stored without their arguments; written and signed books |
+| Sessions and modes | Joins, quits (with the kick reason), game mode changes |
+
+A rollback reverses blocks, container and item-frame/armour-stand items, kills and destroyed
+entities (respawned) and placed or spawned entities (removed while they are still in the world);
+interactions, growth, items, chat and sessions are history only.
 
 ## Configuration
 
@@ -124,7 +138,7 @@ previous configuration.
 | `server` | `name` (unique per database), `world-scope` (shared by servers that share world files, e.g. MultiPaper) |
 | `storage` | `type` (`SQLITE`, `MYSQL`, `MARIADB`, `POSTGRESQL`), connection, `table-prefix`, `pool-size` |
 | `writer` | `flush-interval-millis` (500), `batch-size`, `queue-capacity`, `shutdown-timeout-seconds` |
-| `logging` | One switch per category, `disabled-worlds`, `redacted-commands` (logged without arguments) |
+| `logging` | One switch per category, `crop-growth-stages`, `liquid-tracking`, `attached-blocks`, `disabled-worlds`, `redacted-commands` (logged without arguments) |
 | `lookup` | `page-size`, `near-radius`, `max-radius`, session and timeout limits |
 | `rollback` | `default-radius`, `max-radius`, `blocks-per-tick`, `concurrent-chunks`, `max-events`, preview expiry |
 | `purge` | `retention-days` (automatic purge, 0 = keep everything), `player-minimum-days` |

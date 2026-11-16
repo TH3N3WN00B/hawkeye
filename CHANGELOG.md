@@ -36,7 +36,31 @@ All notable changes to this project are documented in this file. The format is b
 - `/hawkeye`, `help`, `status` (queue, writer, archive and network jobs) and `reload` with every
   permission node under `hawkeye.*`.
 - `HawkeyeApi` in Bukkit's `ServicesManager` for other plugins.
+- Compact crop growth (`BLOCK_GROW`: ripe crops and newly grown blocks under `#growth`, every stage
+  with `logging.crop-growth-stages`), bone meal, cauldrons, sponges, portals, berries, sheared
+  pumpkins and beehives, flower pots, dispensers, dragon eggs, the TNT block itself and exploding
+  beds and respawn anchors.
+- Attached blocks (`logging.attached-blocks`): blocks that fall off when their support goes, cascades
+  included, under whoever removed the support.
+- Cause attribution: TNT lit by redstone or fire counts for its placer, withers for their builder,
+  end crystals and creepers for the player who hit or lit them, liquid flows for the player who
+  poured them (`logging.liquid-tracking`).
+- Entities: placed and spawned (armour stands, boats, minecarts, paintings, item frames, end
+  crystals, spawn eggs, built golems and withers, bucket mobs) and destroyed or taken ones, with
+  rollback (removal and respawn); item frames and armour stands as containers; shearing, naming,
+  leashing, unleashing, taming and dyeing.
+- Items: crafting, throwing and shooting, worn-out tools, trades, arrow pickups and death drops; hopper
+  ground pickups; jukeboxes, chiseled bookshelves, decorated pots, shelves and lecterns as containers
+  (with rollback).
+- Books, game mode changes, sign-click and console commands, and kick reasons on quits.
 - `config.yml` and `messages.yml` with every default documented; invalid files keep the previous
   configuration, and restart-only changes are reported.
+### Fixed
+
+- A block a piston destroys is recorded as broken, no longer as moved one block on.
+- Flowing water and lava are recorded with their flowing level, so a restore never creates sources.
+
+### Tests
+
 - MockBukkit, SQLite and opt-in MySQL/PostgreSQL integration tests, an ArchUnit layer check, a
   storage footprint guard, `verifyPluginJar`, and a real-server smoke test (`scripts/smoke`).

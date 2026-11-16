@@ -73,6 +73,24 @@ update them in the same change when you learn something durable or an entry stop
   folder is predictable (`<tmp>/TestHawkeyePlugin-0.0.0`), so tests write a `config.yml` before
   loading for start-only settings.
 - `PlayerInteractEvent#isCancelled` is deprecated in Paper 26.3; use `useInteractedBlock()`.
+- More shared handler lists: `PlayerSignCommandPreprocessEvent` arrives on the command handler (so it
+  is handled inside the command listener, never twice), and arrow pickups and projectile launches
+  share their parents' lists.
+- Paper's `spawnAt` re-attaches a hanging entity to the block containing the spawn point, so a rollback
+  respawns paintings at their recorded position and rotation (even-sized paintings anchor one block
+  off); `HangingBreakByEntityEvent#getRemover` is the direct entity; the item-frame PLACE event carries
+  the whole hand stack; `EntityConstructEvent` fires before the built entity is added.
+- `InventoryPickupItemEvent` fires before a hopper takes the item and the take may be partial, so only
+  what fits is recorded.
+- `World#isUltraWarm()` is deprecated since 1.21.11 with no replacement; fast lava is detected as the
+  NETHER environment.
+- More MockBukkit 4.120 gaps: `getPistonMoveReaction`, entity serialization, item default data, the
+  jukebox inventory, `BookMeta#pages()` and `AbstractArrow#getItemStack` are unimplemented; it fires no
+  `EntitySpawnEvent` for primed TNT; `PlayerMock#kick` fires no quit event; its decorated-pot and
+  lectern states count as `Container`; the state of a block set with `setBlockData` reads as air (set
+  the data on the state in tests); `getState()` is live and `getState(false)` a copy (the reverse of
+  Paper); nearby entities are found by position, not bounding box.
+- `Recorded.events()` in listener tests includes the JOIN that `server.addPlayer` records.
 - Paper 26.3 event behaviour verified in the server jar's bytecode (2026-11-16; the jar is
   `versions/26.3/paper-26.3.jar` after a first start; grep class files for an event's internal name,
   and for `CraftEventFactory` helpers such as `handleBlockGrowEvent`, to find where it fires):
