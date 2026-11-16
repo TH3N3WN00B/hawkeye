@@ -48,6 +48,9 @@ public final class HawkeyeConfig {
     @Comment("Multi-server: other shards to read and the bus for network jobs.")
     private NetworkSettings network = new NetworkSettings();
 
+    @Comment("The packed archive for old events.")
+    private ArchiveSettings archive = new ArchiveSettings();
+
     /**
      * Problems that make this configuration unusable.
      *
@@ -62,6 +65,7 @@ public final class HawkeyeConfig {
         problems.addAll(rollback.problems());
         problems.addAll(purge.problems());
         problems.addAll(network.problems());
+        problems.addAll(archive.problems());
         return problems;
     }
 }
