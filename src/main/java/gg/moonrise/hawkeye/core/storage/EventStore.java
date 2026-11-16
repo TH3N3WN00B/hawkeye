@@ -70,6 +70,21 @@ public final class EventStore {
     }
 
     /**
+     * The newest id stored in a shard, hot or archived, of any server. The writer starts numbering after
+     * its slot, so a restart never reuses a slot whose ranks are already stored.
+     *
+     * @param home the shard
+     * @return the id, or 0 when the shard holds no event
+     * @throws SQLException when reading fails
+     */
+    public long newestId(@NotNull Shard home) throws SQLException {
+        Database database = home.database();
+        Sql sql = database.sql();
+        return database.read(connection -> Math.max(eventRepository.newestId(connection, sql),
+                archive.newestId(connection, sql)));
+    }
+
+    /**
      * Reads a page of events.
      *
      * @param shard       the shard

@@ -208,6 +208,22 @@ public final class SegmentRepository {
     }
 
     /**
+     * The largest id any segment holds (an index lookup on {@code last_id}).
+     *
+     * @param connection a connection
+     * @param sql        the shard's SQL context
+     * @return the id, or 0 when the archive is empty
+     * @throws SQLException when the query fails
+     */
+    public long newestId(@NotNull Connection connection, @NotNull Sql sql) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT MAX(last_id) FROM "
+                + sql.tables().segment());
+                ResultSet rows = statement.executeQuery()) {
+            return rows.next() ? rows.getLong(1) : 0;
+        }
+    }
+
+    /**
      * The number of archived events and segments.
      *
      * @param connection a connection

@@ -102,6 +102,21 @@ public final class EventRepository {
     }
 
     /**
+     * The largest id in the hot table (an index lookup on the primary key).
+     *
+     * @param connection the connection
+     * @param sql        the shard's SQL context
+     * @return the id, or 0 when the table is empty
+     * @throws SQLException when the query fails
+     */
+    public long newestId(@NotNull Connection connection, @NotNull Sql sql) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT MAX(id) FROM " + sql.tables().event());
+                ResultSet rows = statement.executeQuery()) {
+            return rows.next() ? rows.getLong(1) : 0;
+        }
+    }
+
+    /**
      * Sets or clears the rolled-back flag.
      *
      * @param connection the connection

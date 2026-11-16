@@ -237,6 +237,18 @@ public final class Archive {
         return shard.database().read(connection -> segmentRepository.totals(connection, shard.database().sql()));
     }
 
+    /**
+     * The largest id the archive holds.
+     *
+     * @param connection a connection
+     * @param sql        the shard's SQL context
+     * @return the id, or 0 when the archive is empty
+     * @throws SQLException when reading fails
+     */
+    public long newestId(@NotNull Connection connection, @NotNull Sql sql) throws SQLException {
+        return segmentRepository.newestId(connection, sql);
+    }
+
     private void insert(@NotNull Connection connection, @NotNull Sql sql, int world, long region,
             @NotNull List<EventRow> rows) throws SQLException {
         Set<Integer> actors = new HashSet<>();
