@@ -1,6 +1,7 @@
 package gg.moonrise.hawkeye.core.sql;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -11,6 +12,7 @@ import gg.moonrise.hawkeye.core.repository.ActorRepository;
 import gg.moonrise.hawkeye.core.repository.DictionaryRepository;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
 import gg.moonrise.hawkeye.core.repository.JobRepository;
+import gg.moonrise.hawkeye.core.repository.LeaseRepository;
 import gg.moonrise.hawkeye.core.repository.SegmentRepository;
 import gg.moonrise.hawkeye.core.repository.ServerRepository;
 import gg.moonrise.hawkeye.core.storage.Archive;
@@ -137,6 +139,13 @@ public class ServerDatabaseIntegrationTest {
                 "survival", "Alex", "v=1", 1));
         boolean claimed = database.read(connection -> jobs.claim(connection, database.sql(), job, 2));
         assertTrue(claimed);
+
+        LeaseRepository leases = new LeaseRepository();
+        assertTrue(leases.tryAcquire(database, "archive", "survival", 1_000, 10_000));
+        assertTrue(leases.tryAcquire(database, "archive", "survival", 2_000, 10_000), "the holder renews");
+        assertFalse(leases.tryAcquire(database, "archive", "creative", 3_000, 10_000), "another server waits");
+        assertTrue(leases.tryAcquire(database, "archive", "creative", 13_000, 10_000), "an expired lease moves");
+        assertTrue(leases.release(database, "archive", "creative"));
     }
 
     private static List<Long> ids(List<StoredEvent> events) {

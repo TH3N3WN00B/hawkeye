@@ -43,6 +43,14 @@ update them in the same change when you learn something durable or an entry stop
   `pg_ctl`) and MariaDB from `ch.vorburger.mariaDB4j:mariaDB4j-db-linux64` (`scripts/mariadb-install-db`
   and `bin/mariadbd`), unpacked under `~/.cache` and started on local ports. Verified 2026-11-16 on
   MariaDB 11.4.5 and PostgreSQL 18.6.
+- `scripts/smoke/run.py <server-dir> <scenario>` boots a real Paper server from the console, runs a
+  scenario (`command => expected output`) and fails on a missing reply or a Hawkeye error in the log.
+  `scripts/smoke/tnt-rollback.txt` records TNT damage, then looks it up, rolls it back, restores and
+  undoes it, checking the world with vanilla `/execute if block`; it needs a flat overworld. The
+  server folder holds `paper.jar` (from `https://fill.papermc.io/v3/projects/paper/versions/26.3/builds`),
+  `eula.txt` and `plugins/Hawkeye.jar`. Verified 2026-11-16 on Paper 26.3 build 253: the loader
+  resolved every library, Cloud registered all command groups through Brigadier, and the scenario
+  passed.
 - MariaDB Connector/J reports matched rows, not inserted rows, for `ON DUPLICATE KEY UPDATE`, so an
   insert's update count is not "rows inserted" on MySQL; nothing relies on it.
 - Heavy builds on this host go through `rtk proxy t3-build ./gradlew ...` (shared build slots).

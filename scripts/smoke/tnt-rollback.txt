@@ -1,0 +1,20 @@
+# TNT damage is recorded under #tnt, looked up, rolled back, restored and undone on a real server.
+# Expects a flat overworld (level-type=minecraft:flat) so y -60..-57 is above the grass layer.
+hawkeye status => connected
+hawkeye purge t:1s => Purge done
+forceload add 0 0
+fill 0 -60 0 6 -57 6 minecraft:stone
+execute if block 3 -57 3 minecraft:stone => Test passed
+summon minecraft:tnt 3 -56 3 {fuse:1}
+execute if block 3 -57 3 minecraft:stone => Test failed
+hawkeye lookup u:#tnt t:1h r:#world #count => Matching events:
+hawkeye lookup u:#tnt t:1h r:#world => #tnt broke stone
+hawkeye rollback u:#tnt t:1h r:#world => Finished the rollback
+execute if block 3 -57 3 minecraft:stone => Test passed
+hawkeye restore u:#tnt t:1h r:#world => Finished the restore
+execute if block 3 -57 3 minecraft:stone => Test failed
+hawkeye undo => Finished the rollback
+execute if block 3 -57 3 minecraft:stone => Test passed
+hawkeye lookup t:yesterday => is not a time
+hawkeye network => online
+hawkeye reload => reloaded
