@@ -66,7 +66,8 @@ import org.junit.jupiter.api.Test;
  * the default, packs every {@code archive.segment-events} events straight into a segment on a thread
  * pool; {@code live} writes every event to the hot table and lets the archiver pack it, as a server
  * does: the same segments, byte for byte, at about a tenth of the speed), {@code HAWKEYE_REPLAY_THREADS}
- * and {@code HAWKEYE_REPLAY_KEEP=1} to keep the database. Give the test JVM memory with
+ * {@code HAWKEYE_REPLAY_KEEP=1} to keep the database and {@code HAWKEYE_REPLAY_RESUME=1} to add the
+ * chosen days to a kept database (a long history in several runs). Give the test JVM memory with
  * {@code HAWKEYE_TEST_HEAP=3g}, and point {@code SQLITE_TMPDIR} at a disk.
  */
 public class ReplayBenchmark {
@@ -89,14 +90,19 @@ public class ReplayBenchmark {
                 "HAWKEYE_REPLAY_DUMP and HAWKEYE_BENCH_DIR are not set");
         folder = Path.of(directory);
         Files.createDirectories(folder);
-        Files.deleteIfExists(folder.resolve("replay-progress.log"));
+        if (!"1".equals(System.getenv("HAWKEYE_REPLAY_RESUME"))) {
+            Files.deleteIfExists(folder.resolve("replay-progress.log"));
+        }
         ReferenceDump dump = new ReferenceDump(Path.of(export));
         List<Integer> days = days(dump);
         boolean live = "live".equalsIgnoreCase(System.getenv("HAWKEYE_REPLAY_MODE"));
         int threads = Integer.parseInt(System.getenv().getOrDefault("HAWKEYE_REPLAY_THREADS",
                 String.valueOf(Math.max(1, Runtime.getRuntime().availableProcessors() - 1))));
+        boolean resume = "1".equals(System.getenv("HAWKEYE_REPLAY_RESUME"));
         Path runFolder = folder.resolve("replay-run");
-        deleteFolder(runFolder);
+        if (!resume) {
+            deleteFolder(runFolder);
+        }
         Files.createDirectories(runFolder);
 
         Map<String, Object> report = new LinkedHashMap<>();
@@ -111,6 +117,7 @@ public class ReplayBenchmark {
             Archive archive = new Archive(new EventRepository(), new SegmentRepository(), new SegmentCache());
             EventStore store = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
                     new ActorRepository()), archive);
+            long before = stored(harness.database());
             Profile profile = new Profile();
             ReferenceEvents events = new ReferenceEvents(dump);
             long began = System.nanoTime();
@@ -159,14 +166,13 @@ public class ReplayBenchmark {
                 }
             }
             Database database = harness.database();
-            report.put("events", written);
+            report.put("events", before + written);
+            report.put("eventsThisRun", written);
             report.put("rolledBackRowsNotReplayed", events.rolledBack());
             report.put("lastEvent", Instant.ofEpochMilli(lastMillis).toString());
             report.put("totalSeconds", seconds(began));
             report.put("storeSeconds", storeNanos / 1e9);
-            assertEquals(written, count(database, "SELECT COUNT(*) FROM " + database.tables().event())
-                    + count(database, "SELECT COALESCE(SUM(events), 0) FROM " + database.tables().segment()),
-                    "every event is stored exactly once");
+            assertEquals(before + written, stored(database), "every event is stored exactly once");
             report.put("file", fileStats(database, runFolder));
             report.put("tables", tableBytes(database));
             report.put("segments", count(database, "SELECT COUNT(*) FROM " + database.tables().segment()));
@@ -386,6 +392,11 @@ public class ReplayBenchmark {
             return null;
         });
         return result;
+    }
+
+    private static long stored(@NotNull Database database) throws SQLException {
+        return count(database, "SELECT COUNT(*) FROM " + database.tables().event())
+                + count(database, "SELECT COALESCE(SUM(events), 0) FROM " + database.tables().segment());
     }
 
     private static long count(@NotNull Database database, @NotNull String sql) throws SQLException {
