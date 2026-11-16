@@ -12,6 +12,32 @@ update them in the same change when you learn something durable or an entry stop
 - `src/main/resources/paper-plugin.yml` is hand-written; `PaperPluginYmlTest` and `verifyPluginJar`
   keep it in step with the classes.
 
+## Hawkeye facts (verified 2026-11-16)
+
+- The design contract (storage format, threading, multi-server protocol) is `docs/architecture.md`;
+  change it in the same commit as the code.
+- ConfigLib 4.8.1 fills a record component that is missing from the file with `null`/`0`, not with
+  the record's no-argument defaults, so a key added in a later version would break every existing
+  file. Settings are `@Configuration` classes with field initializers, read through Lombok
+  `@Getter @Accessors(fluent = true)` (`config.storage().type()`), plus `@EqualsAndHashCode` so a
+  reload can tell which restart-only sections changed.
+- PostgreSQL identities and InnoDB auto-increments consume an id even for an insert that conflicts
+  (`ON CONFLICT DO NOTHING`, `ON DUPLICATE KEY UPDATE`). Dictionary interning and server registration
+  therefore select first and insert only what is missing: node ids end at 1023.
+- MySQL's `>>` is a logical 64-bit shift and SQLite/PostgreSQL's is arithmetic, so SQL on packed
+  positions only extracts low bits (`(pos >> n) & mask`), which agree on all three.
+- SQLite creates its database file but not missing folders; `DatabaseFactory` creates them.
+- SQLite query plans for the lookup shapes are asserted in `EventSqlPlanTest` (area: index range scans
+  on `(world, pos)`; one block: one seek; whole worlds: the primary key, because `(world + 0)` keeps
+  the position index out).
+- Storage footprint on SQLite (`StorageFootprintTest`, 60,000 random block events): hot rows about
+  73 bytes per event, archived about 12, CoreProtect's relational `co_block` layout about 80. Random
+  positions and types are the worst case for the archive; real builds compress better.
+- This Linux build host has no JDK 25 and no Docker. `settings.gradle.kts` applies the foojay toolchain
+  resolver, which downloaded Temurin 25 into `~/.gradle/jdks`. MySQL and PostgreSQL are not available
+  for tests here; SQLite runs for real in every storage test.
+- Heavy builds on this host go through `rtk proxy t3-build ./gradlew ...` (shared build slots).
+
 ## Owner preferences
 
 - Commit after every logical, working unit and push right after. Merge `origin/main`, never rebase or

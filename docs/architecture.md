@@ -12,6 +12,7 @@ commit as the code.
 |---|---|---|
 | Code structure | Static state (`ConfigHandler` has 132 public statics), classes of 1,000-3,900 lines, hand-parsed commands, raw `Thread`s | Spring beans with constructor injection, layered packages checked by ArchUnit, Cloud 2 annotation commands, owned executors, no class near 1,000 lines |
 | Row size | `time int` (overflows 2038), separate x/y/z, `rowid`, 3+ B-tree indexes per table | One 64-bit id carries time, server and sequence; one 64-bit packed position; two secondary indexes |
+| Old data | The fork packs cold SQLite data into segments; MySQL and the other engines keep full rows | Every engine archives events older than a day into deflated per-region column segments: about 12 bytes per block event on SQLite against about 80 for CoreProtect's relational layout (`StorageFootprintTest`) |
 | Storage engines | Four engines and four query builders (DuckDB, ClickHouse, SQLite segments, MySQL) | One schema, one query builder, three dialects (SQLite, MySQL/MariaDB, PostgreSQL) behind a small `Dialect` seam |
 | Multi-server | One writer per database; id allocation is an in-memory counter that races under several writers | Ids are generated locally and never collide; dictionaries are insert-or-get against unique keys; any number of servers share one database |
 | Sharding | None | Each server writes to its home shard; network lookups fan out to every shard and merge by id |
@@ -68,6 +69,8 @@ All tables carry the configured prefix (default `hawkeye_`).
 | `event` | `id BIGINT`, `world INT`, `pos BIGINT`, `actor INT`, `action SMALLINT`, `subject INT`, `secondary INT NULL`, `amount INT NULL`, `flags SMALLINT`, `data BLOB NULL` | PK `id`, index `(world, pos)`, index `(actor)` |
 | `job` | network jobs (see below) | PK `id`, index `(target, status)` |
 | `lease` | `name`, `holder`, `expires` | PK `name` |
+| `segment` | `id`, `world`, `region`, `first_id`, `last_id`, `events`, `body` | PK `id`, index `(world, region, last_id)`, index `(last_id)` |
+| `segment_actor` | `actor`, `segment` | PK `(actor, segment)` |
 
 - **Dictionaries.** Worlds, actors and types are interned to small integers. `type` holds every
   namespaced value an event refers to: block states (`minecraft:oak_stairs[facing=east,...]`), item
@@ -90,6 +93,22 @@ All tables carry the configured prefix (default `hawkeye_`).
   commands), sign sides (before and after), an item (Paper's version-safe item bytes, only when the
   item has components), an inventory snapshot (a broken container), or an entity (Paper's
   version-safe entity bytes, for kill rollback). Large text payloads are deflated.
+
+### Archive
+
+The `event` table is the hot tier: every row individually indexed, cheap to insert and to flag.
+Events older than `archive.after-hours` move to the cold tier, `segment`, in passes of
+`archive.batch-events` (one transaction each, under the `archive` lease so one server per shard does
+it). A pass groups its events by world and region (8 x 8 chunks) and packs each group into one
+segment (`core.repository.SegmentCodec`): sorted by id, stored column by column (time deltas,
+sequences, x/z/y deltas inside the region, indexes into per-segment palettes of actors and types,
+actions, amounts, flags, payloads) and deflated. `segment_actor` lists the actors of each segment.
+
+Reads merge both tiers (`core.storage.Archive`): candidate segments are found by region range (the
+same chunk-column trick as positions), world, actor and id range, decoded, and filtered with
+`EventFilter.matches`, the Java twin of the SQL predicate (`EventFilterTest` checks they agree). A
+newest-first page stops reading segments once none can beat the page's worst event. Rolling back an
+archived event rewrites its segment; a purge drops whole segments or rewrites their newer part.
 
 ### Indexes and query shapes
 
@@ -135,5 +154,5 @@ Every executor is owned by a bean with a `Disableable` shutdown path. Shutdown f
   pub/sub. The database stays the source of truth: every server also polls its pending jobs every
   `network.poll-interval`, so a lost message only costs latency, and `bus: none` works with polling
   alone.
-- **Leases.** Maintenance that must run once per shard (auto-purge) takes the `lease` row; the
-  holder renews it, and another server takes over when it expires.
+- **Leases.** Maintenance that must run once per shard (auto-purge, archiving) takes the `lease`
+  row; the holder renews it, and another server takes over when it expires.
