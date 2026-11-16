@@ -68,6 +68,33 @@ public class PistonMovesTest {
         assertTrue(PistonMoves.plan(List.of(), BlockFace.UP).isEmpty());
     }
 
+    @Test
+    public void aDestroyedBlockIsNotMovedAndItsPlaceIsFreeForTheBlockBehind() {
+        Block stone = block(1, Material.STONE);
+        Block torch = block(2, Material.TORCH);
+
+        PistonMoves.Push push = PistonMoves.push(List.of(stone, torch), BlockFace.EAST,
+                block -> block.getType() == Material.TORCH);
+
+        assertEquals(List.of(torch), push.destroyed());
+        assertEquals(1, push.moves().size());
+        PistonMoves.Move move = push.moves().getFirst();
+        assertSame(stone, move.from());
+        assertSame(torch, move.to());
+        assertTrue(move.replaced().getMaterial().isAir(), "the torch is destroyed before the stone moves");
+    }
+
+    @Test
+    public void aPushWithoutDestroyedBlocksIsThePlan() {
+        Block near = block(1, Material.STONE);
+        Block far = block(2, Material.DIRT);
+
+        PistonMoves.Push push = PistonMoves.push(List.of(near, far), BlockFace.EAST, block -> false);
+
+        assertTrue(push.destroyed().isEmpty());
+        assertEquals(PistonMoves.plan(List.of(near, far), BlockFace.EAST), push.moves());
+    }
+
     private Block block(int x, Material material) {
         Block block = world.getBlockAt(x, 64, 0);
         block.setType(material);

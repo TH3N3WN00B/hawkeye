@@ -8,17 +8,21 @@ import lombok.RequiredArgsConstructor;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.BlockData;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Block recording shared by the listeners: a removal with the block's contents and what it leaves
  * behind, and a classified change ({@link BlockChanges#classify}). Runs on the event's thread, before
- * the world applies the change, like {@link EventRecorder}.
+ * the world applies the change, like {@link EventRecorder}. Every recorded removal is also remembered
+ * around the block ({@link CauseTracker#rememberAround}), so the torches, signs and plants that fall
+ * off because of it are recorded under the same actor.
  */
 @SpringComponent
 @RequiredArgsConstructor
 public final class BlockCapture {
 
     private final @NotNull EventRecorder recorder;
+    private final @NotNull CauseTracker causes;
 
     /**
      * Records the block's current state as broken: with its container items or sign text, and air (or
@@ -34,6 +38,7 @@ public final class BlockCapture {
         }
         recorder.record(Action.BLOCK_BREAK, actor, block.getWorld(), block.getX(), block.getY(), block.getZ(),
                 before.getAsString(), BlockChanges.remains(before), 0, BlockContents.of(block).orElse(null));
+        removed(actor, block);
     }
 
     /**
@@ -46,9 +51,34 @@ public final class BlockCapture {
      */
     public void changed(@NotNull Actor actor, @NotNull Block block, @NotNull BlockData before,
             @NotNull BlockData after) {
-        BlockChanges.classify(before, after).ifPresent(change -> {
-            Payload payload = change.action() == Action.BLOCK_BREAK ? BlockContents.of(block).orElse(null) : null;
-            recorder.block(change.action(), actor, block, change.subject(), change.secondary(), payload);
-        });
+        BlockChanges.classify(before, after).ifPresent(change -> record(actor, block, change,
+                change.action() == Action.BLOCK_BREAK ? BlockContents.of(block).orElse(null) : null));
+    }
+
+    /**
+     * Records a change the world has already applied (a state read again a tick later), so no contents
+     * can be read any more.
+     *
+     * @param actor  who or what changed it
+     * @param block  the block
+     * @param change the classified change
+     */
+    public void applied(@NotNull Actor actor, @NotNull Block block, @NotNull BlockChange change) {
+        record(actor, block, change, null);
+    }
+
+    private void record(@NotNull Actor actor, @NotNull Block block, @NotNull BlockChange change,
+            @Nullable Payload payload) {
+        recorder.block(change.action(), actor, block, change.subject(), change.secondary(), payload);
+        if (change.action() == Action.BLOCK_BREAK) {
+            removed(actor, block);
+        }
+    }
+
+    private void removed(@NotNull Actor actor, @NotNull Block block) {
+        // Remembering "unknown" would only overwrite a better cause: a miss falls back to it anyway.
+        if (!actor.equals(Actors.PHYSICS)) {
+            causes.rememberAround(block, actor);
+        }
     }
 }

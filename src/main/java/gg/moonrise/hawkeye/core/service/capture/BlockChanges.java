@@ -10,8 +10,9 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * Classifies block changes that have no action of their own (entities, nature, buckets): a change to
- * air is a break, a change from air or a replaceable block (water, lava, short grass, snow, ...) is a
- * place, anything else is a change in place.
+ * air, or to the water a waterlogged or underwater block leaves behind, is a break; a change from air
+ * or a replaceable block (water, lava, short grass, snow, ...) is a place; anything else is a change in
+ * place.
  */
 public final class BlockChanges {
 
@@ -34,7 +35,7 @@ public final class BlockChanges {
         if (before.equals(after) || (from.isAir() && to.isAir())) {
             return Optional.empty();
         }
-        if (to.isAir()) {
+        if (to.isAir() || (to == Material.WATER && WATER.equals(remains(before)))) {
             return Optional.of(new BlockChange(Action.BLOCK_BREAK, before, after));
         }
         if (isEmpty(from)) {

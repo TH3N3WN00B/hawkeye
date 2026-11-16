@@ -3,9 +3,11 @@ package gg.moonrise.hawkeye.listener.block;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import gg.moonrise.hawkeye.core.service.capture.CauseTracker;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
 import gg.moonrise.hawkeye.listener.Recorded;
+import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import java.util.List;
 import org.bukkit.Material;
@@ -28,13 +30,14 @@ import org.mockbukkit.mockbukkit.entity.PlayerMock;
 public class BlockPlaceListenerTest {
 
     private ServerMock server;
+    private TestHawkeyePlugin plugin;
     private World world;
     private PlayerMock player;
 
     @BeforeEach
     public void setUp() {
         server = MockBukkit.mock();
-        TestPlugins.load();
+        plugin = TestPlugins.load();
         world = server.addSimpleWorld("world");
         player = server.addPlayer("Alex");
     }
@@ -88,6 +91,42 @@ public class BlockPlaceListenerTest {
                 new ItemStack(Material.STONE), player, false, EquipmentSlot.HAND));
 
         assertTrue(Recorded.events(Action.BLOCK_PLACE).isEmpty());
+    }
+
+    @Test
+    public void aPlacedBlockRemembersItsPlayerAndPlacedTntItsPlacer() {
+        Block sponge = world.getBlockAt(0, 64, 0);
+        BlockState air = sponge.getState();
+        sponge.setType(Material.SPONGE);
+        place(sponge, air, Material.SPONGE);
+        Block tnt = world.getBlockAt(2, 64, 0);
+        BlockState before = tnt.getState();
+        tnt.setType(Material.TNT);
+        place(tnt, before, Material.TNT);
+
+        CauseTracker causes = TestPlugins.bean(CauseTracker.class);
+        assertEquals("Alex", causes.recentCause(sponge).orElseThrow().name());
+        assertTrue(causes.takeTnt(sponge).isEmpty());
+        assertEquals("Alex", causes.takeTnt(tnt).orElseThrow().name());
+        assertTrue(causes.takeTnt(tnt).isEmpty(), "taking forgets");
+    }
+
+    @Test
+    public void aPlacementIsRememberedEvenWhenPlacesAreNotRecorded() {
+        TestPlugins.writeConfig(plugin, "logging:\n  block-place: false\n");
+        TestPlugins.reload();
+        Block tnt = world.getBlockAt(0, 64, 0);
+        BlockState before = tnt.getState();
+        tnt.setType(Material.TNT);
+        place(tnt, before, Material.TNT);
+
+        assertTrue(Recorded.events(Action.BLOCK_PLACE).isEmpty());
+        assertEquals("Alex", TestPlugins.bean(CauseTracker.class).takeTnt(tnt).orElseThrow().name());
+    }
+
+    private void place(Block block, BlockState replaced, Material item) {
+        server.getPluginManager().callEvent(new BlockPlaceEvent(block, replaced, block.getRelative(BlockFace.DOWN),
+                new ItemStack(item), player, true, EquipmentSlot.HAND));
     }
 
     private static Bed bed(Bed.Part part) {
