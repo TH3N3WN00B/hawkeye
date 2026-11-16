@@ -60,6 +60,18 @@ public class BlockChangesTest {
     }
 
     @Test
+    public void aWaterloggedOrUnderwaterBlockThatBecomesWaterIsABreak() {
+        Stairs stairs = (Stairs) Material.OAK_STAIRS.createBlockData();
+        stairs.setWaterlogged(true);
+        BlockData water = Material.WATER.createBlockData();
+        assertEquals(Action.BLOCK_BREAK, BlockChanges.classify(stairs, water).orElseThrow().action());
+        assertEquals(Action.BLOCK_BREAK, BlockChanges.classify(Material.SEAGRASS.createBlockData(), water)
+                .orElseThrow().action());
+        assertEquals(Action.BLOCK_PLACE, BlockChanges.classify(Material.SHORT_GRASS.createBlockData(), water)
+                .orElseThrow().action(), "a dry plant flooded is water placed");
+    }
+
+    @Test
     public void anUnchangedStateOrAirToAirIsNothing() {
         assertTrue(BlockChanges.classify(Material.STONE.createBlockData(), Material.STONE.createBlockData()).isEmpty());
         assertTrue(BlockChanges.classify(Material.CAVE_AIR.createBlockData(), Material.AIR.createBlockData())
