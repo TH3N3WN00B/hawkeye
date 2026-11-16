@@ -1,0 +1,53 @@
+package gg.moonrise.hawkeye.core.service.capture;
+
+import java.util.regex.Pattern;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import org.jetbrains.annotations.NotNull;
+
+/**
+ * Text recorded from components (kick reasons, book pages) in the one-line form a lookup result
+ * shows: plain text, line breaks folded into spaces, optionally cut to a length.
+ */
+public final class PlainText {
+
+    private static final Pattern LINE_BREAKS = Pattern.compile("\\s*\\R\\s*");
+
+    private PlainText() {
+    }
+
+    /**
+     * The plain text of a component on one line.
+     *
+     * @param component the component
+     * @return its text, each line break (with the spaces around it) replaced by one space, trimmed
+     */
+    public static @NotNull String oneLine(@NotNull Component component) {
+        return oneLine(PlainTextComponentSerializer.plainText().serialize(component));
+    }
+
+    /**
+     * A text on one line.
+     *
+     * @param text the text
+     * @return the text, each line break (with the spaces around it) replaced by one space, trimmed
+     */
+    public static @NotNull String oneLine(@NotNull String text) {
+        return LINE_BREAKS.matcher(text).replaceAll(" ").strip();
+    }
+
+    /**
+     * A text cut to a length, never between the two halves of a surrogate pair.
+     *
+     * @param text the text
+     * @param max  the most characters to keep
+     * @return the text, or its first {@code max} characters (one fewer when that would split a pair)
+     */
+    public static @NotNull String capped(@NotNull String text, int max) {
+        if (text.length() <= max) {
+            return text;
+        }
+        int end = max > 0 && Character.isHighSurrogate(text.charAt(max - 1)) ? max - 1 : max;
+        return text.substring(0, end);
+    }
+}
