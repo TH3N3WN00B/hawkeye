@@ -82,7 +82,7 @@ public class InteractionListenerTest {
         Block landing = world.getBlockAt(5, 66, -3);
         server.getPluginManager().callEvent(new BlockFromToEvent(egg, landing));
 
-        List<StoredEvent> events = Recorded.events(Action.BLOCK_BREAK, Action.BLOCK_PLACE);
+        List<StoredEvent> events = Recorded.byX(Action.BLOCK_BREAK, Action.BLOCK_PLACE);
         assertEquals(2, events.size(), events.toString());
         assertTrue(events.stream().allMatch(event -> event.actor().name().equals("Alex")));
         assertEquals(Action.BLOCK_BREAK, events.get(0).action());

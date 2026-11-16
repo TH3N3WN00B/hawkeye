@@ -6,14 +6,18 @@ import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
 import gg.moonrise.hawkeye.core.storage.EventStore;
 import gg.moonrise.hawkeye.core.storage.StorageManager;
 import gg.moonrise.hawkeye.core.storage.StorageState;
+import gg.moonrise.hawkeye.core.time.EventClock;
 import gg.moonrise.hawkeye.entity.event.PendingEvent;
+import gg.moonrise.hawkeye.util.EventIds;
 import gg.moonrise.moss.spring.Disableable;
 import gg.moonrise.moss.spring.Enableable;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.sql.SQLException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -30,10 +34,19 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * The single writer thread. It sleeps until a batch is full, the flush interval passes or someone
- * asks for a flush, then writes everything queued in batches of {@code writer.batch-size}. A failed
- * batch is kept and retried with back-off (the queue keeps accepting events up to its capacity), so
- * a database restart loses nothing. On disable it drains the queue for up to
- * {@code writer.shutdown-timeout-seconds} and spools the rest to disk for the next start.
+ * asks for a flush, then writes what is ready in batches of {@code writer.batch-size}.
+ *
+ * <p>Captured events pass through an {@link IdAssigner} first, which gives every event of a second
+ * that second and its rank in the fixed order the archive reproduces (docs/architecture.md, "Event
+ * id"). A second is written once it has closed; a flush request and shutdown take every second at
+ * once, so nothing captured before them is held back. A failed batch already carries its final stamps
+ * and is retried unchanged with back-off (the queue keeps accepting events up to its capacity), so a
+ * database restart loses nothing and a retry writes the same ids. On disable it drains the queue for
+ * up to {@code writer.shutdown-timeout-seconds} and spools the rest, numbered, to disk; the next start
+ * writes the spool as it is ({@link SpoolReplay}) before any new event.
+ *
+ * <p>Before the first event is numbered, the assigner's floor is set past the newest slot already in
+ * the home database or the spool, so a restart or a clock that stepped back never reuses a rank.
  *
  * <p>{@link #flush()} gives read-your-writes: lookups call it first, so they see every event captured
  * before the command.
@@ -45,10 +58,15 @@ public final class EventWriter implements Enableable, Disableable {
 
     private static final long MIN_RETRY_MILLIS = 250;
 
+    /** The fewest events the assigner may hold before the writer stops draining the queue into it. */
+    private static final int MIN_HELD = 32_768;
+
     private final @NotNull EventQueue queue;
     private final @NotNull StorageManager storage;
     private final @NotNull EventStore store;
     private final @NotNull EventSpool spool;
+    private final @NotNull SpoolReplay spoolReplay;
+    private final @NotNull EventClock clock;
     private final @NotNull HawkeyeConfigProvider configProvider;
 
     private final ExecutorService thread = Executors.newSingleThreadExecutor(HawkeyeExecutors.threads("Hawkeye-Writer"));
@@ -60,10 +78,14 @@ public final class EventWriter implements Enableable, Disableable {
     private final AtomicLong lastFlushMillis = new AtomicLong();
     private final AtomicReference<String> lastError = new AtomicReference<>("");
     private final CompletableFuture<Void> stopped = new CompletableFuture<>();
+    private final IdAssigner assigner = new IdAssigner();
+    /** Events with final stamps, waiting to be written; the head is the batch being retried. */
+    private final ArrayDeque<PendingEvent> numbered = new ArrayDeque<>();
     private volatile boolean running;
-    private volatile List<PendingEvent> retry = List.of();
+    private volatile int numberedCount;
     private int consecutiveFailures;
     private boolean spoolReplayed;
+    private boolean floorSet;
 
     @Override
     public void onEnable() {
@@ -85,7 +107,7 @@ public final class EventWriter implements Enableable, Disableable {
     }
 
     /**
-     * Writes everything queued so far.
+     * Writes everything queued so far, including events of the current second.
      *
      * @return completes when every event queued before the call is written, or the attempt failed
      *         (the events then stay queued and the caller reads what is already stored)
@@ -106,8 +128,8 @@ public final class EventWriter implements Enableable, Disableable {
      * @return a snapshot
      */
     public @NotNull WriterStats stats() {
-        return new WriterStats(queue.size() + retry.size(), written.get(), batches.get(), queue.dropped(),
-                spooled.get(), failures.get(), lastFlushMillis.get(), lastError.get());
+        return new WriterStats(queue.size() + assigner.pending() + numberedCount, written.get(), batches.get(),
+                queue.dropped(), spooled.get(), failures.get(), lastFlushMillis.get(), lastError.get());
     }
 
     private void run() {
@@ -118,7 +140,7 @@ public final class EventWriter implements Enableable, Disableable {
                     break;
                 }
                 List<CompletableFuture<Void>> requests = takeRequests();
-                writeAvailable();
+                writeAvailable(!requests.isEmpty());
                 release(requests);
             }
         } catch (InterruptedException e) {
@@ -132,27 +154,98 @@ public final class EventWriter implements Enableable, Disableable {
         }
     }
 
-    /** Writes the retry batch, then the queue, until it is empty or a batch fails. */
-    private void writeAvailable() throws InterruptedException {
+    /**
+     * Writes the spool, then every numbered event, until nothing is ready or a batch fails.
+     *
+     * @param all {@code true} to number open seconds too (a flush request)
+     */
+    private void writeAvailable(boolean all) throws InterruptedException {
         Optional<StorageState.Ready> ready = storage.readyNow();
         if (ready.isEmpty()) {
             return;
         }
         if (!spoolReplayed) {
-            spoolReplayed = replaySpool(ready.get());
-        }
-        while (running) {
-            List<PendingEvent> batch = retry.isEmpty() ? queue.drain(settings().batchSize()) : retry;
-            if (batch.isEmpty()) {
-                return;
-            }
-            if (!write(ready.get(), batch)) {
-                retry = batch;
+            spoolReplayed = spoolReplay.replay(batch -> write(ready.get(), batch), settings().batchSize());
+            if (!spoolReplayed) {
                 backOff();
                 return;
             }
-            retry = List.of();
         }
+        if (!floorSet && !establishFloor(ready.get())) {
+            backOff();
+            return;
+        }
+        while (running) {
+            if (numbered.isEmpty()) {
+                boolean full = fill();
+                number(assigner.take(clock.millis(), all || full));
+            }
+            if (numbered.isEmpty()) {
+                return;
+            }
+            if (!writeNumbered(ready.get())) {
+                backOff();
+                return;
+            }
+        }
+    }
+
+    /**
+     * Drains the queue into the assigner while it holds fewer than its limit.
+     *
+     * @return {@code true} when the assigner is full, so open seconds must be taken to make room
+     */
+    private boolean fill() {
+        int limit = Math.max(16 * settings().batchSize(), MIN_HELD);
+        int room = limit - assigner.pending();
+        if (room > 0) {
+            assigner.add(queue.drain(room));
+        }
+        return assigner.pending() >= limit;
+    }
+
+    private void number(@NotNull List<PendingEvent> events) {
+        numbered.addAll(events);
+        numberedCount = numbered.size();
+    }
+
+    /**
+     * Sets the assigner's floor past the newest slot already used: in the home database or the spool.
+     *
+     * @return {@code false} when the database could not be read
+     */
+    private boolean establishFloor(@NotNull StorageState.Ready ready) {
+        long newestId;
+        try {
+            newestId = store.newestId(ready.home());
+        } catch (SQLException | RuntimeException e) {
+            failed("Could not read the newest stored id, keeping captured events queued", e);
+            return false;
+        }
+        long newestSlot = newestId == 0 ? -1 : EventIds.slot(newestId);
+        assigner.floor(Math.max(newestSlot, spoolReplay.newestSlot()) + 1);
+        floorSet = true;
+        return true;
+    }
+
+    /** Writes the numbered events in batches; a failed batch stays at the head to be retried unchanged. */
+    private boolean writeNumbered(@NotNull StorageState.Ready ready) {
+        while (!numbered.isEmpty()) {
+            int size = Math.min(settings().batchSize(), numbered.size());
+            List<PendingEvent> batch = new ArrayList<>(size);
+            Iterator<PendingEvent> events = numbered.iterator();
+            while (batch.size() < size) {
+                batch.add(events.next());
+            }
+            if (!write(ready, batch)) {
+                return false;
+            }
+            for (int i = 0; i < size; i++) {
+                numbered.removeFirst();
+            }
+            numberedCount = numbered.size();
+        }
+        return true;
     }
 
     private boolean write(@NotNull StorageState.Ready ready, @NotNull List<PendingEvent> batch) {
@@ -165,15 +258,18 @@ public final class EventWriter implements Enableable, Disableable {
             consecutiveFailures = 0;
             return true;
         } catch (SQLException | RuntimeException e) {
-            failures.incrementAndGet();
-            consecutiveFailures++;
-            String reason = Objects.requireNonNullElse(e.getMessage(), e.getClass().getSimpleName());
-            lastError.set(reason);
-            if (consecutiveFailures == 1 || consecutiveFailures % 20 == 0) {
-                log.warn("Could not write {} event(s) (attempt {}), keeping them queued: {}", batch.size(),
-                        consecutiveFailures, reason);
-            }
+            failed("Could not write " + batch.size() + " event(s), keeping them queued", e);
             return false;
+        }
+    }
+
+    private void failed(@NotNull String what, @NotNull Exception e) {
+        failures.incrementAndGet();
+        consecutiveFailures++;
+        String reason = Objects.requireNonNullElse(e.getMessage(), e.getClass().getSimpleName());
+        lastError.set(reason);
+        if (consecutiveFailures == 1 || consecutiveFailures % 20 == 0) {
+            log.warn("{} (attempt {}): {}", what, consecutiveFailures, reason);
         }
     }
 
@@ -185,70 +281,31 @@ public final class EventWriter implements Enableable, Disableable {
         queue.awaitWork(delay);
     }
 
-    private boolean replaySpool(@NotNull StorageState.Ready ready) {
-        List<Path> files;
-        try {
-            files = spool.files();
-        } catch (IOException e) {
-            log.warn("Could not list the spool folder", e);
-            return true;
-        }
-        for (Path file : files) {
-            List<PendingEvent> events;
-            try {
-                events = spool.read(file);
-            } catch (IOException | RuntimeException e) {
-                log.error("Spool file {} cannot be read; moving it aside", file.getFileName(), e);
-                quarantine(file);
-                continue;
-            }
-            int batchSize = settings().batchSize();
-            for (int from = 0; from < events.size(); from += batchSize) {
-                if (!write(ready, events.subList(from, Math.min(events.size(), from + batchSize)))) {
-                    return false;
-                }
-            }
-            try {
-                spool.delete(file);
-                log.info("Wrote {} spooled event(s) from {}", events.size(), file.getFileName());
-            } catch (IOException e) {
-                log.warn("Could not delete replayed spool file {}", file.getFileName(), e);
-            }
-        }
-        return true;
-    }
-
-    private void quarantine(@NotNull Path file) {
-        try {
-            spool.quarantine(file);
-        } catch (IOException e) {
-            log.error("Could not move spool file {} aside", file.getFileName(), e);
-        }
-    }
-
     private void shutdownDrain() {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(settings().shutdownTimeoutSeconds());
-        List<PendingEvent> left = new ArrayList<>(retry);
-        retry = List.of();
         Optional<StorageState.Ready> ready = storage.readyNow();
         boolean healthy = ready.isPresent();
-        if (healthy && !left.isEmpty()) {
-            healthy = write(ready.get(), left);
-            if (healthy) {
-                left.clear();
-            }
+        if (!floorSet) {
+            // The spool files not replayed yet hold ranks too; what this run spools must come after them.
+            spoolReplay.scanNewestSlot();
+            healthy = healthy && establishFloor(ready.get());
+            assigner.floor(spoolReplay.newestSlot() + 1);
         }
         while (healthy && System.nanoTime() < deadline) {
-            List<PendingEvent> batch = queue.drain(settings().batchSize());
-            if (batch.isEmpty()) {
+            if (numbered.isEmpty()) {
+                fill();
+                number(assigner.take(clock.millis(), true));
+            }
+            if (numbered.isEmpty()) {
                 break;
             }
-            if (!write(ready.get(), batch)) {
-                left.addAll(batch);
-                healthy = false;
-            }
+            healthy = writeNumbered(ready.get());
         }
-        left.addAll(queue.drain(Integer.MAX_VALUE));
+        assigner.add(queue.drain(Integer.MAX_VALUE));
+        number(assigner.take(clock.millis(), true));
+        List<PendingEvent> left = new ArrayList<>(numbered);
+        numbered.clear();
+        numberedCount = 0;
         if (left.isEmpty()) {
             return;
         }

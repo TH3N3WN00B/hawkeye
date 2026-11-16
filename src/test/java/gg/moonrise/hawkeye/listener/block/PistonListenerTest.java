@@ -56,13 +56,14 @@ public class PistonListenerTest {
         Block dirt = block(2, Material.DIRT, PistonMoveReaction.MOVE);
         server.getPluginManager().callEvent(new BlockPistonExtendEvent(piston, List.of(stone, dirt), BlockFace.EAST));
 
-        List<StoredEvent> events = Recorded.events(Action.BLOCK_BREAK, Action.BLOCK_PLACE);
+        List<StoredEvent> events = Recorded.byX(Action.BLOCK_BREAK, Action.BLOCK_PLACE);
         assertEquals(4, events.size());
         assertTrue(events.stream().allMatch(event -> event.actor().name().equals("#piston")));
-        assertMove(events.get(0), Action.BLOCK_BREAK, 2, "minecraft:dirt", "minecraft:air");
-        assertMove(events.get(1), Action.BLOCK_PLACE, 3, "minecraft:dirt", "minecraft:air");
-        assertMove(events.get(2), Action.BLOCK_BREAK, 1, "minecraft:stone", "minecraft:air");
-        assertMove(events.get(3), Action.BLOCK_PLACE, 2, "minecraft:stone", "minecraft:air");
+        // At x = 2 the dirt leaves before the stone arrives: the farthest block moves first.
+        assertMove(events.get(0), Action.BLOCK_BREAK, 1, "minecraft:stone", "minecraft:air");
+        assertMove(events.get(1), Action.BLOCK_BREAK, 2, "minecraft:dirt", "minecraft:air");
+        assertMove(events.get(2), Action.BLOCK_PLACE, 2, "minecraft:stone", "minecraft:air");
+        assertMove(events.get(3), Action.BLOCK_PLACE, 3, "minecraft:dirt", "minecraft:air");
     }
 
     @Test
@@ -70,10 +71,10 @@ public class PistonListenerTest {
         Block stone = block(2, Material.STONE, PistonMoveReaction.MOVE);
         server.getPluginManager().callEvent(new BlockPistonRetractEvent(piston, List.of(stone), BlockFace.EAST));
 
-        List<StoredEvent> events = Recorded.events(Action.BLOCK_BREAK, Action.BLOCK_PLACE);
+        List<StoredEvent> events = Recorded.byX(Action.BLOCK_BREAK, Action.BLOCK_PLACE);
         assertEquals(2, events.size());
-        assertMove(events.get(0), Action.BLOCK_BREAK, 2, "minecraft:stone", "minecraft:air");
-        assertMove(events.get(1), Action.BLOCK_PLACE, 1, "minecraft:stone", "minecraft:air");
+        assertMove(events.get(0), Action.BLOCK_PLACE, 1, "minecraft:stone", "minecraft:air");
+        assertMove(events.get(1), Action.BLOCK_BREAK, 2, "minecraft:stone", "minecraft:air");
     }
 
     @Test
@@ -82,11 +83,11 @@ public class PistonListenerTest {
         Block torch = block(2, Material.TORCH, PistonMoveReaction.BREAK);
         server.getPluginManager().callEvent(new BlockPistonExtendEvent(piston, List.of(stone, torch), BlockFace.EAST));
 
-        List<StoredEvent> events = Recorded.events(Action.BLOCK_BREAK, Action.BLOCK_PLACE);
+        List<StoredEvent> events = Recorded.byX(Action.BLOCK_BREAK, Action.BLOCK_PLACE);
         assertEquals(3, events.size(), events.toString());
         assertTrue(events.stream().allMatch(event -> event.actor().name().equals("#piston")));
-        assertMove(events.get(0), Action.BLOCK_BREAK, 2, "minecraft:torch", "minecraft:air");
-        assertMove(events.get(1), Action.BLOCK_BREAK, 1, "minecraft:stone", "minecraft:air");
+        assertMove(events.get(0), Action.BLOCK_BREAK, 1, "minecraft:stone", "minecraft:air");
+        assertMove(events.get(1), Action.BLOCK_BREAK, 2, "minecraft:torch", "minecraft:air");
         assertMove(events.get(2), Action.BLOCK_PLACE, 2, "minecraft:stone", "minecraft:air");
         assertTrue(events.stream().noneMatch(event -> event.x() == 3), "no torch lands beyond the stone");
     }
@@ -98,11 +99,11 @@ public class PistonListenerTest {
         ((Sign) sign.getState()).getSide(Side.FRONT).line(0, Component.text("Hi"));
         server.getPluginManager().callEvent(new BlockPistonRetractEvent(piston, List.of(stone, sign), BlockFace.EAST));
 
-        List<StoredEvent> events = Recorded.events(Action.BLOCK_BREAK, Action.BLOCK_PLACE);
+        List<StoredEvent> events = Recorded.byX(Action.BLOCK_BREAK, Action.BLOCK_PLACE);
         assertEquals(3, events.size(), events.toString());
         assertMove(events.get(0), Action.BLOCK_BREAK, 1, sign.getBlockData().getAsString(), "minecraft:air");
         assertTrue(events.get(0).payload().orElseThrow() instanceof Payload.Sign);
-        assertMove(events.get(2), Action.BLOCK_PLACE, 1, "minecraft:stone", "minecraft:air");
+        assertMove(events.get(1), Action.BLOCK_PLACE, 1, "minecraft:stone", "minecraft:air");
     }
 
     /**

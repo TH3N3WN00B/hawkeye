@@ -60,12 +60,12 @@ public class HopperListenerTest {
         enable();
         move(HeldInventories.hopper(holder(1, Material.HOPPER)), chest);
 
-        List<StoredEvent> events = Recorded.events(Action.CONTAINER_WITHDRAW, Action.CONTAINER_DEPOSIT);
+        List<StoredEvent> events = Recorded.byX(Action.CONTAINER_WITHDRAW, Action.CONTAINER_DEPOSIT);
         assertEquals(2, events.size());
-        assertEquals(Action.CONTAINER_WITHDRAW, events.get(0).action());
-        assertEquals(1, events.get(0).x());
-        assertEquals(Action.CONTAINER_DEPOSIT, events.get(1).action());
-        assertEquals(0, events.get(1).x());
+        assertEquals(Action.CONTAINER_DEPOSIT, events.get(0).action());
+        assertEquals(0, events.get(0).x());
+        assertEquals(Action.CONTAINER_WITHDRAW, events.get(1).action());
+        assertEquals(1, events.get(1).x());
         assertTrue(events.stream().allMatch(event -> event.actor().name().equals("#hopper")
                 && event.subject().equals("minecraft:iron_ingot") && event.amount() == 1));
     }
