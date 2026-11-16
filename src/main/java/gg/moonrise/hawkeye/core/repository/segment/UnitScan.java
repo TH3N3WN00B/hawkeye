@@ -31,6 +31,11 @@ public final class UnitScan {
     private final int[] columnLengths = new int[UnitColumns.COLUMNS];
     private int[] worldIndexes;
     private long[] positions;
+    private int positionsDecoded;
+    private ByteReader[] positionReaders;
+    private long chunkX;
+    private long chunkZ;
+    private long y;
     private int[] actorIndexes;
     private int[] actions;
     private int[] subjects;
@@ -120,10 +125,81 @@ public final class UnitScan {
      * @return the positions (the array itself: do not modify)
      */
     public long @NotNull [] positions() {
+        decodePositions(rows, Integer.MAX_VALUE, Long.MAX_VALUE);
+        return positions;
+    }
+
+    /**
+     * The positions decoded so far ({@link #positionsUpTo}), without decoding more.
+     *
+     * @return the array (the array itself: do not modify); rows not decoded yet hold 0
+     */
+    public long @NotNull [] decodedPositions() {
         if (positions == null) {
-            positions = readPositions();
+            decodePositions(0, Integer.MAX_VALUE, Long.MAX_VALUE);
         }
         return positions;
+    }
+
+    /**
+     * Decodes the positions of a placed unit only up to a key: its rows are sorted by (world index,
+     * position), so no row after the first one beyond the key can be inside an area that ends there.
+     *
+     * @param world    the header world index of the key
+     * @param position the packed position of the key
+     * @return how many leading rows have a key not beyond it; their positions are in {@link #positions}'s
+     *         array, the rest are decoded when {@link #positions} is called
+     * @throws IllegalStateException when the unit is not placed
+     */
+    public int positionsUpTo(int world, long position) {
+        if (!header.unitInfo(unit).placed()) {
+            throw new IllegalStateException("unit " + unit + " is not ordered by place");
+        }
+        return decodePositions(rows, world, position);
+    }
+
+    /** Decodes positions until {@code limit} rows are done or a row's key passes (world, position). */
+    private int decodePositions(int limit, int world, long position) {
+        if (positions == null) {
+            positions = new long[rows];
+            positionReaders = new ByteReader[] {column(1), column(2), column(3), column(4)};
+            if (positionReaders[2].remaining() != rows) {
+                throw new CodecException("unit " + unit + " local column does not hold " + rows + " rows");
+            }
+        }
+        int[] worlds = world == Integer.MAX_VALUE ? null : worldIndexes();
+        for (int i = 0; i < positionsDecoded; i++) {
+            if (worlds != null && beyond(worlds[i], positions[i], world, position)) {
+                return i;
+            }
+        }
+        while (positionsDecoded < limit) {
+            int i = positionsDecoded;
+            chunkX += positionReaders[0].readZigZag();
+            chunkZ += positionReaders[1].readZigZag();
+            int local = positionReaders[2].readByte();
+            y += positionReaders[3].readZigZag();
+            if (chunkX < MIN_CHUNK || chunkX > MAX_CHUNK || chunkZ < MIN_CHUNK || chunkZ > MAX_CHUNK
+                    || y < BlockPositions.MIN_Y || y > BlockPositions.MAX_Y) {
+                throw new CodecException("position out of range in row " + (start() + i));
+            }
+            positions[i] = BlockPositions.pack((int) chunkX << 4 | local >>> 4, (int) y,
+                    (int) chunkZ << 4 | local & 15);
+            positionsDecoded++;
+            if (worlds != null && beyond(worlds[i], positions[i], world, position)) {
+                return i;
+            }
+        }
+        if (positionsDecoded == rows) {
+            for (ByteReader reader : positionReaders) {
+                finish(reader);
+            }
+        }
+        return positionsDecoded;
+    }
+
+    private static boolean beyond(int rowWorld, long rowPosition, int world, long position) {
+        return rowWorld > world || rowWorld == world && rowPosition > position;
     }
 
     /**
@@ -226,35 +302,6 @@ public final class UnitScan {
         starts[rows] = (int) at;
         hasData = present;
         dataStarts = starts;
-    }
-
-    private long @NotNull [] readPositions() {
-        ByteReader chunkXs = column(1);
-        ByteReader chunkZs = column(2);
-        ByteReader locals = column(3);
-        ByteReader ys = column(4);
-        if (locals.remaining() != rows) {
-            throw new CodecException("unit " + unit + " local column does not hold " + rows + " rows");
-        }
-        long[] out = new long[rows];
-        long chunkX = 0;
-        long chunkZ = 0;
-        long y = 0;
-        for (int i = 0; i < rows; i++) {
-            chunkX += chunkXs.readZigZag();
-            chunkZ += chunkZs.readZigZag();
-            int local = locals.readByte();
-            y += ys.readZigZag();
-            if (chunkX < MIN_CHUNK || chunkX > MAX_CHUNK || chunkZ < MIN_CHUNK || chunkZ > MAX_CHUNK
-                    || y < BlockPositions.MIN_Y || y > BlockPositions.MAX_Y) {
-                throw new CodecException("position out of range in row " + (start() + i));
-            }
-            out[i] = BlockPositions.pack((int) chunkX << 4 | local >>> 4, (int) y, (int) chunkZ << 4 | local & 15);
-        }
-        finish(chunkXs);
-        finish(chunkZs);
-        finish(ys);
-        return out;
     }
 
     private int @NotNull [] ints(int column, int bound, @NotNull String what) {

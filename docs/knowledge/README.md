@@ -44,6 +44,22 @@ update them in the same change when you learn something durable or an entry stop
   reused (the header and shared-frame caches rely on it). Two databases
   hold byte-identical segments only when they interned dictionaries in the same order: `writeArchived` and hot+compact give
   equal bytes only for the same input order (type ids are interned in batch order).
+- Archive lookups on the replay database (`ReplayBenchmark`, 26.0 million real events in 100 segments,
+  SQLite, warm "againMillis", measured 2026-11-16 on the shared build host at load 5-7, so a run varies
+  by up to 2x; before = full-unit decode, after = column matching first plus the unplaced-region list):
+  busy block newest 10: 14 -> 8-22 ms; its next page: 8 -> 5-20; a block touched once in a quiet chunk:
+  846 -> 16-37; the same in the busiest chunk: 893 -> 105-204 (usually about 105-130); radius 5: 4 ->
+  3-12; count of a day at the busy block (616,596 events): 879 -> 106-134. The region list added 15,956
+  header bytes (296,593 -> 312,549, about 160 per segment); the body bytes are unchanged (30,158,764).
+- Per segment, for the busiest-chunk block lookup (about one placed unit per segment): the SQL fetch of
+  the unit by `substr` is about 0.5 ms through JDBC, zstd on the scalar frame 0.15 ms, column decoding
+  and matching about 0.45 ms before stopping at the area's last key (placed rows are sorted). Decoding a
+  segment's shared frames (ids) costs about 7 ms, which a read now pays only when a row matched.
+  SQLite materializes the whole body (about 300 KB) for `substr`: 0.10 ms per call whether it takes
+  20 bytes or 20 KB, against 0.016 ms for the header and 0.15 ms for the whole body (Python's sqlite3
+  on the same file), so about a fifth of the SQL fetch and under a tenth of a per-segment read.
+- `./gradlew test` with only environment variables changed is up to date and does not run again; time
+  benchmarks with `--rerun`.
 - ConfigLib (through the engine's `Configuration.config`) writes the file back on load: a removed key
   (`archive.batch-events`) is dropped and new keys are added with their defaults.
 - Paper 26.3's `UnsafeValues#serializeEntity` rejects an entity that is no longer valid unless it is
