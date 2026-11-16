@@ -16,6 +16,9 @@ public final class MessagesConfig {
     @Comment("Shared replies.")
     private GeneralMessages general = new GeneralMessages();
 
+    @Comment("Why a parameter list (u: t: r: a: i: e: s:) was refused.")
+    private QueryMessages query = new QueryMessages();
+
     @Comment("/hawkeye lookup, near and page.")
     private LookupMessages lookup = new LookupMessages();
 
