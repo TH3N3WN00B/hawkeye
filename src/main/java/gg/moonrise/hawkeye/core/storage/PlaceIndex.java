@@ -58,7 +58,7 @@ public final class PlaceIndex {
     public static final int MAX_AREA_CHUNKS = 1_024;
 
     /** Segments indexed per catch-up transaction. */
-    public static final int CATCH_UP_BATCH = 32;
+    public static final int CATCH_UP_BATCH = 64;
 
     /** The zstd level of index rows: rewritten on every pack, so cheaper than the segments' 19. */
     public static final int LEVEL = 9;
@@ -337,19 +337,26 @@ public final class PlaceIndex {
         Set<ChunkRef> deadRows = new TreeSet<>();
         regions.forEach((ref, region) -> region.trim(oldest).forEach(index -> deadRows.add(ref.chunk(index))));
 
-        Map<ChunkRef, PlaceChunk> rows = busyRows(connection, shard, regions, addedChunks, inMemory);
-        for (SegmentPlaces placed : added) {
-            placed.chunks().forEach((chunk, locals) -> {
-                PlaceChunk row = rows.get(chunk);
-                if (row != null) {
-                    for (int local : locals) {
-                        row.add(local, placed.segment());
+        // Busy rows a batch at a time: decoded, merged, encoded and written, so memory stays bounded.
+        List<ChunkRef> chunkList = new ArrayList<>(addedChunks);
+        for (int from = 0; from < chunkList.size(); from += PlaceIndexRepository.READ_BATCH) {
+            List<ChunkRef> batch = chunkList.subList(from, Math.min(chunkList.size(),
+                    from + PlaceIndexRepository.READ_BATCH));
+            Map<ChunkRef, PlaceChunk> rows = busyRows(connection, shard, regions, batch, inMemory);
+            for (Map.Entry<ChunkRef, PlaceChunk> entry : rows.entrySet()) {
+                for (SegmentPlaces placed : added) {
+                    int[] locals = placed.chunks().get(entry.getKey());
+                    if (locals != null) {
+                        for (int local : locals) {
+                            entry.getValue().add(local, placed.segment());
+                        }
                     }
                 }
-            });
+                entry.getValue().trim(oldest);
+            }
+            writeChunkRows(connection, sql, regions, rows);
         }
-        rows.values().forEach(row -> row.trim(oldest));
-        write(connection, sql, regions, rows, deadRows);
+        writeRegions(connection, sql, regions, deadRows);
     }
 
     /**
@@ -358,7 +365,7 @@ public final class PlaceIndex {
      * region row lists for them; segments being added in this call are left to the caller.
      */
     private @NotNull Map<ChunkRef, PlaceChunk> busyRows(@NotNull Connection connection, @NotNull Shard shard,
-            @NotNull Map<RegionRef, PlaceRegion> regions, @NotNull Set<ChunkRef> addedChunks,
+            @NotNull Map<RegionRef, PlaceRegion> regions, @NotNull List<ChunkRef> addedChunks,
             @NotNull Set<Long> inMemory) throws SQLException {
         Sql sql = shard.database().sql();
         Set<ChunkRef> existing = new TreeSet<>();
@@ -443,8 +450,8 @@ public final class PlaceIndex {
         }
     }
 
-    private void write(@NotNull Connection connection, @NotNull Sql sql, @NotNull Map<RegionRef, PlaceRegion> regions,
-            @NotNull Map<ChunkRef, PlaceChunk> rows, @NotNull Set<ChunkRef> deadRows) throws SQLException {
+    private void writeRegions(@NotNull Connection connection, @NotNull Sql sql,
+            @NotNull Map<RegionRef, PlaceRegion> regions, @NotNull Set<ChunkRef> deadRows) throws SQLException {
         Map<Integer, List<PlaceIndexRepository.Row>> regionRows = new TreeMap<>();
         Map<Integer, List<Long>> emptyRegions = new TreeMap<>();
         for (PlaceRegion region : regions.values()) {
@@ -455,10 +462,24 @@ public final class PlaceIndex {
                         .add(new PlaceIndexRepository.Row(region.region(), region.newest(), region.toBody(LEVEL)));
             }
         }
+        Map<Integer, List<Long>> deadChunks = new TreeMap<>();
+        deadRows.forEach(chunk -> deadChunks.computeIfAbsent(chunk.world(), ignored -> new ArrayList<>())
+                .add(chunk.chunk()));
+        for (Map.Entry<Integer, List<Long>> entry : emptyRegions.entrySet()) {
+            places.delete(connection, sql, Kind.REGION, entry.getKey(), entry.getValue());
+        }
+        for (Map.Entry<Integer, List<PlaceIndexRepository.Row>> entry : regionRows.entrySet()) {
+            places.write(connection, sql, Kind.REGION, entry.getKey(), entry.getValue());
+        }
+        for (Map.Entry<Integer, List<Long>> entry : deadChunks.entrySet()) {
+            places.delete(connection, sql, Kind.CHUNK, entry.getKey(), entry.getValue());
+        }
+    }
+
+    private void writeChunkRows(@NotNull Connection connection, @NotNull Sql sql,
+            @NotNull Map<RegionRef, PlaceRegion> regions, @NotNull Map<ChunkRef, PlaceChunk> rows) throws SQLException {
         Map<Integer, List<PlaceIndexRepository.Row>> chunkRows = new TreeMap<>();
         Map<Integer, List<Long>> emptyChunks = new TreeMap<>();
-        deadRows.forEach(chunk -> emptyChunks.computeIfAbsent(chunk.world(), ignored -> new ArrayList<>())
-                .add(chunk.chunk()));
         for (Map.Entry<ChunkRef, PlaceChunk> entry : rows.entrySet()) {
             ChunkRef chunk = entry.getKey();
             Optional<IdRuns> ids = regions.get(chunk.region()).find(chunk.indexInRegion());
@@ -468,12 +489,6 @@ public final class PlaceIndex {
             }
             chunkRows.computeIfAbsent(chunk.world(), ignored -> new ArrayList<>())
                     .add(new PlaceIndexRepository.Row(chunk.chunk(), ids.get().max(), entry.getValue().toBody(LEVEL)));
-        }
-        for (Map.Entry<Integer, List<Long>> entry : emptyRegions.entrySet()) {
-            places.delete(connection, sql, Kind.REGION, entry.getKey(), entry.getValue());
-        }
-        for (Map.Entry<Integer, List<PlaceIndexRepository.Row>> entry : regionRows.entrySet()) {
-            places.write(connection, sql, Kind.REGION, entry.getKey(), entry.getValue());
         }
         for (Map.Entry<Integer, List<Long>> entry : emptyChunks.entrySet()) {
             places.delete(connection, sql, Kind.CHUNK, entry.getKey(), entry.getValue());

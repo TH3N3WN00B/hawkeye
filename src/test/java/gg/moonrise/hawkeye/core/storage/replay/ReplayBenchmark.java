@@ -13,6 +13,7 @@ import gg.moonrise.hawkeye.core.sql.SqliteHarness;
 import gg.moonrise.hawkeye.core.storage.Archive;
 import gg.moonrise.hawkeye.core.storage.Archives;
 import gg.moonrise.hawkeye.core.storage.EventStore;
+import gg.moonrise.hawkeye.core.storage.PlaceIndex;
 import gg.moonrise.hawkeye.core.storage.QueryResolver;
 import gg.moonrise.hawkeye.core.storage.ShardScope;
 import gg.moonrise.hawkeye.entity.actor.ActorKind;
@@ -205,6 +206,8 @@ public class ReplayBenchmark {
         Path runFolder = folder.resolve("replay-run");
         assumeTrue(Files.exists(runFolder.resolve(Targets.FILE)), "no kept database in " + runFolder);
         Map<String, Object> report = new LinkedHashMap<>();
+        Path file = runFolder.resolve("hawkeye.db");
+        report.put("fileBytesBefore", Files.size(file));
         try (SqliteHarness harness = SqliteHarness.open(runFolder)) {
             Archive archive = Archives.create();
             EventStore store = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
@@ -212,10 +215,61 @@ public class ReplayBenchmark {
             Database database = harness.database();
             report.put("events", stored(database));
             report.put("segments", count(database, "SELECT COUNT(*) FROM " + database.tables().segment()));
+            report.put("placeIndexCatchUp", catchUp(archive, harness));
+            report.put("placeTables", placeTables(database));
+            database.read(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("PRAGMA wal_checkpoint(TRUNCATE)");
+                }
+                return null;
+            });
+            report.put("fileBytesAfter", Files.size(file));
+            progress("place index: " + report);
             report.put("lookups", lookups(store, harness, Targets.load(runFolder.resolve(Targets.FILE))));
         }
         Files.writeString(folder.resolve("lookup-report.json"), json(report), StandardCharsets.UTF_8);
         progress("lookups on the kept database: " + report);
+    }
+
+    /** Adds every segment that is missing from the place index, newest first, and times it. */
+    private @NotNull Map<String, Object> catchUp(@NotNull Archive archive, @NotNull SqliteHarness harness)
+            throws IOException, SQLException {
+        long start = System.nanoTime();
+        int indexed = 0;
+        while (true) {
+            PlaceIndex.CatchUp step = archive.indexPlaces(harness.shard(), 256);
+            indexed += step.indexed();
+            progress("place index: " + indexed + " segments indexed in "
+                    + TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start) + " s, more: " + step.more());
+            if (!step.more() || step.indexed() == 0) {
+                break;
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("segmentsIndexed", indexed);
+        result.put("millis", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
+        return result;
+    }
+
+    /** Rows, body bytes and pages (from {@code dbstat}, the table and its index) of the place index tables. */
+    private static @NotNull Map<String, Object> placeTables(@NotNull Database database) throws SQLException {
+        Map<String, Object> result = new LinkedHashMap<>();
+        long pages = 0;
+        for (String table : List.of(database.tables().placeRegion(), database.tables().placeChunk(),
+                database.tables().placeState())) {
+            Map<String, Object> one = new LinkedHashMap<>();
+            one.put("rows", count(database, "SELECT COUNT(*) FROM " + table));
+            if (!table.equals(database.tables().placeState())) {
+                one.put("bodyBytes", count(database, "SELECT COALESCE(SUM(LENGTH(body)), 0) FROM " + table));
+            }
+            long bytes = count(database, "SELECT COALESCE(SUM(pgsize), 0) FROM dbstat WHERE name IN ('" + table + "', '"
+                    + table + "_newest')");
+            one.put("dbstatBytes", bytes);
+            pages += bytes;
+            result.put(table, one);
+        }
+        result.put("dbstatBytes", pages);
+        return result;
     }
 
     /** Numbers the replayed events the way the writer does and hands them on a segment at a time. */
