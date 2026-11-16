@@ -16,7 +16,7 @@ public final class InspectMessages {
     @Comment("Reply when the inspector is turned off.")
     private String disabled = "<gray>Inspector off.";
 
-    @Comment("First line of an inspector reply. Placeholders: <x>, <y>, <z>, <world>.")
+    @Comment("First line of an inspector reply. Placeholders: <x>, <y>, <z>, <world>, <page>, <pages>, <total>.")
     private String header = "<#7dd3fc>----- Hawkeye</#7dd3fc> <gray><x> <y> <z></gray> <#7dd3fc>-----";
 
     @Comment("Reply when a block has no recorded history.")
