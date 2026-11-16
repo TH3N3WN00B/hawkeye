@@ -164,6 +164,10 @@ public final class Segments {
             throw new IllegalArgumentException(units.length + " units but " + unitFrames.size() + " frames");
         }
         checkOrdinals(header, rolledBack);
+        if (units.length == 0) {
+            // Nothing was selected, so nothing was fetched: not the palettes either.
+            return new SegmentMatch(List.of(), List.of(), rolledBack);
+        }
         ColumnRules rules = new ColumnRules(header, filter, palettes);
         List<UnitScan> scans = new ArrayList<>();
         List<int[]> matches = new ArrayList<>();

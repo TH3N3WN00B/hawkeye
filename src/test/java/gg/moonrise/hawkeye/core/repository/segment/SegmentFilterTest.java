@@ -174,6 +174,18 @@ public class SegmentFilterTest {
     }
 
     @Test
+    public void aFilterThatSelectsNoUnitMatchesNothingWithoutPalettes() {
+        // A lookup for an actor the segment does not hold: no unit is selected, so no palette is fetched.
+        int stranger = all.stream().mapToInt(EventRow::actor).max().orElseThrow() + 1000;
+        EventFilter filter = new EventFilter(0, Long.MAX_VALUE, Set.of(), List.of(), Bounds.NONE, Set.of(),
+                Set.of(stranger), Set.of(), Set.of(), Set.of(), Set.of(), RollbackState.ANY);
+        int[] units = header.units(filter);
+
+        assertEquals(0, units.length);
+        assertEquals(0, Segments.match(header, filter, Optional.empty(), units, List.of(), new int[0]).count());
+    }
+
+    @Test
     public void anIdRangeOutsideTheSegmentMatchesNothing() {
         long after = EventIds.fromSlot(header.baseSlot() + header.slotSpan() + 1, 0, 0);
         assertEquals(0, header.units(EventFilter.everything(after, Long.MAX_VALUE)).length);
