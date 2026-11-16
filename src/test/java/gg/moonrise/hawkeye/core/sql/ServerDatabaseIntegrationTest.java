@@ -16,6 +16,7 @@ import gg.moonrise.hawkeye.core.repository.EventFilter;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
 import gg.moonrise.hawkeye.core.repository.JobRepository;
 import gg.moonrise.hawkeye.core.repository.LeaseRepository;
+import gg.moonrise.hawkeye.core.repository.PlaceIndexRepository;
 import gg.moonrise.hawkeye.core.repository.SegmentRepository;
 import gg.moonrise.hawkeye.core.repository.SegmentTotals;
 import gg.moonrise.hawkeye.core.repository.ServerRepository;
@@ -24,6 +25,7 @@ import gg.moonrise.hawkeye.core.storage.Archive;
 import gg.moonrise.hawkeye.core.storage.Archives;
 import gg.moonrise.hawkeye.core.storage.Dictionaries;
 import gg.moonrise.hawkeye.core.storage.EventStore;
+import gg.moonrise.hawkeye.core.storage.PlaceIndex;
 import gg.moonrise.hawkeye.core.storage.QueryResolver;
 import gg.moonrise.hawkeye.core.storage.Shard;
 import gg.moonrise.hawkeye.core.storage.ShardScope;
@@ -47,7 +49,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -97,7 +101,8 @@ public class ServerDatabaseIntegrationTest {
 
         Shard shard = new Shard("it", database, new Dictionaries(new DictionaryRepository(), new ActorRepository(),
                 servers), true);
-        Archive archive = Archives.create();
+        // Busy after two segments, so the four segments below give chunks of both kinds.
+        Archive archive = Archives.create(new SegmentRepository(), 2);
         EventStore store = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
                 new ActorRepository()), archive);
         List<PendingEvent> events = new ArrayList<>();
@@ -146,6 +151,7 @@ public class ServerDatabaseIntegrationTest {
         assertEquals(oldestFirst, ids(store.find(shard, box, scope, 0, 10_000, false)));
         assertEquals(before, pages(store, shard, box, scope));
         assertEquals(expectedLogs, store.count(shard, logs, scope));
+        assertPlaceIndex(database, shard, store, archive, scope, events);
         assertEquals(before.size(), store.setRolledBack(shard, before, true));
         assertEquals(before.size(), store.count(shard, box.withRollbackState(RollbackState.ROLLED_BACK), scope));
 
@@ -188,6 +194,53 @@ public class ServerDatabaseIntegrationTest {
         assertTrue(leases.release(database, "archive", "creative"));
     }
 
+    /**
+     * The place index on a server engine: rows of both tables exist, block lookups agree with the events,
+     * a block never touched finds nothing, and emptying the index and catching up writes the same rows.
+     */
+    private static void assertPlaceIndex(Database database, Shard shard, EventStore store, Archive archive,
+            ShardScope scope, List<PendingEvent> events) throws SQLException {
+        Map<String, byte[]> packed = placeRows(database);
+        assertTrue(packed.keySet().stream().anyMatch(key -> key.startsWith(database.tables().placeChunk())),
+                "busy chunks have rows: " + packed.keySet());
+        assertTrue(packed.keySet().stream().filter(key -> key.startsWith(database.tables().placeRegion())).count() > 0);
+        assertEquals(0, store.count(shard, LookupQuery.at(new Area.Block("world", 0, 0, 0)), scope));
+        for (int i : new int[] {3, 517, 1_210, 1_599}) {
+            long position = events.get(i).position();
+            LookupQuery block = LookupQuery.at(new Area.Block("world", BlockPositions.x(position),
+                    BlockPositions.y(position), BlockPositions.z(position)));
+            long expected = events.stream().filter(event -> event.position() == position).count();
+            assertEquals(expected, store.count(shard, block, scope), "block of event " + i);
+        }
+        database.transaction(connection -> {
+            new PlaceIndexRepository().reset(connection, database.sql());
+            return null;
+        });
+        assertEquals(Map.of(), placeRows(database));
+        assertEquals(new PlaceIndex.CatchUp(4, false), archive.indexPlaces(shard, 10));
+        Map<String, byte[]> caughtUp = placeRows(database);
+        assertEquals(packed.keySet(), caughtUp.keySet());
+        packed.forEach((key, body) -> assertArrayEquals(body, caughtUp.get(key), key));
+    }
+
+    /** Every place index row's body, by table, world, key and newest segment. */
+    private static Map<String, byte[]> placeRows(Database database) throws SQLException {
+        return database.read(connection -> {
+            Map<String, byte[]> out = new TreeMap<>();
+            for (PlaceIndexRepository.Kind kind : PlaceIndexRepository.Kind.values()) {
+                try (Statement statement = connection.createStatement();
+                        ResultSet rows = statement.executeQuery("SELECT world, " + kind.keyColumn() + ", newest, body "
+                                + "FROM " + kind.table(database.sql()))) {
+                    while (rows.next()) {
+                        out.put(kind.table(database.sql()) + " " + rows.getInt(1) + " " + rows.getLong(2) + " "
+                                + rows.getLong(3), rows.getBytes(4));
+                    }
+                }
+            }
+            return out;
+        });
+    }
+
     /** Newest-first pages of 37 through both tiers. */
     private static List<Long> pages(EventStore store, Shard shard, LookupQuery query, ShardScope scope)
             throws SQLException {
@@ -224,7 +277,7 @@ public class ServerDatabaseIntegrationTest {
         Tables t = database.tables();
         database.read(connection -> {
             try (Statement statement = connection.createStatement()) {
-                for (String table : List.of(t.segmentFlag(), t.segment(), t.lease(), t.job(), t.event(), t.type(),
+                for (String table : List.of(t.placeRegion(), t.placeChunk(), t.placeState(), t.segmentFlag(), t.segment(), t.lease(), t.job(), t.event(), t.type(),
                         t.actor(), t.world(), t.server(), t.schemaVersion())) {
                     statement.execute("DROP TABLE IF EXISTS " + table);
                 }
