@@ -58,7 +58,8 @@ public class EventStoreTest {
     public void setUp() throws SQLException {
         harness = SqliteHarness.open(folder);
         store = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
-                new ActorRepository()), new Archive(new EventRepository(), new SegmentRepository()));
+                new ActorRepository()), new Archive(new EventRepository(), new SegmentRepository(),
+                new SegmentCache()));
         survival = harness.register("survival", "survival");
     }
 

@@ -66,6 +66,16 @@ public class EventSqlPlanTest {
         assertTrue(plan.contains("hawkeye_event_actor"), plan);
     }
 
+    @Test
+    public void archiveCandidatesWalkTheLastIdIndexAndSeekTheirFlags() throws SQLException {
+        BoundSql query = SegmentRepository.candidateQuery(harness.database().sql(), EventFilter.everything(5, 9_000),
+                0, null, 32, true);
+        String plan = explain(query);
+        assertTrue(plan.contains("USING INDEX hawkeye_segment_last (last_id>?)"), plan);
+        assertTrue(plan.contains("USING INTEGER PRIMARY KEY (rowid=?)"), plan);
+        assertTrue(!plan.contains("TEMP B-TREE"), "no sort: " + plan);
+    }
+
     private static EventFilter filter(Set<Integer> worlds, List<EventFilter.WorldRange> ranges,
             EventFilter.Bounds bounds, Set<Integer> actors) {
         return new EventFilter(0, Long.MAX_VALUE, worlds, ranges, bounds, Set.of(), actors, Set.of(), Set.of(),
@@ -73,7 +83,10 @@ public class EventSqlPlanTest {
     }
 
     private String plan(EventFilter filter) throws SQLException {
-        BoundSql query = EventSql.select(harness.database().tables(), filter, 0, 10, true);
+        return explain(EventSql.select(harness.database().tables(), filter, 0, 10, true));
+    }
+
+    private String explain(BoundSql query) throws SQLException {
         return harness.database().read(connection -> {
             try (PreparedStatement statement = connection.prepareStatement("EXPLAIN QUERY PLAN " + query.sql())) {
                 query.bind(statement);

@@ -14,9 +14,11 @@ All notable changes to this project are documented in this file. The format is b
   are safe with any number of writers.
 - A lock-free capture queue and a single writer thread with batching, retry with back-off, and a disk
   spool for events that could not be written before shutdown.
-- An archive tier: events older than `archive.after-hours` move into deflated per-region column
-  segments (about 12 bytes per block event on SQLite, against about 80 for CoreProtect's relational
-  layout); every read merges both tiers.
+- An archive tier: settled events are packed 262,144 at a time into immutable column segments
+  (archive format 2: zstd frames, units of 16,384 rows read by byte range, ranks implied by the
+  stored order), about 1.2 bytes per event on replayed real history and about 6 per random block
+  event on SQLite, against about 80 for CoreProtect's relational layout; rolled-back flags of
+  archived events live beside the segments; every read merges both tiers.
 - CoreProtect-compatible parameters (`u: t: r: a: i: e: s: #preview #count`) for lookups, rollbacks,
   restores and purges.
 - Multi-server operation: shared databases, shards read in parallel for network lookups, network
@@ -55,6 +57,19 @@ All notable changes to this project are documented in this file. The format is b
 - Books, game mode changes, sign-click and console commands, and kick reasons on quits.
 - `config.yml` and `messages.yml` with every default documented; invalid files keep the previous
   configuration, and restart-only changes are reported.
+### Changed
+
+- Breaking (before the first release): the archive format and its settings. Schema version 3 drops the
+  development archive (`segment` and `segment_actor`); its segments are discarded, not converted, and
+  a warning says so. `archive.batch-events` is removed (a file that still has it loads, and the key is
+  dropped when the file is written back); `archive.segment-events` (262144) and
+  `archive.settle-seconds` (60) are new; `archive.interval-minutes` now defaults to 1 and
+  `archive.after-hours` is when fewer than a segment of events are packed anyway.
+- Event ids are issued by the writer on a one-second grid: every event of a second gets that second
+  and its rank among the server's events of the second (messages and sessions in capture order, then
+  block events by world, position and capture order), so the archive never stores a rank.
+- `/hawkeye status` shows the archive's stored size (`<archive-size>`).
+
 ### Fixed
 
 - A block a piston destroys is recorded as broken, no longer as moved one block on.

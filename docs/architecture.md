@@ -11,8 +11,8 @@ commit as the code.
 | Concern | CoreProtect (PlayPro + the ericlmao fork) | Hawkeye |
 |---|---|---|
 | Code structure | Static state (`ConfigHandler` has 132 public statics), classes of 1,000-3,900 lines, hand-parsed commands, raw `Thread`s | Spring beans with constructor injection, layered packages checked by ArchUnit, Cloud 2 annotation commands, owned executors, no class near 1,000 lines |
-| Row size | `time int` (overflows 2038), separate x/y/z, `rowid`, 3+ B-tree indexes per table | One 64-bit id carries time, server and sequence; one 64-bit packed position; two secondary indexes |
-| Old data | The fork packs cold SQLite data into segments; MySQL and the other engines keep full rows | Every engine archives events older than a day into deflated per-region column segments: about 12 bytes per block event on SQLite against about 80 for CoreProtect's relational layout (`StorageFootprintTest`) |
+| Row size | `time int` (overflows 2038), separate x/y/z, `rowid`, 3+ B-tree indexes per table | One 64-bit id carries the second, the server and the rank in that second; one 64-bit packed position; two secondary indexes |
+| Old data | The fork packs cold SQLite data into segments; MySQL and the other engines keep full rows | Every engine packs settled events into immutable segments of 262,144 events (archive format 2) read by byte range; bytes per event against CoreProtect: TBD (replay benchmark) |
 | Storage engines | Four engines and four query builders (DuckDB, ClickHouse, SQLite segments, MySQL) | One schema, one query builder, three dialects (SQLite, MySQL/MariaDB, PostgreSQL) behind a small `Dialect` seam |
 | Multi-server | One writer per database; id allocation is an in-memory counter that races under several writers | Ids are generated locally and never collide; dictionaries are insert-or-get against unique keys; any number of servers share one database |
 | Sharding | None | Each server writes to its home shard; network lookups fan out to every shard and merge by id |
@@ -24,8 +24,7 @@ commit as the code.
 
 ### Event id (`util.EventIds`)
 
-Every event has a 64-bit id, generated on the server that captured it, without a database round
-trip:
+Every event has a 64-bit id, issued on the server that captured it, without a database round trip:
 
 ```
  63      62 ............................ 22   21 ........ 12   11 ........ 0
@@ -37,9 +36,18 @@ trip:
   (`EventIds.floor(t)` .. `EventIds.ceiling(t)`), and `ORDER BY id DESC` is newest-first.
 - The node id is the server's registration number in its shard (`hawkeye_server`, 1..1023), so two
   servers never produce the same id, and ids from all servers interleave by time.
-- Up to 4,096 ids per millisecond per server; a burst beyond that borrows from the next millisecond
-  (the logical clock runs ahead of the wall clock briefly). A wall clock that steps backwards never
-  produces a smaller id.
+- **The one-second grid.** Capture only stamps events (`[time][sequence]`, capture order). The writer
+  (`core.queue.IdAssigner`) buffers them by second (their *slot*) until the second has closed (plus
+  250 ms of grace), sorts each slot's events in `util.EventOrder` and numbers them 0, 1, 2, ... (their
+  *rank*). The rank fills the sequence bits and then the millisecond bits, so an id is
+  `slot * 1000 ms + rank` and is never more than a second off; a slot holds 4,096,000 events.
+- **The order inside a second.** Events about a player rather than a place (chat, commands, books,
+  game modes, sessions; action codes 40..59) come first, in capture order; every other event follows
+  by world name, packed position and capture order. The archive stores rows in exactly this order, so
+  it rebuilds every rank from the stored rows and never stores one. Changes to one block keep their
+  order, and a conversation reads in order.
+- Late events of a slot continue its numbering (the counters of the last 120 slots are kept); the
+  writer starts after the newest stored slot on restart, so no id is ever issued twice.
 
 ### Packed position (`util.BlockPositions`)
 
@@ -69,8 +77,8 @@ All tables carry the configured prefix (default `hawkeye_`).
 | `event` | `id BIGINT`, `world INT`, `pos BIGINT`, `actor INT`, `action SMALLINT`, `subject INT`, `secondary INT NULL`, `amount INT NULL`, `flags SMALLINT`, `data BLOB NULL` | PK `id`, index `(world, pos)`, index `(actor)` |
 | `job` | network jobs (see below) | PK `id`, index `(target, status)` |
 | `lease` | `name`, `holder`, `expires` | PK `name` |
-| `segment` | `id`, `world`, `region`, `first_id`, `last_id`, `events`, `body` | PK `id`, index `(world, region, last_id)`, index `(last_id)` |
-| `segment_actor` | `actor`, `segment` | PK `(actor, segment)` |
+| `segment` | `id` (auto-increment, never reused), `first_id BIGINT`, `last_id BIGINT`, `events INT`, `header` (small blob), `body` (SQLite `BLOB`, MySQL `LONGBLOB`, PostgreSQL `BYTEA` stored `EXTERNAL`) | PK `id`, index `(last_id)` |
+| `segment_flag` | `segment`, `ordinals` (blob: ascending ordinals of the rolled-back rows, delta varints) | PK `segment` |
 
 - **Dictionaries.** Worlds, actors and types are interned to small integers. `type` holds every
   namespaced value an event refers to: block states (`minecraft:oak_stairs[facing=east,...]`), item
@@ -88,7 +96,7 @@ All tables carry the configured prefix (default `hawkeye_`).
   change (the block left behind after a break, the block replaced by a place). Rollback restores
   `subject` for a break and `secondary` for a place; restore does the opposite. For item actions
   `subject` is the material and `amount` the count; for kills it is the entity type.
-- **`flags`.** Bit 0: rolled back.
+- **`flags`.** Bit 0: rolled back. Archived events keep it in `segment_flag` instead.
 - **`data`.** An optional payload, tagged by its first byte (`util.codec.PayloadCodec`): text (chat,
   commands), sign sides (before and after), an item (only when the item has components), an inventory
   snapshot (a broken container), or an entity (for kill and removal rollback). Items and entities are
@@ -101,19 +109,59 @@ All tables carry the configured prefix (default `hawkeye_`).
 
 ### Archive
 
-The `event` table is the hot tier: every row individually indexed, cheap to insert and to flag.
-Events older than `archive.after-hours` move to the cold tier, `segment`, in passes of
-`archive.batch-events` (one transaction each, under the `archive` lease so one server per shard does
-it). A pass groups its events by world and region (8 x 8 chunks) and packs each group into one
-segment (`core.repository.SegmentCodec`): sorted by id, stored column by column (time deltas,
-sequences, x/z/y deltas inside the region, indexes into per-segment palettes of actors and types,
-actions, amounts, flags, payloads) and deflated. `segment_actor` lists the actors of each segment.
+The `event` table is the hot tier: every row individually indexed, cheap to insert and to flag. The
+cold tier is `segment`: immutable segments of archive format 2 (`core.repository.segment`), written
+by `core.storage.Archive` under the `archive` lease (one server per shard).
 
-Reads merge both tiers (`core.storage.Archive`): candidate segments are found by region range (the
-same chunk-column trick as positions), world, actor and id range, decoded, and filtered with
-`EventFilter.matches`, the Java twin of the SQL predicate (`EventFilterTest` checks they agree). A
-newest-first page stops reading segments once none can beat the page's worst event. Rolling back an
-archived event rewrites its segment; a purge drops whole segments or rewrites their newer part.
+- **Packing.** Every `archive.interval-minutes` (1) a run packs the `archive.segment-events` (262,144)
+  oldest hot events that are older than `archive.settle-seconds` (60) into one segment and deletes
+  them from `event`, in one transaction, and repeats until nothing is packed. Fewer events are packed
+  only once the oldest is older than `archive.after-hours` (24), so a quiet server is archived too, in
+  smaller segments. A segment holds any worlds and servers; segments are time slices whose id ranges
+  can overlap (a late event is packed after its neighbours). Packing compresses on the calling thread;
+  a bulk import (`EventStore.writeArchived`) compresses on a pool.
+- **Stored order.** Unplaced rows by id, then placed rows by (world index in the world order,
+  position, id); the world order is the worlds by (scope, name), the order the writer ranks in. Rows
+  are numbered 0..n-1 in this order (*ordinals*) and cut into *units* of 16,384 rows; unplaced and
+  placed rows never share a unit.
+- **Header** (uncompressed, about 1-2 KB for a full segment, cached parsed by segment id): version
+  (2), counts, base slot, the world, node and actor lists, an action mask, every distinct chunk of
+  the placed rows, the lengths of the shared frames and, per unit, its row count, first key, frame
+  lengths, actors, action mask and slot range. From it a reader decides whether the segment and which
+  units can match an `EventFilter`, and where their bytes are.
+- **Body.** Frames (`util.codec.Compression`: stored, zstd level 19, or deflate level 9 when zstd's
+  native library does not load). First the shared frames: per row the slot delta, the node index (with
+  several nodes), the rank difference from the expected rank (omitted when all are 0, the normal case
+  for ids the writer issued), and the actor and type palettes. Then per unit a scalar frame (world,
+  chunk x/z deltas, local x/z byte, y delta, actor, action, subject, secondary, amount, data length)
+  and a payload frame.
+- **Reading.** Candidates are found by id range on `last_id` (header and flags, never the body), in
+  reading order (`last_id DESC` or `first_id ASC`, keyset paged). Each header is checked; for a
+  matching segment one statement fetches the shared range (unless its decoded form is cached, about
+  32 MB by weight) and the matching units by `substr` on the body, touching ranges merged. Rows are
+  decoded with their flags and filtered with `EventFilter.matches`, the Java twin of the SQL predicate
+  (`EventFilterTest` checks they agree). A page stops reading segments once none can beat its worst
+  event (by `first_id`/`last_id`).
+- **Flags.** A rollback of archived events maps their ids to ordinals (from the shared frames) and
+  rewrites the segment's `segment_flag` row under a lock on the segment row; a body is never rewritten
+  for a flag.
+- **Purging.** A segment entirely older than the bound is deleted with its flags. A segment that
+  straddles it, or that holds purged worlds next to others, is decoded with its flags, re-encoded
+  without the purged rows as a new segment and the old one deleted. At most 8 segments per batch.
+
+Measured on 2.43 million replayed real events (bytes per event):
+
+| Layout | B/event |
+|---|---|
+| CoreProtect fork reference (rows by chunk, player, time; zstd 19 per 8,192 rows) | 2.22 |
+| Position order, ranks stored | 2.24 |
+| Position order, ranks implied, one frame per 262,144 events | 1.18 |
+| ... units of 16,384 rows (the format) | 1.22 |
+| ... 1,048,576 events per segment | 1.09 |
+
+On SQLite, `StorageFootprintTest` (60,000 uniformly random block events, the worst case) measures 73
+bytes per hot event and 6.2 archived, against 80 for CoreProtect's relational layout. Full-scale
+numbers against CoreProtect: TBD (replay benchmark).
 
 ### Indexes and query shapes
 
@@ -123,7 +171,8 @@ archived event rewrites its segment; a purge drops whole segments or rewrites th
 | Radius / rollback area | one `(world = ? AND pos BETWEEN ? AND ?)` term per chunk column, OR-ed; rows outside the exact radius are filtered in Java |
 | User | `actor IN (...)` on `(actor)` plus the id range |
 | Time only | primary key range |
-| Purge | primary key range delete, in batches |
+| Purge | primary key range delete, in batches; archive segments by `first_id`, deleted or rewritten whole |
+| Archive candidates | `last_id >= ? AND first_id <= ?` on `(last_id)`, the flag row by its primary key; the body by `substr` byte ranges |
 
 InnoDB and SQLite append the primary key to secondary indexes, so `(world, pos)` and `(actor)` are
 already ordered by id within a key; PostgreSQL declares `id` explicitly.

@@ -82,7 +82,7 @@ public class HawkeyeCommandTest {
         assertFalse(replies.isEmpty());
         assertTrue(replies.stream().anyMatch(line -> line.contains("Server: server")), replies.toString());
         assertTrue(replies.stream().anyMatch(line -> line.contains("Queue:")), replies.toString());
-        assertTrue(replies.stream().anyMatch(line -> line.contains("Archive: 0 event(s) in 0 segment(s)")),
+        assertTrue(replies.stream().anyMatch(line -> line.contains("Archive: 0 event(s) in 0 segment(s), 0 B")),
                 replies.toString());
     }
 }

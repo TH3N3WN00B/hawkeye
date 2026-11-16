@@ -76,6 +76,30 @@ public class HawkeyeConfigProviderTest {
     }
 
     @Test
+    public void aFileWithTheRemovedBatchEventsKeyStillLoads() throws IOException {
+        TestPlugins.writeConfig(plugin, "archive:\n  enabled: true\n  after-hours: 12\n  interval-minutes: 30\n"
+                + "  batch-events: 50000\n");
+        assertInstanceOf(ReloadResult.Reloaded.class, provider.reloadConfig());
+        assertEquals(12, provider.get().archive().afterHours());
+        assertEquals(30, provider.get().archive().intervalMinutes());
+        assertEquals(262_144, provider.get().archive().segmentEvents(), "a key missing from the file gets its default");
+        assertEquals(60, provider.get().archive().settleSeconds());
+        // The reload writes the file back with the current keys: the removed one is dropped, the new ones added.
+        String written = Files.readString(plugin.getDataPath().resolve(HawkeyeConfigProvider.CONFIG_FILE));
+        assertFalse(written.contains("batch-events"), written);
+        assertTrue(written.contains("segment-events: 262144") && written.contains("settle-seconds: 60"), written);
+        assertTrue(written.contains("after-hours: 12"), written);
+    }
+
+    @Test
+    public void archiveSettingsAreValidated() {
+        TestPlugins.writeConfig(plugin, "archive:\n  segment-events: 1000\n  settle-seconds: 2\n");
+        ReloadResult.Failed failed = assertInstanceOf(ReloadResult.Failed.class, provider.reloadConfig());
+        assertTrue(failed.reason().contains("archive.segment-events"), failed.reason());
+        assertTrue(failed.reason().contains("archive.settle-seconds"), failed.reason());
+    }
+
+    @Test
     public void defaultsAreValid() {
         assertEquals(List.of(), new HawkeyeConfig().problems());
     }

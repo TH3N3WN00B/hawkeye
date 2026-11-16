@@ -117,6 +117,44 @@ public final class EventRepository {
     }
 
     /**
+     * The smallest id in the hot table (an index lookup on the primary key).
+     *
+     * @param connection the connection
+     * @param sql        the shard's SQL context
+     * @return the id, or 0 when the table is empty
+     * @throws SQLException when the query fails
+     */
+    public long oldestId(@NotNull Connection connection, @NotNull Sql sql) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT MIN(id) FROM " + sql.tables().event());
+                ResultSet rows = statement.executeQuery()) {
+            return rows.next() ? rows.getLong(1) : 0;
+        }
+    }
+
+    /**
+     * Whether at least {@code count} events lie below an id: one step along the primary key past the
+     * first {@code count - 1} of them, never a read of the rows.
+     *
+     * @param connection the connection
+     * @param sql        the shard's SQL context
+     * @param belowId    the exclusive id bound
+     * @param count      how many events, at least 1
+     * @return {@code true} when there are that many
+     * @throws SQLException when the query fails
+     */
+    public boolean hasAtLeast(@NotNull Connection connection, @NotNull Sql sql, long belowId, int count)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT id FROM " + sql.tables().event()
+                + " WHERE id < ? ORDER BY id LIMIT 1 OFFSET ?")) {
+            statement.setLong(1, belowId);
+            statement.setInt(2, count - 1);
+            try (ResultSet rows = statement.executeQuery()) {
+                return rows.next();
+            }
+        }
+    }
+
+    /**
      * Sets or clears the rolled-back flag.
      *
      * @param connection the connection

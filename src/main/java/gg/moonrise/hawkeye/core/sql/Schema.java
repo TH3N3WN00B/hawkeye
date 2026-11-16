@@ -12,7 +12,7 @@ import org.jetbrains.annotations.NotNull;
 public final class Schema {
 
     /** The schema version this build writes. */
-    public static final int CURRENT = 2;
+    public static final int CURRENT = 3;
 
     private Schema() {
     }
@@ -36,6 +36,11 @@ public final class Schema {
                 case SQLITE -> sqliteV2(tables);
                 case MYSQL -> mysqlV2(tables);
                 case POSTGRESQL -> postgresV2(tables);
+            };
+            case 3 -> switch (dialect) {
+                case SQLITE -> sqliteV3(tables);
+                case MYSQL -> mysqlV3(tables);
+                case POSTGRESQL -> postgresV3(tables);
             };
             default -> throw new IllegalArgumentException("unknown schema version " + version);
         };
@@ -124,7 +129,10 @@ public final class Schema {
                         + " NOT NULL, expires BIGINT NOT NULL)");
     }
 
-    /** Version 2: the archive (packed per-region segments) and its actor index. */
+    /**
+     * Version 2: the development archive (packed per-region segments) and its actor index. Version 3
+     * drops both again; they are kept here so the version history reads as it ran.
+     */
     private static @NotNull List<String> sqliteV2(@NotNull Tables t) {
         return List.of(
                 "CREATE TABLE IF NOT EXISTS " + t.segment() + " (id INTEGER PRIMARY KEY, world INTEGER NOT NULL, "
@@ -132,7 +140,7 @@ public final class Schema {
                         + "events INTEGER NOT NULL, body BLOB NOT NULL)",
                 "CREATE INDEX IF NOT EXISTS " + t.segment() + "_region ON " + t.segment() + " (world, region, last_id)",
                 "CREATE INDEX IF NOT EXISTS " + t.segment() + "_last ON " + t.segment() + " (last_id)",
-                "CREATE TABLE IF NOT EXISTS " + t.segmentActor() + " (actor INTEGER NOT NULL, "
+                "CREATE TABLE IF NOT EXISTS " + t.legacySegmentActor() + " (actor INTEGER NOT NULL, "
                         + "segment INTEGER NOT NULL, PRIMARY KEY (actor, segment)) WITHOUT ROWID");
     }
 
@@ -144,7 +152,7 @@ public final class Schema {
                         + "last_id BIGINT NOT NULL, events INT NOT NULL, body MEDIUMBLOB NOT NULL, "
                         + "KEY " + t.segment() + "_region (world, region, last_id), "
                         + "KEY " + t.segment() + "_last (last_id))" + options,
-                "CREATE TABLE IF NOT EXISTS " + t.segmentActor() + " (actor INT NOT NULL, segment BIGINT NOT NULL, "
+                "CREATE TABLE IF NOT EXISTS " + t.legacySegmentActor() + " (actor INT NOT NULL, segment BIGINT NOT NULL, "
                         + "PRIMARY KEY (actor, segment))" + options);
     }
 
@@ -155,7 +163,52 @@ public final class Schema {
                         + "last_id BIGINT NOT NULL, events INTEGER NOT NULL, body BYTEA NOT NULL)",
                 "CREATE INDEX IF NOT EXISTS " + t.segment() + "_region ON " + t.segment() + " (world, region, last_id)",
                 "CREATE INDEX IF NOT EXISTS " + t.segment() + "_last ON " + t.segment() + " (last_id)",
-                "CREATE TABLE IF NOT EXISTS " + t.segmentActor() + " (actor INTEGER NOT NULL, segment BIGINT NOT NULL, "
+                "CREATE TABLE IF NOT EXISTS " + t.legacySegmentActor() + " (actor INTEGER NOT NULL, segment BIGINT NOT NULL, "
                         + "PRIMARY KEY (actor, segment))");
+    }
+
+    /**
+     * Version 3: archive format 2. Drops the development archive (its segments are discarded, never
+     * converted) and creates {@code segment} (immutable header and body of up to a million events) and
+     * {@code segment_flag} (the rolled-back rows of a segment, as delta-coded ordinals).
+     */
+    private static @NotNull List<String> sqliteV3(@NotNull Tables t) {
+        return List.of(
+                "DROP TABLE IF EXISTS " + t.legacySegmentActor(),
+                "DROP TABLE IF EXISTS " + t.segment(),
+                "CREATE TABLE IF NOT EXISTS " + t.segment() + " (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                        + "first_id INTEGER NOT NULL, last_id INTEGER NOT NULL, events INTEGER NOT NULL, "
+                        + "header BLOB NOT NULL, body BLOB NOT NULL)",
+                "CREATE INDEX IF NOT EXISTS " + t.segment() + "_last ON " + t.segment() + " (last_id)",
+                "CREATE TABLE IF NOT EXISTS " + t.segmentFlag() + " (segment INTEGER PRIMARY KEY, "
+                        + "ordinals BLOB NOT NULL)");
+    }
+
+    private static @NotNull List<String> mysqlV3(@NotNull Tables t) {
+        String options = " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin";
+        return List.of(
+                "DROP TABLE IF EXISTS " + t.legacySegmentActor(),
+                "DROP TABLE IF EXISTS " + t.segment(),
+                "CREATE TABLE IF NOT EXISTS " + t.segment() + " (id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, "
+                        + "first_id BIGINT NOT NULL, last_id BIGINT NOT NULL, events INT NOT NULL, "
+                        + "header MEDIUMBLOB NOT NULL, body LONGBLOB NOT NULL, "
+                        + "KEY " + t.segment() + "_last (last_id))" + options,
+                "CREATE TABLE IF NOT EXISTS " + t.segmentFlag() + " (segment BIGINT NOT NULL PRIMARY KEY, "
+                        + "ordinals MEDIUMBLOB NOT NULL)" + options);
+    }
+
+    private static @NotNull List<String> postgresV3(@NotNull Tables t) {
+        return List.of(
+                "DROP TABLE IF EXISTS " + t.legacySegmentActor(),
+                "DROP TABLE IF EXISTS " + t.segment(),
+                "CREATE TABLE IF NOT EXISTS " + t.segment() + " (id BIGINT GENERATED BY DEFAULT AS IDENTITY "
+                        + "PRIMARY KEY, first_id BIGINT NOT NULL, last_id BIGINT NOT NULL, events INTEGER NOT NULL, "
+                        + "header BYTEA NOT NULL, body BYTEA NOT NULL)",
+                // The frames are compressed already; stored out of line uncompressed, substr reads only the
+                // TOAST chunks of the requested range.
+                "ALTER TABLE " + t.segment() + " ALTER COLUMN body SET STORAGE EXTERNAL",
+                "CREATE INDEX IF NOT EXISTS " + t.segment() + "_last ON " + t.segment() + " (last_id)",
+                "CREATE TABLE IF NOT EXISTS " + t.segmentFlag() + " (segment BIGINT PRIMARY KEY, "
+                        + "ordinals BYTEA NOT NULL)");
     }
 }

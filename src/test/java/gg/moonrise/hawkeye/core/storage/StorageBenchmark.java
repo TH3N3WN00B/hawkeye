@@ -3,6 +3,8 @@ package gg.moonrise.hawkeye.core.storage;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import gg.moonrise.hawkeye.config.file.ArchiveSettings;
+import gg.moonrise.hawkeye.core.queue.IdAssigner;
 import gg.moonrise.hawkeye.core.repository.ActorRepository;
 import gg.moonrise.hawkeye.core.repository.DictionaryRepository;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
@@ -41,8 +43,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Opt-in full-scale storage benchmark on SQLite: a month of a busy server ({@link SyntheticServer},
- * every action) written through {@link EventStore} in the writer's batches, archived as the plugin's
- * archiver does (every 30 minutes, events older than 24 hours, passes of 50,000), then measured: the
+ * every action) numbered on the one-second grid ({@link IdAssigner}) and written through {@link EventStore}
+ * in the writer's batches, archived as the plugin's archiver does with the default settings (every
+ * minute, segments of 262,144 settled events, smaller ones after 24 hours), then measured: the
  * database file as a running server would have it, the same file compacted, the file with everything
  * archived, and a hot-only sample for the cost of never archiving. Run with
  * {@code HAWKEYE_BENCH_EVENTS=100000000 HAWKEYE_BENCH_DIR=<folder on disk>}; the report is
@@ -53,9 +56,8 @@ public class StorageBenchmark {
 
     private static final long START = EventIds.EPOCH_MILLIS + Duration.ofDays(600).toMillis();
     private static final int WRITER_BATCH = 2_000;
-    private static final Duration ARCHIVE_INTERVAL = Duration.ofMinutes(30);
-    private static final Duration ARCHIVE_AFTER = Duration.ofHours(24);
-    private static final int ARCHIVE_BATCH = 50_000;
+    private static final Duration ARCHIVE_INTERVAL = Duration.ofMinutes(1);
+    private static final ArchiveSettings ARCHIVE = new ArchiveSettings();
     private static final long HOT_SAMPLE = 5_000_000;
     private static final long SEED = 26_03;
     private static final int QUEUED_BATCHES = 16;
@@ -91,16 +93,17 @@ public class StorageBenchmark {
             ServerNode node = harness.register("survival", "survival");
             EventStore store = store();
             SyntheticServer server = new SyntheticServer(SEED, START, meanGap);
+            IdAssigner ids = new IdAssigner();
             List<PendingEvent> batch = new ArrayList<>(WRITER_BATCH);
             long began = System.nanoTime();
             for (long i = 0; i < events; i++) {
                 batch.add(server.next());
                 if (batch.size() == WRITER_BATCH) {
-                    store.write(harness.shard(), node, "survival", batch);
+                    write(store, harness, node, ids, batch, false);
                     batch.clear();
                 }
             }
-            store.write(harness.shard(), node, "survival", batch);
+            write(store, harness, node, ids, batch, true);
             result.put("events", events);
             result.put("insertSeconds", seconds(began));
             result.put("file", fileStats(harness.database(), sampleFolder));
@@ -119,6 +122,7 @@ public class StorageBenchmark {
             ServerNode node = harness.register("survival", "survival");
             EventStore store = store();
             Archive archive = archive();
+            IdAssigner ids = new IdAssigner();
             SyntheticServer server = new SyntheticServer(SEED, START, meanGap);
             long nextArchive = START + ARCHIVE_INTERVAL.toMillis();
             long insertNanos = 0;
@@ -142,13 +146,13 @@ public class StorageBenchmark {
                         continue;
                     }
                     long write = System.nanoTime();
-                    store.write(harness.shard(), node, "survival", batch);
-                    insertNanos += System.nanoTime() - write;
-                    written += batch.size();
                     lastMillis = batch.getLast().epochMillis();
+                    written += batch.size();
+                    write(store, harness, node, ids, batch, written >= events);
+                    insertNanos += System.nanoTime() - write;
                     while (lastMillis >= nextArchive) {
                         long pass = System.nanoTime();
-                        archived += archiveUntil(archive, harness, nextArchive - ARCHIVE_AFTER.toMillis());
+                        archived += archiveUntil(archive, harness, nextArchive);
                         archiveNanos += System.nanoTime() - pass;
                         nextArchive += ARCHIVE_INTERVAL.toMillis();
                     }
@@ -225,15 +229,28 @@ public class StorageBenchmark {
         return result;
     }
 
-    private long archiveUntil(@NotNull Archive archive, @NotNull SqliteHarness harness, long beforeMillis)
+    /** One archiver run at a moment of the simulated month: passes until one packs nothing. */
+    private long archiveUntil(@NotNull Archive archive, @NotNull SqliteHarness harness, long nowMillis)
             throws SQLException {
         long total = 0;
         int moved;
         do {
-            moved = archive.compact(harness.shard(), beforeMillis, ARCHIVE_BATCH);
+            moved = archive.compact(harness.shard(), ARCHIVE, nowMillis);
             total += moved;
-        } while (moved == ARCHIVE_BATCH);
+        } while (moved > 0);
         return total;
+    }
+
+    /** Numbers a captured batch as the writer does and writes what has been numbered so far. */
+    private static void write(@NotNull EventStore store, @NotNull SqliteHarness harness, @NotNull ServerNode node,
+            @NotNull IdAssigner ids, @NotNull List<PendingEvent> captured, boolean last) throws SQLException {
+        ids.add(captured);
+        long now = captured.isEmpty() ? 0 : captured.getLast().epochMillis();
+        List<PendingEvent> numbered = ids.take(now, last);
+        for (int from = 0; from < numbered.size(); from += WRITER_BATCH) {
+            store.write(harness.shard(), node, "survival",
+                    numbered.subList(from, Math.min(numbered.size(), from + WRITER_BATCH)));
+        }
     }
 
     /** The file on disk after a checkpoint, with its page accounting. */
@@ -301,7 +318,7 @@ public class StorageBenchmark {
     }
 
     private static @NotNull Archive archive() {
-        return new Archive(new EventRepository(), new SegmentRepository());
+        return new Archive(new EventRepository(), new SegmentRepository(), new SegmentCache());
     }
 
     private @NotNull Path fresh(@NotNull String name) throws IOException {

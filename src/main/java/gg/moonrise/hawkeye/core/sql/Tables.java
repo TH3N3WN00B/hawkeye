@@ -91,11 +91,20 @@ public record Tables(@NotNull String prefix) {
     }
 
     /**
-     * Which actors appear in which archive segment.
+     * The rolled-back rows of archive segments (a segment itself never changes).
      *
      * @return the name
      */
-    public @NotNull String segmentActor() {
+    public @NotNull String segmentFlag() {
+        return prefix + "segment_flag";
+    }
+
+    /**
+     * The actor index of the development archive format, dropped by schema version 3.
+     *
+     * @return the name
+     */
+    public @NotNull String legacySegmentActor() {
         return prefix + "segment_actor";
     }
 }

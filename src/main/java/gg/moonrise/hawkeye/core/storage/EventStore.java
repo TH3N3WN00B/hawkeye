@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executor;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 
@@ -39,8 +40,11 @@ import org.jetbrains.annotations.NotNull;
 @RequiredArgsConstructor
 public final class EventStore {
 
-    /** Archive segments processed per purge batch. */
-    public static final int PURGE_SEGMENTS = 64;
+    /**
+     * Archive segments deleted or rewritten per purge batch. A rewrite decodes and re-encodes up to
+     * {@code archive.segment-events} events, so a batch stays at a few seconds.
+     */
+    public static final int PURGE_SEGMENTS = 8;
 
     private final @NotNull EventRepository eventRepository;
     private final @NotNull QueryResolver queryResolver;
@@ -65,8 +69,31 @@ public final class EventStore {
         }
         Database database = home.database();
         Sql sql = database.sql();
-        List<EventRow> rows = database.read(connection -> rows(connection, home, node, scope, events));
+        List<EventRow> rows = resolve(home, node, scope, events);
         return database.transaction(connection -> eventRepository.insert(connection, sql, rows));
+    }
+
+    /**
+     * Writes a batch straight into the archive as one segment, resolved exactly like {@link #write}
+     * (bulk imports, benchmarks). The events must be older than anything the shard will still pack, and
+     * a retry writes the segment again: this is not idempotent.
+     *
+     * @param home     the home shard
+     * @param node     the registration of the server the events belong to
+     * @param scope    that server's world scope
+     * @param events   the batch, in any order, with distinct stamps
+     * @param executor where the segment's frames are compressed (a pool for a bulk import)
+     * @return the number of events archived
+     * @throws SQLException when interning or writing fails
+     */
+    public int writeArchived(@NotNull Shard home, @NotNull ServerNode node, @NotNull String scope,
+            @NotNull List<PendingEvent> events, @NotNull Executor executor) throws SQLException {
+        if (events.isEmpty()) {
+            return 0;
+        }
+        List<EventRow> rows = resolve(home, node, scope, events);
+        home.database().transaction(connection -> archive.pack(connection, home, rows, executor));
+        return rows.size();
     }
 
     /**
@@ -105,7 +132,7 @@ public final class EventStore {
             }
             Sql sql = shard.database().sql();
             List<EventRow> hot = eventRepository.find(connection, sql, filter.get(), cursor, limit, newestFirst);
-            List<EventRow> archived = archive.find(connection, sql, filter.get(), cursor, limit, newestFirst, hot);
+            List<EventRow> archived = archive.find(connection, shard, filter.get(), cursor, limit, newestFirst, hot);
             List<EventRow> rows = new ArrayList<>(hot.size() + archived.size());
             rows.addAll(hot);
             rows.addAll(archived);
@@ -132,7 +159,7 @@ public final class EventStore {
                 return 0L;
             }
             Sql sql = shard.database().sql();
-            return eventRepository.count(connection, sql, filter.get()) + archive.count(connection, sql, filter.get());
+            return eventRepository.count(connection, sql, filter.get()) + archive.count(connection, shard, filter.get());
         });
     }
 
@@ -153,7 +180,7 @@ public final class EventStore {
         Sql sql = shard.database().sql();
         return shard.database().transaction(connection -> {
             int hot = eventRepository.setRolledBack(connection, sql, ids, rolledBack);
-            return hot < ids.size() ? hot + archive.setRolledBack(connection, sql, ids, rolledBack) : hot;
+            return hot < ids.size() ? hot + archive.setRolledBack(connection, shard, ids, rolledBack) : hot;
         });
     }
 
@@ -177,7 +204,7 @@ public final class EventStore {
         if (hot >= limit) {
             return hot;
         }
-        return hot + shard.database().transaction(connection -> archive.purge(connection, sql, belowId, worlds,
+        return hot + shard.database().transaction(connection -> archive.purge(connection, shard, belowId, worlds,
                 PURGE_SEGMENTS));
     }
 
@@ -205,6 +232,12 @@ public final class EventStore {
     public @NotNull List<ServerNode> servers(@NotNull Shard shard) throws SQLException {
         return shard.database().read(connection -> shard.dictionaries().refreshServers(connection,
                 shard.database().sql()));
+    }
+
+    /** Interns the batch's dictionary values in auto-commit mode and builds its rows. */
+    private static @NotNull List<EventRow> resolve(@NotNull Shard home, @NotNull ServerNode node,
+            @NotNull String scope, @NotNull List<PendingEvent> events) throws SQLException {
+        return home.database().read(connection -> rows(connection, home, node, scope, events));
     }
 
     private static @NotNull List<EventRow> rows(@NotNull Connection connection, @NotNull Shard home,

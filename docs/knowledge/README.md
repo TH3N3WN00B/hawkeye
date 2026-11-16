@@ -30,16 +30,22 @@ update them in the same change when you learn something durable or an entry stop
 - SQLite query plans for the lookup shapes are asserted in `EventSqlPlanTest` (area: index range scans
   on `(world, pos)`; one block: one seek; whole worlds: the primary key, because `(world + 0)` keeps
   the position index out).
-- Storage footprint on SQLite (`StorageFootprintTest`, 60,000 random block events): hot rows about
-  73 bytes per event, archived about 12, CoreProtect's relational `co_block` layout about 80. Random
-  positions and types are the worst case for the archive; real builds compress better.
+- Storage footprint on SQLite (`StorageFootprintTest`, 60,000 random block events numbered by
+  `IdAssigner`), verified 2026-11-16 with archive format 2: hot rows about 73 bytes per event, archived
+  about 6.2 (one segment), CoreProtect's relational `co_block` layout about 80. Random positions and
+  types are the worst case; the codec stores replayed real history in about 1.2 bytes per event.
 - Full-scale footprint (`StorageBenchmark`, opt-in: `HAWKEYE_BENCH_EVENTS`, `HAWKEYE_BENCH_DIR` on disk,
-  optional `HAWKEYE_BENCH_DAYS`; set `SQLITE_TMPDIR` off `/tmp`). Verified 2026-11-16 at 100M events of
-  every action over 30 days, archived as configured: the SQLite file is 4.30 GB (43.0 B/event, 1.5 MB
-  free pages, the file grows linearly), 4.04 GB with everything archived and compacted, about 10.8 GB
-  if never archived (108 B/event). Killed mobs' entity bytes are 1.74 GB of it (3% of events, 72% of
-  payload bytes); without payloads an event costs about 19 B. The run takes 103 minutes on this host
-  (insert about 24k/s, archive about 48k/s).
+  optional `HAWKEYE_BENCH_DAYS`; set `SQLITE_TMPDIR` off `/tmp`). It numbers ids through `IdAssigner`
+  and archives with the default settings once a simulated minute. The 100M-event figures measured with
+  the per-region format 1 no longer apply; re-run it for format 2.
+- Archive: SQLite, MySQL/MariaDB and PostgreSQL all slice a blob with 1-based `substr(body, from, len)`;
+  `LENGTH` of a blob is its byte count on all three. `ROWS` is a reserved word in MySQL 8, so the flag
+  column is `ordinals`. SQLite's `segment.id` is `AUTOINCREMENT` so a deleted segment's id is never
+  reused (the header and shared-frame caches rely on it). Two databases
+  hold byte-identical segments only when they interned dictionaries in the same order: `writeArchived` and hot+compact give
+  equal bytes only for the same input order (type ids are interned in batch order).
+- ConfigLib (through the engine's `Configuration.config`) writes the file back on load: a removed key
+  (`archive.batch-events`) is dropped and new keys are added with their defaults.
 - Paper 26.3's `UnsafeValues#serializeEntity` rejects an entity that is no longer valid unless it is
   passed `EntitySerializationFlag.FORCE`, and a mob in its `EntityDeathEvent` is no longer valid.
   `EntityBytes.serialize` passes it (before, `/kill`ed zombies, villagers, cows and skeletons were

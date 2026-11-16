@@ -1,24 +1,30 @@
 package gg.moonrise.hawkeye.core.sql;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import gg.moonrise.hawkeye.config.file.ArchiveSettings;
 import gg.moonrise.hawkeye.config.file.StorageSettings;
 import gg.moonrise.hawkeye.config.file.StorageType;
 import gg.moonrise.hawkeye.core.repository.ActorRepository;
 import gg.moonrise.hawkeye.core.repository.DictionaryRepository;
+import gg.moonrise.hawkeye.core.repository.EventFilter;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
 import gg.moonrise.hawkeye.core.repository.JobRepository;
 import gg.moonrise.hawkeye.core.repository.LeaseRepository;
 import gg.moonrise.hawkeye.core.repository.SegmentRepository;
+import gg.moonrise.hawkeye.core.repository.SegmentTotals;
 import gg.moonrise.hawkeye.core.repository.ServerRepository;
+import gg.moonrise.hawkeye.core.repository.segment.ByteRange;
 import gg.moonrise.hawkeye.core.storage.Archive;
 import gg.moonrise.hawkeye.core.storage.Dictionaries;
 import gg.moonrise.hawkeye.core.storage.EventStore;
 import gg.moonrise.hawkeye.core.storage.QueryResolver;
+import gg.moonrise.hawkeye.core.storage.SegmentCache;
 import gg.moonrise.hawkeye.core.storage.Shard;
 import gg.moonrise.hawkeye.core.storage.ShardScope;
 import gg.moonrise.hawkeye.entity.action.Action;
@@ -34,9 +40,11 @@ import gg.moonrise.hawkeye.util.BlockPositions;
 import gg.moonrise.hawkeye.util.EventIds;
 import java.net.URI;
 import java.nio.file.Path;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -89,7 +97,7 @@ public class ServerDatabaseIntegrationTest {
 
         Shard shard = new Shard("it", database, new Dictionaries(new DictionaryRepository(), new ActorRepository(),
                 servers), true);
-        Archive archive = new Archive(new EventRepository(), new SegmentRepository());
+        Archive archive = new Archive(new EventRepository(), new SegmentRepository(), new SegmentCache());
         EventStore store = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
                 new ActorRepository()), archive);
         List<PendingEvent> events = new ArrayList<>();
@@ -121,18 +129,50 @@ public class ServerDatabaseIntegrationTest {
         assertEquals(expectedLogs, store.count(shard, logs, scope));
 
         List<Long> before = ids(store.find(shard, box, scope, 0, 10_000, true));
-        while (archive.compact(shard, T0 + 1_500_000, 400) > 0) {
-            // Archive three quarters of the events.
+        List<Long> oldestFirst = ids(store.find(shard, box, scope, 0, 10_000, false));
+        // Segments of 400 events; the newest 400 have not settled yet.
+        ArchiveSettings packing = new ArchiveSettings().withPacking(400, 60, 1);
+        long now = T0 + 1_600_000 + 60_000;
+        int packed = 0;
+        int pass;
+        while ((pass = archive.compact(shard, packing, now)) > 0) {
+            packed += pass;
         }
+        assertEquals(1_600, packed, "four segments of 400 settled events");
+        SegmentTotals totals = archive.totals(shard);
+        assertEquals(new SegmentTotals(1_600, 4, totals.bytes()), totals);
+        assertTrue(totals.bytes() > 0 && totals.bytes() < 1_600 * 8, "bytes " + totals.bytes());
         assertEquals(before, ids(store.find(shard, box, scope, 0, 10_000, true)));
+        assertEquals(oldestFirst, ids(store.find(shard, box, scope, 0, 10_000, false)));
+        assertEquals(before, pages(store, shard, box, scope));
         assertEquals(expectedLogs, store.count(shard, logs, scope));
         assertEquals(before.size(), store.setRolledBack(shard, before, true));
         assertEquals(before.size(), store.count(shard, box.withRollbackState(RollbackState.ROLLED_BACK), scope));
 
+        // A byte range of a body, read with substr on the server's blob type.
+        long segment = database.read(connection -> new SegmentRepository().candidates(connection,
+                database.sql(), EventFilter.everything(0, Long.MAX_VALUE), 0, null, 1, false).getFirst().id());
+        byte[] body = database.read(connection -> {
+            try (Statement statement = connection.createStatement();
+                    ResultSet rows = statement.executeQuery("SELECT body FROM " + database.tables().segment()
+                            + " WHERE id = " + segment)) {
+                rows.next();
+                return rows.getBytes(1);
+            }
+        });
+        List<byte[]> ranges = database.read(connection -> new SegmentRepository().readRanges(connection,
+                database.sql(), segment, List.of(new ByteRange(3, 10), new ByteRange(0, 3), new ByteRange(40, 5))));
+        assertArrayEquals(Arrays.copyOfRange(body, 3, 13), ranges.get(0));
+        assertArrayEquals(Arrays.copyOfRange(body, 0, 3), ranges.get(1));
+        assertArrayEquals(Arrays.copyOfRange(body, 40, 45), ranges.get(2));
+
         while (store.purgeBatch(shard, T0 + 1_000_000, List.of(), 300) > 0) {
-            // Purge the oldest half.
+            // Purge the oldest half: two whole segments, one straddling the bound.
         }
         assertEquals(1_000, store.count(shard, LookupQuery.at(new Area.Everywhere()), scope));
+        assertEquals(before.stream().filter(id -> id >= EventIds.floor(T0 + 1_000_000)).count(),
+                store.count(shard, box.withRollbackState(RollbackState.ROLLED_BACK), scope),
+                "flags survive the rewrite of the straddling segment");
 
         JobRepository jobs = new JobRepository();
         long job = database.read(connection -> jobs.insert(connection, database.sql(), "creative", JobKind.ROLLBACK,
@@ -146,6 +186,21 @@ public class ServerDatabaseIntegrationTest {
         assertFalse(leases.tryAcquire(database, "archive", "creative", 3_000, 10_000), "another server waits");
         assertTrue(leases.tryAcquire(database, "archive", "creative", 13_000, 10_000), "an expired lease moves");
         assertTrue(leases.release(database, "archive", "creative"));
+    }
+
+    /** Newest-first pages of 37 through both tiers. */
+    private static List<Long> pages(EventStore store, Shard shard, LookupQuery query, ShardScope scope)
+            throws SQLException {
+        List<Long> ids = new ArrayList<>();
+        long cursor = 0;
+        while (true) {
+            List<StoredEvent> page = store.find(shard, query, scope, cursor, 37, true);
+            page.forEach(event -> ids.add(event.id()));
+            if (page.size() < 37) {
+                return ids;
+            }
+            cursor = page.getLast().id();
+        }
     }
 
     private static List<Long> ids(List<StoredEvent> events) {
@@ -169,7 +224,7 @@ public class ServerDatabaseIntegrationTest {
         Tables t = database.tables();
         database.read(connection -> {
             try (Statement statement = connection.createStatement()) {
-                for (String table : List.of(t.segmentActor(), t.segment(), t.lease(), t.job(), t.event(), t.type(),
+                for (String table : List.of(t.segmentFlag(), t.segment(), t.lease(), t.job(), t.event(), t.type(),
                         t.actor(), t.world(), t.server(), t.schemaVersion())) {
                     statement.execute("DROP TABLE IF EXISTS " + table);
                 }

@@ -6,6 +6,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -13,7 +14,11 @@ import org.jetbrains.annotations.NotNull;
  * {@code schema_version} table; each version's statements are idempotent, so concurrent first starts
  * of several servers against one database are safe.
  */
+@Slf4j
 public final class Migrations {
+
+    /** The version that replaced the development archive format. */
+    public static final int ARCHIVE_FORMAT_2 = 3;
 
     private Migrations() {
     }
@@ -39,6 +44,11 @@ public final class Migrations {
         }
         if (version == Schema.CURRENT) {
             return new MigrationResult.UpToDate(version);
+        }
+        if (version > 0 && version < ARCHIVE_FORMAT_2) {
+            log.warn("Schema version {} -> {}: archive segments written by development builds are discarded "
+                    + "(the archive format changed before the first release); events still in the hot table are "
+                    + "kept", version, Schema.CURRENT);
         }
         for (int next = version + 1; next <= Schema.CURRENT; next++) {
             try (Statement statement = connection.createStatement()) {

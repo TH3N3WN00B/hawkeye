@@ -23,8 +23,9 @@ import org.jetbrains.annotations.NotNull;
 /**
  * Runs the archive ({@link Archive#compact}) every {@code archive.interval-minutes} on the server that
  * holds the shard's {@code archive} lease, so a whole network can share one configuration. Each pass
- * is one transaction of {@code archive.batch-events} events on the query pool; passes follow each
- * other until nothing old is left, so the maintenance thread (heartbeats, network jobs) is never held.
+ * packs one segment of {@code archive.segment-events} settled events (or fewer, once they are older
+ * than {@code archive.after-hours}) in one transaction on the query pool; passes follow each other until
+ * one packs nothing, so the maintenance thread (heartbeats, network jobs) is never held.
  */
 @Slf4j
 @SpringComponent
@@ -81,7 +82,7 @@ public final class Archiver implements Enableable, Disableable {
             return CompletableFuture.completedFuture(0L);
         }
         Shard home = ready.get().home();
-        long ttl = Duration.ofMinutes(settings.intervalMinutes()).multipliedBy(3).toMillis();
+        long ttl = leaseMillis(settings);
         try {
             held = leases.tryAcquire(home.database(), LEASE, holder(), clock.millis(), ttl);
         } catch (SQLException | RuntimeException e) {
@@ -93,14 +94,13 @@ public final class Archiver implements Enableable, Disableable {
             running.set(false);
             return CompletableFuture.completedFuture(0L);
         }
-        long before = clock.millis() - Duration.ofHours(settings.afterHours()).toMillis();
-        return passes(home, before, settings.batchEvents(), 0).whenComplete((total, error) -> {
+        return passes(home, settings, 0).whenComplete((total, error) -> {
             running.set(false);
             if (error != null) {
                 log.warn("Archiving failed; it is retried on the next run", error);
             } else if (total > 0) {
                 archived.addAndGet(total);
-                log.info("Archived {} event(s) older than {} hour(s)", total, settings.afterHours());
+                log.info("Archived {} event(s)", total);
             }
         });
     }
@@ -114,26 +114,36 @@ public final class Archiver implements Enableable, Disableable {
         return archived.get();
     }
 
-    private @NotNull CompletableFuture<Long> passes(@NotNull Shard home, long before, int batch, long total) {
+    private @NotNull CompletableFuture<Long> passes(@NotNull Shard home, @NotNull ArchiveSettings settings,
+            long total) {
         if (stopped) {
             return CompletableFuture.completedFuture(total);
         }
         CompletableFuture<Integer> pass;
         try {
-            pass = CompletableFuture.supplyAsync(() -> compact(home, before, batch), executors.query());
+            pass = CompletableFuture.supplyAsync(() -> compact(home, settings), executors.query());
         } catch (RejectedExecutionException e) {
             return CompletableFuture.completedFuture(total);
         }
-        return pass.thenCompose(moved -> moved < batch ? CompletableFuture.completedFuture(total + moved)
-                : passes(home, before, batch, total + moved));
+        return pass.thenCompose(moved -> moved == 0 ? CompletableFuture.completedFuture(total)
+                : passes(home, settings, total + moved));
     }
 
-    private int compact(@NotNull Shard home, long before, int batch) {
+    /** One pass, after renewing the lease: a backlog can take longer than the lease lasts. */
+    private int compact(@NotNull Shard home, @NotNull ArchiveSettings settings) {
         try {
-            return archive.compact(home, before, batch);
+            if (!leases.tryAcquire(home.database(), LEASE, holder(), clock.millis(), leaseMillis(settings))) {
+                held = false;
+                return 0;
+            }
+            return archive.compact(home, settings, clock.millis());
         } catch (SQLException e) {
             throw new IllegalStateException("archive pass failed: " + e.getMessage(), e);
         }
+    }
+
+    private static long leaseMillis(@NotNull ArchiveSettings settings) {
+        return Duration.ofMinutes(settings.intervalMinutes()).multipliedBy(3).toMillis();
     }
 
     private void tick() {

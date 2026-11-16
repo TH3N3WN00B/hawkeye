@@ -3,6 +3,7 @@ package gg.moonrise.hawkeye.core.service.status;
 import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.queue.EventWriter;
 import gg.moonrise.hawkeye.core.queue.WriterStats;
+import gg.moonrise.hawkeye.core.repository.SegmentTotals;
 import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
 import gg.moonrise.hawkeye.core.service.network.NetworkJobService;
 import gg.moonrise.hawkeye.core.storage.Archive;
@@ -38,7 +39,7 @@ public final class StatusService {
         try {
             return CompletableFuture.supplyAsync(() -> new Full(status, archiveTotals(), jobs), executors.query());
         } catch (RejectedExecutionException e) {
-            return CompletableFuture.completedFuture(new Full(status, new ArchiveTotals(-1, -1), jobs));
+            return CompletableFuture.completedFuture(new Full(status, ArchiveTotals.UNKNOWN, jobs));
         }
     }
 
@@ -64,12 +65,12 @@ public final class StatusService {
     private @NotNull ArchiveTotals archiveTotals() {
         return storage.readyNow().map(ready -> {
             try {
-                long[] totals = archive.totals(ready.home());
-                return new ArchiveTotals(totals[0], totals[1]);
+                SegmentTotals totals = archive.totals(ready.home());
+                return new ArchiveTotals(totals.events(), totals.segments(), totals.bytes());
             } catch (SQLException | RuntimeException e) {
-                return new ArchiveTotals(-1, -1);
+                return ArchiveTotals.UNKNOWN;
             }
-        }).orElse(new ArchiveTotals(-1, -1));
+        }).orElse(ArchiveTotals.UNKNOWN);
     }
 
     /**
@@ -87,8 +88,12 @@ public final class StatusService {
      *
      * @param events   archived events, -1 when unknown
      * @param segments archive segments, -1 when unknown
+     * @param bytes    stored segment bytes, -1 when unknown
      */
-    public record ArchiveTotals(long events, long segments) {
+    public record ArchiveTotals(long events, long segments, long bytes) {
+
+        /** The totals when the database could not be read. */
+        public static final ArchiveTotals UNKNOWN = new ArchiveTotals(-1, -1, -1);
     }
 
     /**

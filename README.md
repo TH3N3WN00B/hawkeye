@@ -10,9 +10,9 @@ focused on clean code, compact storage, multi-server operation and fast reads.
 
 | | CoreProtect | Hawkeye |
 |---|---|---|
-| Old data | Full rows (the fork packs SQLite only) | Every engine archives events older than a day into deflated per-region column segments |
-| Storage per block event (SQLite, measured) | about 80 bytes (`co_block` and its three indexes) | about 73 hot, **about 12 archived** |
-| Time | 32-bit seconds (overflows in 2038) | 64-bit ids carry milliseconds until 2094, the server and a sequence |
+| Old data | Full rows (the fork packs SQLite only) | Every engine packs settled events into immutable column segments of 262,144 events, read by byte range |
+| Storage per block event (SQLite, measured) | about 80 bytes (`co_block` and its three indexes) | about 73 hot, **about 6 archived** on random worst-case data; about 1.2 bytes per event on replayed real history |
+| Time | 32-bit seconds (overflows in 2038) | 64-bit ids carry the second until 2094, the server and the event's rank in that second |
 | Several servers on one database | One writer; ids from an in-memory counter that races | Any number of writers; ids never collide; dictionaries are insert-or-get |
 | Sharding | No | Each server writes its home shard; network lookups fan out to every shard and merge |
 | Network rollbacks | No | `s:<server>` / `s:#network` rollbacks run as durable jobs on each target server |
@@ -143,7 +143,7 @@ previous configuration.
 | `rollback` | `default-radius`, `max-radius`, `blocks-per-tick`, `concurrent-chunks`, `max-events`, preview expiry |
 | `purge` | `retention-days` (automatic purge, 0 = keep everything), `player-minimum-days` |
 | `network` | `bus` (`NONE` or `REDIS`), `redis-uri`, `poll-interval-seconds`, `shards` |
-| `archive` | `enabled`, `after-hours` (24), `interval-minutes`, `batch-events` |
+| `archive` | `enabled`, `segment-events` (262144 events per segment, 16384 to 1048576), `settle-seconds` (60: newer events stay hot), `after-hours` (24: older events are packed even when fewer than a segment are waiting), `interval-minutes` (1) |
 
 Every player-facing text is a MiniMessage template in `messages.yml`.
 
@@ -170,10 +170,11 @@ lease, so any number of servers can be configured identically.
 
 Events are written by one background thread in batches (`writer.batch-size`, at least every
 `writer.flush-interval-millis`), so capturing an event never touches the database. The hot `event`
-table holds recent events with an index on `(world, packed position)` and one on the actor. After
-`archive.after-hours` events move into the archive: per-region segments of deflated columns, about a
-sixth of the space. Lookups, the inspector, rollbacks, restores and purges read both tiers
-transparently. `docs/architecture.md` describes the format, the threading model and the multi-server
+table holds recent events with an index on `(world, packed position)` and one on the actor. As soon as
+`archive.segment-events` events are older than `archive.settle-seconds` they are packed into one
+archive segment: immutable, stored column by column and compressed with zstd, about 1.2 bytes per
+event on real history. A lookup about one place reads only the segment's header and one or two small
+parts of it. Lookups, the inspector, rollbacks, restores and purges read both tiers transparently. `docs/architecture.md` describes the format, the threading model and the multi-server
 protocol in detail.
 
 ## API for other plugins
