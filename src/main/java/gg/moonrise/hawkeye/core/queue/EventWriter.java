@@ -43,10 +43,12 @@ import org.jetbrains.annotations.NotNull;
  * and is retried unchanged with back-off (the queue keeps accepting events up to its capacity), so a
  * database restart loses nothing and a retry writes the same ids. On disable it drains the queue for
  * up to {@code writer.shutdown-timeout-seconds} and spools the rest, numbered, to disk; the next start
- * writes the spool as it is ({@link SpoolReplay}) before any new event.
+ * writes the spool as it is ({@link SpoolReplay}).
  *
  * <p>Before the first event is numbered, the assigner's floor is set past the newest slot already in
- * the home database or the spool, so a restart or a clock that stepped back never reuses a rank.
+ * the home database or the spool, so a restart or a clock that stepped back never reuses a rank, and
+ * new events never share a second with spooled ones. That is why captured events do not wait for the
+ * spool: a file that cannot be written yet is tried again later while logging goes on.
  *
  * <p>{@link #flush()} gives read-your-writes: lookups call it first, so they see every event captured
  * before the command.
@@ -60,6 +62,7 @@ public final class EventWriter implements Enableable, Disableable {
 
     /** The fewest events the assigner may hold before the writer stops draining the queue into it. */
     private static final int MIN_HELD = 32_768;
+    private static final long SPOOL_RETRY_MILLIS = 30_000;
 
     private final @NotNull EventQueue queue;
     private final @NotNull StorageManager storage;
@@ -85,6 +88,8 @@ public final class EventWriter implements Enableable, Disableable {
     private volatile int numberedCount;
     private int consecutiveFailures;
     private boolean spoolReplayed;
+    private boolean spoolScanned;
+    private long spoolRetryAtMillis;
     private boolean floorSet;
 
     @Override
@@ -164,17 +169,11 @@ public final class EventWriter implements Enableable, Disableable {
         if (ready.isEmpty()) {
             return;
         }
-        if (!spoolReplayed) {
-            spoolReplayed = spoolReplay.replay(batch -> write(ready.get(), batch), settings().batchSize());
-            if (!spoolReplayed) {
-                backOff();
-                return;
-            }
-        }
         if (!floorSet && !establishFloor(ready.get())) {
             backOff();
             return;
         }
+        replaySpool(ready.get());
         while (running) {
             if (numbered.isEmpty()) {
                 boolean full = fill();
@@ -215,6 +214,11 @@ public final class EventWriter implements Enableable, Disableable {
      * @return {@code false} when the database could not be read
      */
     private boolean establishFloor(@NotNull StorageState.Ready ready) {
+        if (!spoolScanned) {
+            // Spool files not replayed yet hold ranks too, whether or not they can be written now.
+            spoolReplay.scanNewestSlot();
+            spoolScanned = true;
+        }
         long newestId;
         try {
             newestId = store.newestId(ready.home());
@@ -226,6 +230,21 @@ public final class EventWriter implements Enableable, Disableable {
         assigner.floor(Math.max(newestSlot, spoolReplay.newestSlot()) + 1);
         floorSet = true;
         return true;
+    }
+
+    /**
+     * Writes the spool files of an earlier run. Captured events do not wait for them: the floor already
+     * lies past every spooled slot, so the two never share an id, and a file that cannot be written
+     * (it is tried again every {@link #SPOOL_RETRY_MILLIS}) must not stop the logging of new events.
+     */
+    private void replaySpool(@NotNull StorageState.Ready ready) {
+        if (spoolReplayed || clock.millis() < spoolRetryAtMillis) {
+            return;
+        }
+        spoolReplayed = spoolReplay.replay(batch -> write(ready, batch), settings().batchSize());
+        if (!spoolReplayed) {
+            spoolRetryAtMillis = clock.millis() + SPOOL_RETRY_MILLIS;
+        }
     }
 
     /** Writes the numbered events in batches; a failed batch stays at the head to be retried unchanged. */
@@ -286,10 +305,10 @@ public final class EventWriter implements Enableable, Disableable {
         Optional<StorageState.Ready> ready = storage.readyNow();
         boolean healthy = ready.isPresent();
         if (!floorSet) {
-            // The spool files not replayed yet hold ranks too; what this run spools must come after them.
-            spoolReplay.scanNewestSlot();
+            // The spool files not replayed yet hold ranks too; what this run spools must come after them,
+            // also when the database (and with it the stored newest id) was never reached.
             healthy = healthy && establishFloor(ready.get());
-            assigner.floor(spoolReplay.newestSlot() + 1);
+            assigner.floor(spoolReplay.scanNewestSlot() + 1);
         }
         while (healthy && System.nanoTime() < deadline) {
             if (numbered.isEmpty()) {

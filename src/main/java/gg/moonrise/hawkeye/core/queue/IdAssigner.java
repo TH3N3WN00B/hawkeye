@@ -143,8 +143,16 @@ public final class IdAssigner {
         return pending;
     }
 
+    /**
+     * Whether a slot can be numbered now: its second is over and the grace has passed, or it lies more
+     * than a second ahead of the clock. Only the floor puts events that far ahead (a database whose
+     * newest id is in the future, because another server's clock runs fast), and waiting for the clock
+     * to reach that slot would hold them back for as long as the clocks disagree; they are numbered at
+     * once and later arrivals continue the slot's ranks.
+     */
     private static boolean closed(long slot, long nowMillis) {
-        return nowMillis >= EventIds.EPOCH_MILLIS + (slot + 1) * EventIds.SLOT_MILLIS + GRACE_MILLIS;
+        long end = EventIds.EPOCH_MILLIS + (slot + 1) * EventIds.SLOT_MILLIS;
+        return nowMillis >= end + GRACE_MILLIS || nowMillis < end - 2L * EventIds.SLOT_MILLIS;
     }
 
     private void forgetOldCounters() {

@@ -220,6 +220,45 @@ public class EventWriterTest {
     }
 
     @Test
+    public void aSpoolFileThatCannotBeWrittenDoesNotHoldBackNewEvents() throws Exception {
+        StorageState.Ready ready = TestPlugins.awaitStorage();
+        World world = server.addSimpleWorld("world");
+        TestPlugins.flush();
+        execute(ready.home().database(), failInserts(ready));
+        EventRecorder recorder = TestPlugins.bean(EventRecorder.class);
+        for (int x = 0; x < 3; x++) {
+            recorder.record(Action.BLOCK_PLACE, Actors.NATURE, world, x, 64, 0, "minecraft:stone", "minecraft:air",
+                    0, null);
+        }
+
+        stop();
+        long newestSpooled = spooled().stream()
+                .mapToLong(event -> EventIds.fromStamp(event.stamp(), ready.node().node())).max().orElseThrow();
+        // From now on only the spooled events fail to insert.
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + saved.resolve("hawkeye.db"));
+                Statement statement = connection.createStatement()) {
+            statement.execute("DROP TRIGGER " + TRIGGER);
+            statement.execute("CREATE TRIGGER " + TRIGGER + " BEFORE INSERT ON "
+                    + ready.home().database().sql().tables().event() + " WHEN NEW.id <= " + newestSpooled
+                    + " BEGIN SELECT RAISE(ABORT, 'writer test'); END");
+        }
+        start();
+
+        StorageState.Ready restarted = TestPlugins.awaitStorage();
+        World again = server.addSimpleWorld("world");
+        EventRecorder restartedRecorder = TestPlugins.bean(EventRecorder.class);
+        restartedRecorder.record(Action.BLOCK_PLACE, Actors.NATURE, again, 50, 64, 0, "minecraft:stone",
+                "minecraft:air", 0, null);
+        TestPlugins.flush();
+
+        List<Row> placed = rows(restarted).stream().filter(row -> row.x() == 50).toList();
+        assertEquals(1, placed.size(), "the new event is stored although the spool is stuck");
+        assertTrue(EventIds.slot(placed.getFirst().id()) > EventIds.slot(newestSpooled),
+                "new ids start past every spooled slot");
+        assertEquals(1, spooledFiles().size(), "the spool file waits for its next attempt");
+    }
+
+    @Test
     public void afterARestartNumberingStartsPastTheNewestStoredSlot() throws Exception {
         StorageState.Ready ready = TestPlugins.awaitStorage();
         server.addSimpleWorld("world");

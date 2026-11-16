@@ -194,6 +194,37 @@ public class IdAssignerTest {
         return assigner.take(closedAt(SLOT + 10), false);
     }
 
+    @Test
+    public void aSlotFarAheadOfTheClockIsNotHeldBack() {
+        // The database's newest id lies ten minutes in the future (another server's clock runs fast).
+        IdAssigner assigner = new IdAssigner();
+        assigner.floor(SLOT + 600);
+        long now = EventIds.EPOCH_MILLIS + SLOT * EventIds.SLOT_MILLIS + 400;
+        assigner.add(List.of(placed("b", 300, "world", 2), placed("a", 100, "world", 1)));
+
+        List<PendingEvent> first = assigner.take(now, false);
+
+        assertEquals(List.of("a", "b"), labels(first));
+        assertEquals(List.of(EventIds.slotStamp(SLOT + 600, 0), EventIds.slotStamp(SLOT + 600, 1)), stamps(first));
+
+        // Later events land in the same slot until the clock reaches it, and continue its ranks.
+        assigner.add(List.of(placed("c", 900, "world", 0)));
+        assertEquals(List.of(EventIds.slotStamp(SLOT + 600, 2)), stamps(assigner.take(now + 1000, false)));
+        assertEquals(0, assigner.pending());
+    }
+
+    @Test
+    public void theSecondAfterTheCurrentOneStillWaitsForItsGrace() {
+        // A burst can stamp a few events into the next second; they wait like any other open second.
+        IdAssigner assigner = new IdAssigner();
+        long now = EventIds.EPOCH_MILLIS + SLOT * EventIds.SLOT_MILLIS + 999;
+        assigner.add(List.of(new PendingEvent(stamp(SLOT + 1, 0, 0), "world", 0, ACTOR, Action.BLOCK_PLACE, "next",
+                null, 0, null)));
+
+        assertTrue(assigner.take(now, false).isEmpty());
+        assertEquals(List.of("next"), labels(assigner.take(closedAt(SLOT + 1), false)));
+    }
+
     private static long closedAt(long slot) {
         return EventIds.EPOCH_MILLIS + (slot + 1) * EventIds.SLOT_MILLIS + IdAssigner.GRACE_MILLIS;
     }
