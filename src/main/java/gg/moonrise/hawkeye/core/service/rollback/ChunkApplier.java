@@ -50,7 +50,7 @@ public final class ChunkApplier implements Disableable {
      *
      * @param blocks   block states and sign texts written
      * @param items    container item changes made
-     * @param entities entities spawned
+     * @param entities entities spawned or removed
      * @param skipped  changes that did not fit the world any more (or failed)
      */
     public record Result(int blocks, int items, int entities, int skipped) {

@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.kyori.adventure.text.Component;
@@ -23,6 +24,7 @@ import org.bukkit.block.data.BlockData;
 import org.bukkit.block.sign.Side;
 import org.bukkit.block.sign.SignSide;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -31,6 +33,8 @@ import org.jetbrains.annotations.NotNull;
 /**
  * Makes one planned change in the world. Call only on the thread that owns the change's chunk.
  * Blocks are set without physics, so nothing drops, flows or updates its neighbours mid-rollback.
+ * Container items at a block without a container go to the item frames and armour stands there
+ * ({@link HeldItems}).
  */
 @Slf4j
 @SpringComponent
@@ -45,11 +49,14 @@ public final class WorldWriter {
     public enum Effect {
         /** A block state or sign text was written. */
         BLOCK,
-        /** Items were put into or taken out of a container. */
+        /** Items were put into or taken out of a container, item frame or armour stand. */
         ITEMS,
-        /** An entity was spawned. */
+        /** An entity was spawned or removed. */
         ENTITY,
-        /** Nothing: the block no longer fits the change, or its data cannot be read. */
+        /**
+         * Nothing: the block no longer fits the change, its data cannot be read, or the entity to remove
+         * is gone or owned by another region.
+         */
         NONE
     }
 
@@ -67,6 +74,7 @@ public final class WorldWriter {
             case PlannedChange.SetSignText text -> writeSign(block, text.sign()) ? Effect.BLOCK : Effect.NONE;
             case PlannedChange.AdjustItems adjust -> adjustItems(block, adjust) ? Effect.ITEMS : Effect.NONE;
             case PlannedChange.SpawnEntity spawn -> spawn(world, change, spawn.entity()) ? Effect.ENTITY : Effect.NONE;
+            case PlannedChange.RemoveEntity remove -> remove(world, remove.entity()) ? Effect.ENTITY : Effect.NONE;
         };
     }
 
@@ -164,12 +172,15 @@ public final class WorldWriter {
     }
 
     private static boolean adjustItems(@NotNull Block block, @NotNull PlannedChange.AdjustItems adjust) {
-        if (adjust.delta() == 0 || !(block.getState() instanceof Container container)) {
+        if (adjust.delta() == 0) {
             return false;
         }
         Optional<ItemStack> template = item(adjust);
         if (template.isEmpty()) {
             return false;
+        }
+        if (!(block.getState() instanceof Container container)) {
+            return HeldItems.adjust(block, template.get(), adjust.delta()) > 0;
         }
         int requested = Math.abs(adjust.delta());
         int perStack = Math.max(1, template.get().getMaxStackSize());
@@ -199,6 +210,16 @@ public final class WorldWriter {
 
     private static boolean spawn(@NotNull World world, @NotNull PlannedChange change, byte @NotNull [] bytes) {
         Entity entity = EntityBytes.deserialize(bytes, world);
-        return entity.spawnAt(new Location(world, change.x() + 0.5, change.y(), change.z() + 0.5));
+        return entity.spawnAt(RespawnLocations.of(entity, world, change.x(), change.y(), change.z()));
+    }
+
+    /** Removes an entity owned by the current region; players are never removed. */
+    private boolean remove(@NotNull World world, @NotNull UUID uuid) {
+        Entity entity = world.getEntity(uuid);
+        if (entity == null || entity instanceof Player || !plugin.getServer().isOwnedByCurrentRegion(entity)) {
+            return false;
+        }
+        entity.remove();
+        return true;
     }
 }

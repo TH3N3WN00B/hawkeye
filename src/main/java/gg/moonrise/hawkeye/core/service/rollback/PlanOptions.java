@@ -8,8 +8,9 @@ import org.jetbrains.annotations.Nullable;
 /**
  * What a plan includes besides blocks, and where it starts.
  *
- * @param restoreContainers reverse container deposits and withdrawals
- * @param restoreEntities   respawn killed entities on rollback
+ * @param restoreContainers reverse container deposits and withdrawals (item frames and armour stands too)
+ * @param restoreEntities   on rollback, respawn killed and removed entities and remove placed and spawned
+ *                          ones
  * @param origin            change the chunks nearest to here first, or {@code null} for a fixed order
  */
 public record PlanOptions(boolean restoreContainers, boolean restoreEntities, @Nullable RollbackOrigin origin) {

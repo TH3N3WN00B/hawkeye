@@ -8,11 +8,14 @@ import gg.moonrise.hawkeye.support.TestPlugins;
 import gg.moonrise.hawkeye.util.BlockPositions;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.entity.Zombie;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -86,6 +89,21 @@ public class ChunkApplierTest {
 
         assertTrue(result.isDone());
         assertEquals(new ChunkApplier.Result(0, 0, 0, 2), result.get());
+    }
+
+    @Test
+    public void aRemovedEntityCountsAsAnEntityAndAMissingOneAsSkipped() throws Exception {
+        Zombie zombie = world.spawn(new Location(world, 40.5, 64, 40.5), Zombie.class);
+        RollbackPlan plan = plan(new ChunkPlan("world", 0, 0, List.of(
+                new PlannedChange.RemoveEntity(BlockPositions.pack(1, 64, 0), zombie.getUniqueId()),
+                new PlannedChange.RemoveEntity(BlockPositions.pack(1, 64, 0), UUID.randomUUID()))));
+
+        CompletableFuture<ChunkApplier.Result> result = applier.apply(plan, 10, 1, (done, total) -> {
+        });
+        server.getScheduler().performOneTick();
+
+        assertEquals(new ChunkApplier.Result(0, 0, 1, 1), result.get(1, TimeUnit.SECONDS));
+        assertFalse(zombie.isValid());
     }
 
     @Test

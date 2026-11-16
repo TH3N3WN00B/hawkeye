@@ -4,6 +4,7 @@ import gg.moonrise.hawkeye.entity.payload.Payload;
 import gg.moonrise.hawkeye.util.BlockPositions;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 import org.jetbrains.annotations.NotNull;
 
 /** One change a plan makes to the world at a block position. */
@@ -105,9 +106,9 @@ public sealed interface PlannedChange {
     }
 
     /**
-     * Spawns a killed entity again.
+     * Spawns a killed or removed entity again.
      *
-     * @param position the packed position it died at
+     * @param position the packed position it died or was removed at
      * @param entity   Paper's entity bytes
      */
     record SpawnEntity(long position, byte @NotNull [] entity) implements PlannedChange {
@@ -126,5 +127,16 @@ public sealed interface PlannedChange {
         public @NotNull String toString() {
             return "SpawnEntity[" + position + ", " + entity.length + " bytes]";
         }
+    }
+
+    /**
+     * Removes a placed or spawned entity, found by its UUID wherever it went in the world. The change
+     * runs on the region of the position it was spawned at and only removes the entity when that region
+     * owns it.
+     *
+     * @param position the packed position it was spawned at
+     * @param entity   the entity's UUID
+     */
+    record RemoveEntity(long position, @NotNull UUID entity) implements PlannedChange {
     }
 }

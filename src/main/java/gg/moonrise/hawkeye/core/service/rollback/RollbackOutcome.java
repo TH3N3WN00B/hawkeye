@@ -11,8 +11,8 @@ public sealed interface RollbackOutcome {
      * @param mode     the mode
      * @param events   events flagged
      * @param blocks   blocks and sign texts changed
-     * @param items    item stacks put into or taken out of containers
-     * @param entities entities respawned
+     * @param items    item stacks put into or taken out of containers, item frames and armour stands
+     * @param entities entities respawned or removed
      * @param millis   how long it took
      */
     record Applied(@NotNull RollbackMode mode, int events, int blocks, int items, int entities, long millis)

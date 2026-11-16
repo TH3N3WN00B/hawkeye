@@ -1,34 +1,46 @@
 package gg.moonrise.hawkeye.core.service.rollback;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import gg.moonrise.hawkeye.entity.payload.SignSides;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import gg.moonrise.hawkeye.util.BlockPositions;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import net.kyori.adventure.text.Component;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.Container;
 import org.bukkit.block.Sign;
 import org.bukkit.block.sign.Side;
+import org.bukkit.entity.ArmorStand;
+import org.bukkit.entity.ItemFrame;
+import org.bukkit.entity.Zombie;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockbukkit.mockbukkit.MockBukkit;
 import org.mockbukkit.mockbukkit.ServerMock;
+import org.mockbukkit.mockbukkit.entity.PlayerMock;
 
-/** The world side of a planned change, on MockBukkit blocks. */
+/** The world side of a planned change, on MockBukkit blocks and entities. */
 public class WorldWriterTest {
 
+    private ServerMock server;
     private World world;
     private WorldWriter writer;
 
     @BeforeEach
     public void setUp() {
-        ServerMock server = MockBukkit.mock();
+        server = MockBukkit.mock();
         TestPlugins.load();
         world = server.addSimpleWorld("world");
         writer = TestPlugins.bean(WorldWriter.class);
@@ -98,6 +110,93 @@ public class WorldWriterTest {
         assertEquals(76, count(block, Material.DIAMOND));
         assertEquals(WorldWriter.Effect.NONE, writer.apply(world, new PlannedChange.AdjustItems(position(4, 64, 3),
                 "minecraft:diamond", new byte[0], 1)));
+    }
+
+    @Test
+    public void aSpawnedEntityIsRemovedByItsUuid() {
+        Zombie zombie = world.spawn(new Location(world, 30.5, 64, 30.5), Zombie.class);
+
+        assertEquals(WorldWriter.Effect.ENTITY, writer.apply(world, new PlannedChange.RemoveEntity(position(1, 64, 1),
+                zombie.getUniqueId())));
+
+        assertFalse(zombie.isValid());
+        assertNull(world.getEntity(zombie.getUniqueId()));
+        assertEquals(WorldWriter.Effect.NONE, writer.apply(world, new PlannedChange.RemoveEntity(position(1, 64, 1),
+                zombie.getUniqueId())));
+    }
+
+    @Test
+    public void playersAreNeverRemoved() {
+        PlayerMock player = server.addPlayer("Alex");
+        player.teleport(new Location(world, 1, 64, 1));
+
+        assertEquals(WorldWriter.Effect.NONE, writer.apply(world, new PlannedChange.RemoveEntity(position(1, 64, 1),
+                player.getUniqueId())));
+        assertTrue(player.isValid());
+    }
+
+    @Test
+    public void anEntityOfAnotherRegionIsLeftAlone() throws Exception {
+        Zombie zombie = world.spawn(new Location(world, 1.5, 64, 1.5), Zombie.class);
+        AtomicReference<WorldWriter.Effect> effect = new AtomicReference<>();
+
+        // MockBukkit says a thread owns an entity's region only when it is the main thread.
+        Thread other = new Thread(() -> effect.set(writer.apply(world, new PlannedChange.RemoveEntity(
+                position(1, 64, 1), zombie.getUniqueId()))));
+        other.start();
+        other.join(TimeUnit.SECONDS.toMillis(10));
+
+        assertEquals(WorldWriter.Effect.NONE, effect.get());
+        assertTrue(zombie.isValid());
+    }
+
+    @Test
+    public void itemsGoIntoAnEmptyItemFrameAndOutOfOneHoldingThem() {
+        ItemFrame frame = world.spawn(new Location(world, 5.5, 64.5, 5.97), ItemFrame.class);
+
+        assertEquals(WorldWriter.Effect.ITEMS, adjust(5, 64, 5, "minecraft:diamond", 1));
+        assertEquals(Material.DIAMOND, frame.getItem().getType());
+        assertEquals(1, frame.getItem().getAmount());
+        assertEquals(WorldWriter.Effect.NONE, adjust(5, 64, 5, "minecraft:emerald", 1));
+        assertEquals(WorldWriter.Effect.NONE, adjust(5, 64, 5, "minecraft:emerald", -1));
+        assertEquals(Material.DIAMOND, frame.getItem().getType());
+
+        assertEquals(WorldWriter.Effect.ITEMS, adjust(5, 64, 5, "minecraft:diamond", -1));
+        assertTrue(frame.getItem().isEmpty());
+        assertEquals(WorldWriter.Effect.NONE, adjust(5, 64, 6, "minecraft:diamond", 1));
+    }
+
+    @Test
+    public void itemsGoOntoAnArmourStandAndOffIt() {
+        ArmorStand stand = world.spawn(new Location(world, 7.5, 64, 7.5), ArmorStand.class);
+
+        assertEquals(WorldWriter.Effect.ITEMS, adjust(7, 64, 7, "minecraft:iron_sword", 2));
+        assertEquals(Material.IRON_SWORD, stand.getItem(EquipmentSlot.HAND).getType());
+        assertEquals(Material.IRON_SWORD, stand.getItem(EquipmentSlot.OFF_HAND).getType());
+        assertEquals(WorldWriter.Effect.NONE, adjust(7, 64, 7, "minecraft:stick", 1));
+
+        stand.setItem(EquipmentSlot.HEAD, new ItemStack(Material.DIAMOND_HELMET));
+        assertEquals(WorldWriter.Effect.ITEMS, adjust(7, 64, 7, "minecraft:iron_sword", -1));
+        assertTrue(stand.getItem(EquipmentSlot.HAND).isEmpty());
+        assertEquals(Material.IRON_SWORD, stand.getItem(EquipmentSlot.OFF_HAND).getType());
+        assertEquals(WorldWriter.Effect.ITEMS, adjust(7, 64, 7, "minecraft:diamond_helmet", -1));
+        assertTrue(stand.getItem(EquipmentSlot.HEAD).isEmpty());
+    }
+
+    @Test
+    public void aContainerBlockComesBeforeAFrameInIt() {
+        Block block = world.getBlockAt(9, 64, 9);
+        block.setType(Material.CHEST);
+        ItemFrame frame = world.spawn(new Location(world, 9.5, 64.5, 9.5), ItemFrame.class);
+
+        assertEquals(WorldWriter.Effect.ITEMS, adjust(9, 64, 9, "minecraft:diamond", 1));
+
+        assertEquals(1, count(block, Material.DIAMOND));
+        assertTrue(frame.getItem().isEmpty());
+    }
+
+    private WorldWriter.Effect adjust(int x, int y, int z, String material, int delta) {
+        return writer.apply(world, new PlannedChange.AdjustItems(position(x, y, z), material, new byte[0], delta));
     }
 
     private static int count(Block block, Material material) {

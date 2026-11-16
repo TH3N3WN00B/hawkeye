@@ -13,7 +13,7 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * Plans rollbacks and restores from events, without touching the server or the database: which
- * events an operation reads, and what each block, container and killed entity becomes
+ * events an operation reads, and what each block, container and entity becomes
  * ({@link PlanBuilder}).
  */
 @SpringComponent
@@ -21,7 +21,7 @@ public final class RollbackPlanner {
 
     /**
      * The query an operation reads: the issuer's filter narrowed to the actions it reverses (only
-     * reversible ones; containers and kills only when configured; never kills for a restore) and to
+     * reversible ones; containers and entities only when configured; never entities for a restore) and to
      * the events the mode undoes or redoes.
      *
      * @param query   the issuer's query
