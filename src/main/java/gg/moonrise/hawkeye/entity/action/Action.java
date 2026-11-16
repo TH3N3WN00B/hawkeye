@@ -20,6 +20,11 @@ public enum Action {
     SIGN_EDIT(4, ActionFamily.BLOCK, true),
     /** A block was used (door, lever, button, ...); subject is the new state, secondary the old. */
     INTERACT(5, ActionFamily.BLOCK, false),
+    /**
+     * A crop or plant grew (ripened, or a new block grew: melon, sugar cane, cactus); subject is the new
+     * state, no secondary. Recorded compactly and never changed by rollbacks.
+     */
+    BLOCK_GROW(6, ActionFamily.BLOCK, false),
 
     /** Items were put into a container; subject is the item material, amount the count. */
     CONTAINER_DEPOSIT(10, ActionFamily.CONTAINER, true),
@@ -30,14 +35,48 @@ public enum Action {
     ITEM_DROP(20, ActionFamily.ITEM, false),
     /** Items were picked up; subject is the item material, amount the count. */
     ITEM_PICKUP(21, ActionFamily.ITEM, false),
+    /** Items were crafted; subject is the result material, amount the count. */
+    ITEM_CRAFT(22, ActionFamily.ITEM, false),
+    /** An item was thrown or shot (snowball, egg, pearl, trident, potion); subject is its material. */
+    ITEM_THROW(23, ActionFamily.ITEM, false),
+    /** A tool, weapon or armour piece broke; subject is its material. */
+    ITEM_BREAK(24, ActionFamily.ITEM, false),
+    /** Items were bought from a villager or wandering trader; subject is the bought material, amount the count. */
+    ITEM_TRADE(25, ActionFamily.ITEM, false),
 
     /** An entity was killed; subject is the entity type, the payload the entity for rollback. */
     ENTITY_KILL(30, ActionFamily.ENTITY, true),
+    /**
+     * An entity was placed or spawned by an actor (armour stand, boat, minecart, painting, item frame,
+     * spawn egg, built golem or wither); the payload references the entity so a rollback removes it.
+     */
+    ENTITY_SPAWN(31, ActionFamily.ENTITY, true),
+    /**
+     * A non-living entity was destroyed or taken (painting, item frame, boat, minecart, end crystal, a
+     * mob caught in a bucket); the payload is the entity so a rollback puts it back.
+     */
+    ENTITY_REMOVE(32, ActionFamily.ENTITY, true),
+    /** An entity was sheared. */
+    ENTITY_SHEAR(33, ActionFamily.ENTITY, false),
+    /** An entity was named with a name tag; the payload is the new name. */
+    ENTITY_NAME(34, ActionFamily.ENTITY, false),
+    /** An entity was put on a lead. */
+    ENTITY_LEASH(35, ActionFamily.ENTITY, false),
+    /** An entity was taken off a lead. */
+    ENTITY_UNLEASH(36, ActionFamily.ENTITY, false),
+    /** An entity was tamed. */
+    ENTITY_TAME(37, ActionFamily.ENTITY, false),
+    /** An entity was dyed (sheep wool, a wolf or cat collar); the payload is the colour. */
+    ENTITY_DYE(38, ActionFamily.ENTITY, false),
 
     /** A chat message; the payload is the text. */
     CHAT(40, ActionFamily.MESSAGE, false),
     /** A command; the payload is the command line. */
     COMMAND(41, ActionFamily.MESSAGE, false),
+    /** A book and quill was written or signed; the payload is the text (and title when signed). */
+    BOOK_EDIT(42, ActionFamily.MESSAGE, false),
+    /** A player's game mode changed; the payload is the new mode and the cause. */
+    GAMEMODE_CHANGE(43, ActionFamily.MESSAGE, false),
 
     /** A player joined. */
     JOIN(50, ActionFamily.SESSION, false),

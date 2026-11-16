@@ -6,6 +6,7 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
 import java.util.zip.Inflater;
@@ -31,6 +32,7 @@ public final class PayloadCodec {
     private static final int ITEM = 3;
     private static final int INVENTORY = 4;
     private static final int ENTITY = 5;
+    private static final int ENTITY_REF = 6;
     private static final int DEFLATED = 0x80;
     private static final int TYPE_MASK = 0x7F;
 
@@ -62,6 +64,9 @@ public final class PayloadCodec {
                 yield tagged(INVENTORY, body.toByteArray());
             }
             case Payload.Entity entity -> tagged(ENTITY, entity.bytes());
+            case Payload.EntityRef ref -> tagged(ENTITY_REF, new ByteWriter(16)
+                    .writeLong(ref.uuid().getMostSignificantBits())
+                    .writeLong(ref.uuid().getLeastSignificantBits()).toByteArray());
         };
     }
 
@@ -90,6 +95,7 @@ public final class PayloadCodec {
                 yield new Payload.Inventory(slots);
             }
             case ENTITY -> new Payload.Entity(body);
+            case ENTITY_REF -> new Payload.EntityRef(new UUID(in.readLong(), in.readLong()));
             default -> throw new CodecException("unknown payload tag " + tag);
         };
     }

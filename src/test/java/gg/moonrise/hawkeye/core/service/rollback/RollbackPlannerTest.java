@@ -261,7 +261,8 @@ public class RollbackPlannerTest {
         LookupQuery everything = planner.query(LookupQuery.at(new Area.Everywhere()), RollbackMode.ROLLBACK, ALL)
                 .orElseThrow();
         assertEquals(EnumSet.of(Action.BLOCK_BREAK, Action.BLOCK_PLACE, Action.BLOCK_CHANGE, Action.SIGN_EDIT,
-                Action.CONTAINER_DEPOSIT, Action.CONTAINER_WITHDRAW, Action.ENTITY_KILL), everything.actions());
+                Action.CONTAINER_DEPOSIT, Action.CONTAINER_WITHDRAW, Action.ENTITY_KILL, Action.ENTITY_SPAWN,
+                Action.ENTITY_REMOVE), everything.actions());
     }
 
     @Test

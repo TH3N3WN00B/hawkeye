@@ -18,7 +18,7 @@ public final class QueryMessages {
     private String invalidRadius = "<red><white><value></white> is not a radius; use e.g. <white>r:10</white>, "
             + "<white>r:10x5</white>, <white>r:#world</white> or <white>r:#global</white>.";
     private String unknownAction = "<red><white><value></white> is not an action; try block, +block, -block, "
-            + "container, item, kill, chat, command, session, sign or click.";
+            + "container, item, kill, entity, grow, craft, throw, trade, chat, command, book, session, sign or click.";
     private String unknownType = "<red>There is no block, item or entity called <white><value></white>.";
     private String invalidServer = "<red><white><value></white> is not a server name.";
     private String emptyValue = "<red><white><value></white> needs a value.";

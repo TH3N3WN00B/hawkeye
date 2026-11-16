@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import gg.moonrise.hawkeye.entity.payload.Payload;
 import gg.moonrise.hawkeye.entity.payload.SignSides;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 public class PayloadCodecTest {
@@ -21,7 +22,8 @@ public class PayloadCodecTest {
                 new Payload.Item(new byte[] {1, 2, 3}),
                 new Payload.Inventory(List.of(new Payload.Slot(0, new byte[] {9}), new Payload.Slot(26,
                         new byte[] {8, 7}))),
-                new Payload.Entity(new byte[] {4, 5}));
+                new Payload.Entity(new byte[] {4, 5}),
+                new Payload.EntityRef(UUID.fromString("0f8fad5b-d9cb-469f-a165-70867728950e")));
         for (Payload payload : payloads) {
             assertEquals(payload, PayloadCodec.decode(PayloadCodec.encode(payload)), payload.toString());
         }

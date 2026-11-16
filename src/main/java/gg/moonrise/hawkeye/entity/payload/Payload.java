@@ -2,6 +2,7 @@ package gg.moonrise.hawkeye.entity.payload;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -92,6 +93,15 @@ public sealed interface Payload {
         public @NotNull String toString() {
             return "Entity[" + bytes.length + " bytes]";
         }
+    }
+
+    /**
+     * A reference to an entity that still exists (a placed or spawned one), so a rollback can find and
+     * remove it.
+     *
+     * @param uuid the entity's UUID
+     */
+    record EntityRef(@NotNull UUID uuid) implements Payload {
     }
 
     /**

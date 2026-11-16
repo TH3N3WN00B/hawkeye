@@ -66,6 +66,46 @@ public final class LoggingSettings {
 
     private boolean sessions = true;
 
+    @Comment({"Crops and plants growing. Recorded compactly: a ripe crop and a newly grown block (melon, pumpkin,",
+            "sugar cane, cactus, vines) each make one event under #growth, and rollbacks never change them."})
+    private boolean cropGrowth = true;
+
+    @Comment("Also record every intermediate growth stage of crops (several events per crop; off keeps it compact).")
+    private boolean cropGrowthStages = false;
+
+    @Comment("Blocks and liquids placed or picked up by dispensers (#dispenser).")
+    private boolean dispensers = true;
+
+    @Comment({"Entities placed, spawned or destroyed: armour stands, boats, minecarts, paintings, item frames,",
+            "end crystals, spawn eggs, built golems and withers, mobs caught in buckets."})
+    private boolean entities = true;
+
+    @Comment("Players shearing, naming, leashing, taming and dyeing entities.")
+    private boolean entityInteractions = true;
+
+    private boolean crafting = true;
+
+    @Comment("Items thrown or shot (snowballs, eggs, pearls, tridents, potions) and tools that broke.")
+    private boolean itemUse = true;
+
+    private boolean trades = true;
+
+    @Comment("Books written and signed (the text is stored).")
+    private boolean books = true;
+
+    private boolean gamemodes = true;
+
+    @Comment("Commands run from the server console (not command blocks).")
+    private boolean consoleCommands = true;
+
+    @Comment({"Blame flowing water and lava on the player who poured it (and on its flow), instead of #water or",
+            "#lava, so /hawkeye rollback u:<player> also removes the flow."})
+    private boolean liquidTracking = true;
+
+    @Comment({"Record blocks that fall off when their support is removed (torches, signs, rails, flowers, sugar",
+            "cane, ...) under whoever removed the support."})
+    private boolean attachedBlocks = true;
+
     @Comment("World names where nothing is recorded.")
     private List<String> disabledWorlds = List.of();
 
@@ -100,6 +140,16 @@ public final class LoggingSettings {
             case CHAT -> chat;
             case COMMANDS -> commands;
             case SESSIONS -> sessions;
+            case CROP_GROWTH -> cropGrowth;
+            case DISPENSERS -> dispensers;
+            case ENTITIES -> entities;
+            case ENTITY_INTERACTIONS -> entityInteractions;
+            case CRAFTING -> crafting;
+            case ITEM_USE -> itemUse;
+            case TRADES -> trades;
+            case BOOKS -> books;
+            case GAMEMODES -> gamemodes;
+            case CONSOLE_COMMANDS -> consoleCommands;
         };
     }
 

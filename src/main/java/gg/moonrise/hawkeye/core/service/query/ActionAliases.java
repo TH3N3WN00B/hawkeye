@@ -1,6 +1,7 @@
 package gg.moonrise.hawkeye.core.service.query;
 
 import gg.moonrise.hawkeye.entity.action.Action;
+import gg.moonrise.hawkeye.entity.action.ActionFamily;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -47,15 +48,26 @@ public final class ActionAliases {
         aliases.put("change", Set.of(Action.BLOCK_CHANGE));
         aliases.put("sign", Set.of(Action.SIGN_EDIT));
         aliases.put("click", Set.of(Action.INTERACT));
+        aliases.put("grow", Set.of(Action.BLOCK_GROW));
         aliases.put("container", Set.of(Action.CONTAINER_DEPOSIT, Action.CONTAINER_WITHDRAW));
         aliases.put("+container", Set.of(Action.CONTAINER_DEPOSIT));
         aliases.put("-container", Set.of(Action.CONTAINER_WITHDRAW));
-        aliases.put("item", Set.of(Action.ITEM_DROP, Action.ITEM_PICKUP));
+        aliases.put("item", Set.of(Action.ITEM_DROP, Action.ITEM_PICKUP, Action.ITEM_CRAFT, Action.ITEM_THROW,
+                Action.ITEM_BREAK, Action.ITEM_TRADE));
         aliases.put("+item", Set.of(Action.ITEM_PICKUP));
         aliases.put("-item", Set.of(Action.ITEM_DROP));
+        aliases.put("craft", Set.of(Action.ITEM_CRAFT));
+        aliases.put("throw", Set.of(Action.ITEM_THROW));
+        aliases.put("trade", Set.of(Action.ITEM_TRADE));
         aliases.put("kill", Set.of(Action.ENTITY_KILL));
+        aliases.put("entity", Set.of(Action.of(ActionFamily.ENTITY)));
+        aliases.put("+entity", Set.of(Action.ENTITY_SPAWN));
+        aliases.put("-entity", Set.of(Action.ENTITY_REMOVE, Action.ENTITY_KILL));
+        aliases.put("spawn", Set.of(Action.ENTITY_SPAWN));
         aliases.put("chat", Set.of(Action.CHAT));
         aliases.put("command", Set.of(Action.COMMAND));
+        aliases.put("book", Set.of(Action.BOOK_EDIT));
+        aliases.put("gamemode", Set.of(Action.GAMEMODE_CHANGE));
         aliases.put("session", Set.of(Action.JOIN, Action.QUIT));
         aliases.put("+session", Set.of(Action.JOIN));
         aliases.put("-session", Set.of(Action.QUIT));

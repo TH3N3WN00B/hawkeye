@@ -33,6 +33,8 @@ public class ActionTest {
     public void familiesSayWhatTheSubjectIs() {
         assertTrue(ActionFamily.BLOCK.hasSubject());
         assertTrue(!ActionFamily.MESSAGE.hasSubject());
-        assertEquals(5, Action.of(ActionFamily.BLOCK).length);
+        assertEquals(6, Action.of(ActionFamily.BLOCK).length);
+        assertTrue(!Action.BLOCK_GROW.reversible(), "growth is never rolled back");
+        assertTrue(Action.ENTITY_SPAWN.reversible() && Action.ENTITY_REMOVE.reversible());
     }
 }

@@ -140,6 +140,7 @@ public record EventLines(@NotNull LookupMessages lookup, @NotNull ActionMessages
             case Payload.Item item -> Optional.empty();
             case Payload.Inventory inventory -> Optional.empty();
             case Payload.Entity entity -> Optional.empty();
+            case Payload.EntityRef ref -> Optional.empty();
         });
     }
 
@@ -150,13 +151,28 @@ public record EventLines(@NotNull LookupMessages lookup, @NotNull ActionMessages
             case BLOCK_CHANGE -> actions.getBlockChange();
             case SIGN_EDIT -> actions.getSignEdit();
             case INTERACT -> actions.getInteract();
+            case BLOCK_GROW -> actions.getBlockGrow();
             case CONTAINER_DEPOSIT -> actions.getContainerDeposit();
             case CONTAINER_WITHDRAW -> actions.getContainerWithdraw();
             case ITEM_DROP -> actions.getItemDrop();
             case ITEM_PICKUP -> actions.getItemPickup();
+            case ITEM_CRAFT -> actions.getItemCraft();
+            case ITEM_THROW -> actions.getItemThrow();
+            case ITEM_BREAK -> actions.getItemBreak();
+            case ITEM_TRADE -> actions.getItemTrade();
             case ENTITY_KILL -> actions.getEntityKill();
+            case ENTITY_SPAWN -> actions.getEntitySpawn();
+            case ENTITY_REMOVE -> actions.getEntityRemove();
+            case ENTITY_SHEAR -> actions.getEntityShear();
+            case ENTITY_NAME -> actions.getEntityName();
+            case ENTITY_LEASH -> actions.getEntityLeash();
+            case ENTITY_UNLEASH -> actions.getEntityUnleash();
+            case ENTITY_TAME -> actions.getEntityTame();
+            case ENTITY_DYE -> actions.getEntityDye();
             case CHAT -> actions.getChat();
             case COMMAND -> actions.getCommand();
+            case BOOK_EDIT -> actions.getBookEdit();
+            case GAMEMODE_CHANGE -> actions.getGamemodeChange();
             case JOIN -> actions.getJoin();
             case QUIT -> actions.getQuit();
         };

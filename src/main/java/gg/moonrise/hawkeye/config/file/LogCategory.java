@@ -39,6 +39,26 @@ public enum LogCategory {
     CHAT,
     /** Commands. */
     COMMANDS,
-    /** Joins and quits. */
-    SESSIONS
+    /** Joins and quits (and kicks). */
+    SESSIONS,
+    /** Crops and plants growing (ripe crops and newly grown blocks; see {@code crop-growth-stages}). */
+    CROP_GROWTH,
+    /** Blocks and liquids placed or picked up by dispensers. */
+    DISPENSERS,
+    /** Entities placed, spawned, destroyed or taken by players and other causes. */
+    ENTITIES,
+    /** Players shearing, naming, leashing, taming and dyeing entities. */
+    ENTITY_INTERACTIONS,
+    /** Items crafted. */
+    CRAFTING,
+    /** Items thrown or shot, and tools that broke. */
+    ITEM_USE,
+    /** Villager and wandering trader trades. */
+    TRADES,
+    /** Books written and signed. */
+    BOOKS,
+    /** Game mode changes. */
+    GAMEMODES,
+    /** Commands run from the server console. */
+    CONSOLE_COMMANDS
 }

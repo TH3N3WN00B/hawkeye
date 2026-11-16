@@ -45,6 +45,7 @@ public final class EventRecorder {
     private final @NotNull EventClock clock;
     private final @NotNull EventQueue queue;
     private final @NotNull HawkeyeConfigProvider configProvider;
+    private final @NotNull CauseTracker causes;
     private final LongAdder skipped = new LongAdder();
 
     /**
@@ -154,6 +155,49 @@ public final class EventRecorder {
     }
 
     /**
+     * Records an entity placed or spawned by an actor, with a reference so a rollback can remove it.
+     *
+     * @param actor  who placed or spawned it
+     * @param entity the entity, already in the world or about to be added
+     */
+    public void entitySpawn(@NotNull Actor actor, @NotNull Entity entity) {
+        entity(Action.ENTITY_SPAWN, actor, entity, new Payload.EntityRef(entity.getUniqueId()));
+    }
+
+    /**
+     * Records a non-living entity destroyed or taken (painting, item frame, vehicle, a mob caught in a
+     * bucket), serialized so a rollback can put it back.
+     *
+     * @param actor  who destroyed or took it
+     * @param entity the entity, still in the world
+     */
+    public void entityRemove(@NotNull Actor actor, @NotNull Entity entity) {
+        Payload payload = null;
+        try {
+            payload = new Payload.Entity(EntityBytes.serialize(entity));
+        } catch (RuntimeException e) {
+            log.debug("Could not serialize a removed {}; it is logged without rollback data", entity.getType(), e);
+        }
+        entity(Action.ENTITY_REMOVE, actor, entity, payload);
+    }
+
+    /**
+     * Records an entity-family action at an entity's position.
+     *
+     * @param action  an entity-family action
+     * @param actor   who did it
+     * @param entity  the entity
+     * @param payload optional extra data (a new name, a colour, an entity reference)
+     */
+    public void entity(@NotNull Action action, @NotNull Actor actor, @NotNull Entity entity,
+            @Nullable Payload payload) {
+        requireFamily(action, ActionFamily.ENTITY);
+        Location location = entity.getLocation();
+        record(action, actor, location.getWorld(), location.getBlockX(), location.getBlockY(), location.getBlockZ(),
+                entity.getType().getKey().toString(), null, 0, payload);
+    }
+
+    /**
      * Records a chat message or command.
      *
      * @param action   {@link Action#CHAT} or {@link Action#COMMAND}
@@ -205,6 +249,11 @@ public final class EventRecorder {
         }
         if (configProvider.get().logging().worldDisabled(world.getName())) {
             return;
+        }
+        if (action.family() == ActionFamily.BLOCK) {
+            // Lets a second report of the same change (a piston break the server also reports as a
+            // destroyed block) be recognised and skipped.
+            causes.markRecorded(world, x, y, z);
         }
         byte[] data = payload == null ? null : PayloadCodec.encode(payload);
         queue.offer(new PendingEvent(clock.next(), world.getName(), BlockPositions.pack(x, y, z), actor, action,
