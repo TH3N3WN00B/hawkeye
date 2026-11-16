@@ -11,7 +11,11 @@ import gg.moonrise.hawkeye.core.repository.DictionaryRepository;
 import gg.moonrise.hawkeye.core.repository.EventFilter;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
 import gg.moonrise.hawkeye.core.repository.SegmentRepository;
+import gg.moonrise.hawkeye.core.repository.PlaceIndexRepository;
 import gg.moonrise.hawkeye.core.repository.SegmentRow;
+import gg.moonrise.hawkeye.core.repository.place.PlaceChunk;
+import gg.moonrise.hawkeye.core.repository.place.PlaceKeys;
+import gg.moonrise.hawkeye.core.repository.place.PlaceRegion;
 import gg.moonrise.hawkeye.core.repository.segment.SegmentHeader;
 import gg.moonrise.hawkeye.core.repository.segment.SharedFrame;
 import gg.moonrise.hawkeye.core.sql.SqliteHarness;
@@ -35,6 +39,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -50,7 +55,9 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * Packing moves events into segments without changing what any read returns. The archived harness
  * holds events in the hot table and in segments whose id ranges overlap (late events packed after
- * their neighbours); a reference harness holds the same events in the hot table only.
+ * their neighbours); a reference harness holds the same events in the hot table only. The archived
+ * harness's place index calls a chunk busy after {@link #BUSY} segments, so the events around the
+ * origin are in busy chunks and the scattered ones far from it in chunks of one segment.
  */
 public class ArchiveTest {
 
@@ -60,6 +67,8 @@ public class ArchiveTest {
     private static final long END = T0 + EVENTS * STEP;
     private static final ShardScope ALL = new ShardScope.All();
     private static final ArchiveSettings SEGMENTS_OF_500 = new ArchiveSettings().withPacking(500, 60, 1);
+    private static final ArchiveSettings SEGMENTS_OF_50 = new ArchiveSettings().withPacking(50, 60, 1);
+    private static final int BUSY = 2;
 
     @TempDir
     private Path folder;
@@ -69,6 +78,7 @@ public class ArchiveTest {
     private EventStore store;
     private EventStore referenceStore;
     private Archive archive;
+    private CountingSegmentRepository segments;
     private ServerNode node;
     private ServerNode referenceNode;
     private final List<Actor> actors = new ArrayList<>();
@@ -78,12 +88,12 @@ public class ArchiveTest {
     public void setUp() throws SQLException {
         harness = SqliteHarness.open(folder.resolve("archived"));
         reference = SqliteHarness.open(folder.resolve("reference"));
-        archive = new Archive(new EventRepository(), new SegmentRepository(), new SegmentCache());
+        segments = new CountingSegmentRepository();
+        archive = Archives.create(segments, BUSY);
         store = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
                 new ActorRepository()), archive);
         referenceStore = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
-                new ActorRepository()), new Archive(new EventRepository(), new SegmentRepository(),
-                new SegmentCache()));
+                new ActorRepository()), Archives.create());
         node = harness.register("survival", "survival");
         referenceNode = reference.register("survival", "survival");
         for (int i = 0; i < 6; i++) {
@@ -212,6 +222,10 @@ public class ArchiveTest {
         while (store.purgeBatch(harness.shard(), bound, List.of(), 400) > 0) {
             // Purge until nothing older is left.
         }
+        while (referenceStore.purgeBatch(reference.shard(), bound, List.of(), 400) > 0) {
+            // The same on the hot-only copy.
+        }
+        assertLookupsMatchReference("after purging whole and straddling segments");
         assertEquals(kept, store.count(harness.shard(), everything, ALL));
         assertEquals(flagged.stream().filter(id -> id >= EventIds.floor(bound)).count(),
                 store.count(harness.shard(), everything.withRollbackState(RollbackState.ROLLED_BACK), ALL),
@@ -229,9 +243,16 @@ public class ArchiveTest {
         long kept = events.stream().filter(event -> !event.world().equals("nether") || event.epochMillis() >= bound)
                 .count();
 
+        long indexBefore = indexBytes();
         while (store.purgeBatch(harness.shard(), bound, List.of(nether), 400) > 0) {
             // Purge until nothing older is left.
         }
+        int referenceNether = worldId(referenceStore, "nether");
+        while (referenceStore.purgeBatch(reference.shard(), bound, List.of(referenceNether), 400) > 0) {
+            // The same on the hot-only copy.
+        }
+        assertLookupsMatchReference("after purging a world");
+        assertTrue(indexBytes() < indexBefore, "the index shrinks: " + indexBefore + " -> " + indexBytes());
         LookupQuery everything = LookupQuery.at(new Area.Everywhere());
         assertEquals(kept, store.count(harness.shard(), everything, ALL));
         assertEquals(events.stream().filter(event -> event.world().equals("world")).count(),
@@ -306,6 +327,128 @@ public class ArchiveTest {
         assertTrue(unordered.frameLength(SharedFrame.RANK) > 0, "capture stamps do need ranks");
     }
 
+    @Test
+    public void aBlockNeverTouchedInABusyChunkReadsNoSegmentBody() throws SQLException {
+        archiveInTwoWaves();
+        long untouched = BlockPositions.pack(0, 0, 0);
+        assertTrue(busy(worldId("world"), untouched), "the chunk at the origin is in every segment");
+        segments.takeBodyReads();
+
+        assertEquals(List.of(), store.find(harness.shard(), LookupQuery.at(new Area.Block("world", 0, 0, 0)), ALL, 0,
+                10, true));
+        assertEquals(0, store.count(harness.shard(), LookupQuery.at(new Area.Block("world", 0, 0, 0)), ALL));
+        assertEquals(List.of(), segments.takeBodyReads(), "no segment body is read");
+
+        LookupQuery touched = queries().get(1);
+        assertEquals(pages(referenceStore, reference, touched, true), pages(store, harness, touched, true));
+        assertTrue(!segments.takeBodyReads().isEmpty(), "a block with history reads the segments holding it");
+    }
+
+    @Test
+    public void aBlockTouchedOnceInABusyChunkReadsOneBucketAndChatIsFoundWhereItWasSaid() throws SQLException {
+        events.clear();
+        Random random = new Random(41);
+        long chatAt = BlockPositions.pack(3, 64, 4);
+        long onceAt = BlockPositions.pack(5, 71, 6);
+        for (int i = 0; i < EVENTS; i++) {
+            PendingEvent event = event(random, T0 + i * STEP);
+            if (i == 1_700) {
+                event = new PendingEvent(event.stamp(), "world", chatAt, event.actor(), Action.CHAT, "", null, 0,
+                        new byte[] {1, 'h', 'e', 'r', 'e'});
+            } else if (i == 2_100) {
+                event = new PendingEvent(event.stamp(), "world", onceAt, event.actor(), Action.BLOCK_BREAK,
+                        "minecraft:stone", "minecraft:air", 0, null);
+            } else if (event.world().equals("world") && (event.position() == chatAt || event.position() == onceAt)) {
+                continue;
+            }
+            events.add(event);
+        }
+        referenceStore.write(reference.shard(), referenceNode, "survival", events);
+        store.write(harness.shard(), node, "survival", events);
+        int packed = 0;
+        int pass;
+        while ((pass = archive.compact(harness.shard(), SEGMENTS_OF_50, END + 120_000)) > 0) {
+            packed += pass;
+        }
+        assertEquals(events.size(), packed);
+        assertTrue(archive.totals(harness.shard()).segments() > 64, "more than four buckets of segments");
+        assertTrue(busy(worldId("world"), onceAt) && busy(worldId("world"), chatAt));
+        segments.takeBodyReads();
+
+        LookupQuery once = LookupQuery.at(new Area.Block("world", 5, 71, 6));
+        List<Long> expected = pages(referenceStore, reference, once, true);
+        assertEquals(1, expected.size());
+        assertEquals(expected, pages(store, harness, once, true));
+        List<Long> read = segments.takeBodyReads();
+        assertTrue(!read.isEmpty() && read.stream().map(PlaceChunk::bucket).distinct().count() == 1,
+                "only segments of one bucket are read: " + read);
+        assertTrue(new HashSet<>(read).size() <= 1 << PlaceChunk.BUCKET_SHIFT, read.toString());
+
+        LookupQuery chat = LookupQuery.at(new Area.Block("world", 3, 64, 4));
+        List<StoredEvent> said = store.find(harness.shard(), chat, ALL, 0, 10, true);
+        assertEquals(1, said.size());
+        assertEquals(Action.CHAT, said.getFirst().action());
+        assertEquals(pages(referenceStore, reference, chat, true), List.of(said.getFirst().id()));
+        assertLookupsMatchReference("segments of 50 events");
+    }
+
+    @Test
+    public void purgingOldSegmentsShrinksTheIndex() throws SQLException {
+        Random random = new Random(13);
+        for (int i = 0; i < EVENTS / 2; i += 3) {
+            // A build site that was busy early on and then left alone.
+            PendingEvent event = events.get(i);
+            events.set(i, new PendingEvent(event.stamp(), "world", BlockPositions.pack(5_000 + random.nextInt(40), 64,
+                    5_000 + random.nextInt(40)), event.actor(), Action.BLOCK_PLACE, "minecraft:stone", "minecraft:air",
+                    0, null));
+        }
+        referenceStore.write(reference.shard(), referenceNode, "survival", events);
+        store.write(harness.shard(), node, "survival", events);
+        while (archive.compact(harness.shard(), SEGMENTS_OF_50, END + 120_000) > 0) {
+            // Pack everything, 50 events a segment: five buckets.
+        }
+        assertTrue(busy(worldId("world"), BlockPositions.pack(5_010, 64, 5_010)), "the old site is busy");
+        long indexBefore = indexBytes();
+        long bound = T0 + EVENTS * STEP * 3 / 5;
+        while (store.purgeBatch(harness.shard(), bound, List.of(), 400) > 0) {
+            // Purge until nothing older is left.
+        }
+        while (referenceStore.purgeBatch(reference.shard(), bound, List.of(), 400) > 0) {
+            // The same on the hot-only copy.
+        }
+        assertLookupsMatchReference("after purging three fifths");
+        assertTrue(!busy(worldId("world"), BlockPositions.pack(5_010, 64, 5_010)), "the old site's rows are gone");
+        assertTrue(indexBytes() < indexBefore, "the index shrinks: " + indexBefore + " -> " + indexBytes());
+        assertEquals(List.of(), store.find(harness.shard(), LookupQuery.at(new Area.Box("world", 5_000, 0, 5_000,
+                5_040, 100, 5_040)), ALL, 0, 10, true));
+    }
+
+    @Test
+    public void catchingUpBuildsTheIndexThatPackingBuiltAndLookupsHoldHalfway() throws SQLException {
+        archiveInTwoWaves();
+        Map<String, Object> packed = indexContent();
+        assertTrue(packed.keySet().stream().anyMatch(key -> key.startsWith("chunk")), "some chunks are busy");
+        assertTrue(packed.values().stream().filter(PlaceRegion.class::isInstance).map(PlaceRegion.class::cast)
+                .anyMatch(region -> region.chunks().keySet().stream().anyMatch(index -> !region.busy(index))),
+                "some chunks are not");
+        harness.database().transaction(connection -> {
+            new PlaceIndexRepository().reset(connection, harness.database().sql());
+            return null;
+        });
+        assertEquals(Map.of(), indexContent());
+        assertLookupsMatchReference("nothing indexed");
+
+        PlaceIndex.CatchUp first = archive.indexPlaces(harness.shard(), 2);
+        assertEquals(new PlaceIndex.CatchUp(2, true), first);
+        assertLookupsMatchReference("half indexed");
+
+        PlaceIndex.CatchUp rest = archive.indexPlaces(harness.shard(), 100);
+        assertEquals(new PlaceIndex.CatchUp(4, false), rest);
+        assertEquals(packed, indexContent(), "catching up gives the rows packing gave");
+        assertLookupsMatchReference("caught up");
+        assertEquals(new PlaceIndex.CatchUp(0, false), archive.indexPlaces(harness.shard(), 100));
+    }
+
     /**
      * Even-numbered events are written and packed first (four segments); the odd ones arrive late and
      * half of them are packed (two segments overlapping the first four); the rest stays hot.
@@ -331,6 +474,63 @@ public class ArchiveTest {
             packed += pass;
         }
         assertEquals(1_000, packed);
+    }
+
+    /** Every query, every page, newest and oldest first, and the counts, as the hot-only copy gives them. */
+    private void assertLookupsMatchReference(String label) throws SQLException {
+        List<LookupQuery> queries = queries();
+        for (int i = 0; i < queries.size(); i++) {
+            LookupQuery query = queries.get(i);
+            List<Long> expected = pages(referenceStore, reference, query, true);
+            assertEquals(expected, pages(store, harness, query, true), label + ": newest-first pages of query " + i);
+            assertEquals(expected.reversed(), pages(store, harness, query, false),
+                    label + ": oldest-first pages of query " + i);
+            assertEquals(expected.size(), store.count(harness.shard(), query, ALL), label + ": count of query " + i);
+        }
+    }
+
+    /** Whether a chunk has a {@code place_chunk} row. */
+    private boolean busy(int world, long position) throws SQLException {
+        long chunk = PlaceKeys.chunk(position);
+        return harness.database().read(connection -> !new PlaceIndexRepository().read(connection,
+                harness.database().sql(), PlaceIndexRepository.Kind.CHUNK, world, List.of(chunk)).isEmpty());
+    }
+
+    /** Every index row, decoded, by table, world, key and newest segment. */
+    private Map<String, Object> indexContent() throws SQLException {
+        return harness.database().read(connection -> {
+            Map<String, Object> out = new LinkedHashMap<>();
+            try (Statement statement = connection.createStatement()) {
+                try (ResultSet rows = statement.executeQuery("SELECT world, region, newest, body FROM "
+                        + harness.database().tables().placeRegion() + " ORDER BY world, region")) {
+                    while (rows.next()) {
+                        out.put("region " + rows.getInt(1) + " " + rows.getLong(2) + " " + rows.getLong(3),
+                                PlaceRegion.fromBody(rows.getInt(1), rows.getLong(2), rows.getBytes(4)));
+                    }
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT world, chunk, newest, body FROM "
+                        + harness.database().tables().placeChunk() + " ORDER BY world, chunk")) {
+                    while (rows.next()) {
+                        out.put("chunk " + rows.getInt(1) + " " + rows.getLong(2) + " " + rows.getLong(3),
+                                PlaceChunk.fromBody(rows.getInt(1), rows.getLong(2), rows.getBytes(4)));
+                    }
+                }
+            }
+            return out;
+        });
+    }
+
+    /** The bytes of every index row. */
+    private long indexBytes() throws SQLException {
+        return harness.database().read(connection -> {
+            try (Statement statement = connection.createStatement();
+                    ResultSet rows = statement.executeQuery("SELECT (SELECT COALESCE(SUM(LENGTH(body)), 0) FROM "
+                            + harness.database().tables().placeRegion() + ") + (SELECT COALESCE(SUM(LENGTH(body)), 0) "
+                            + "FROM " + harness.database().tables().placeChunk() + ")")) {
+                rows.next();
+                return rows.getLong(1);
+            }
+        });
     }
 
     private boolean overlapping() throws SQLException {
@@ -360,6 +560,13 @@ public class ArchiveTest {
         queries.add(query(new Area.Box("nether", -40, 60, -40, 40, 70, 40), Set.of("player5"),
                 Set.of(Action.BLOCK_BREAK), Set.of()).withTime(new TimeWindow(T0 + 3_000_000, T0 + 20_000_000)));
         queries.add(LookupQuery.at(new Area.Everywhere()).withTime(new TimeWindow(T0 + 13_000_000, T0 + 15_000_000)));
+        PendingEvent scattered = events.stream().filter(event -> BlockPositions.x(event.position()) >= 1_000)
+                .skip(5).findFirst().orElseThrow();
+        queries.add(LookupQuery.at(new Area.Block(scattered.world(), BlockPositions.x(scattered.position()),
+                BlockPositions.y(scattered.position()), BlockPositions.z(scattered.position()))));
+        queries.add(LookupQuery.at(new Area.Box("world", 1_000, 0, 0, 1_250, 100, 250)));
+        queries.add(LookupQuery.at(new Area.Box("nether", 1_000, 0, -40, 1_100, 255, 100)));
+        queries.add(query(new Area.Box("world", -40, 0, -40, 40, 255, 40), Set.of("player3"), Set.of(), Set.of()));
         return queries;
     }
 
@@ -383,8 +590,11 @@ public class ArchiveTest {
         }
         String subject = action == Action.CONTAINER_DEPOSIT ? "minecraft:diamond"
                 : random.nextBoolean() ? "minecraft:stone" : "minecraft:oak_log[axis=y]";
-        return new PendingEvent(EventIds.stamp(millis, sequence), random.nextBoolean() ? "world" : "nether",
-                BlockPositions.pack(random.nextInt(80) - 40, 60 + random.nextInt(10), random.nextInt(80) - 40), actor,
+        long position = random.nextInt(20) == 0
+                ? BlockPositions.pack(1_000 + random.nextInt(600), 60 + random.nextInt(10), random.nextInt(600))
+                : BlockPositions.pack(random.nextInt(80) - 40, 60 + random.nextInt(10), random.nextInt(80) - 40);
+        return new PendingEvent(EventIds.stamp(millis, sequence), random.nextBoolean() ? "world" : "nether", position,
+                actor,
                 action, subject, action == Action.CONTAINER_DEPOSIT ? null : "minecraft:air",
                 action == Action.CONTAINER_DEPOSIT ? 1 + random.nextInt(64) : 0,
                 random.nextInt(25) == 0 ? new byte[] {2, (byte) random.nextInt(), 7} : null);
@@ -413,7 +623,12 @@ public class ArchiveTest {
     }
 
     private int worldId(String name) throws SQLException {
-        Map<Integer, WorldKey> worlds = store.worlds(harness.shard(), List.of("survival"));
+        return worldId(store, name);
+    }
+
+    private int worldId(EventStore on, String name) throws SQLException {
+        Map<Integer, WorldKey> worlds = on.worlds(on == store ? harness.shard() : reference.shard(),
+                List.of("survival"));
         return worlds.entrySet().stream().filter(entry -> entry.getValue().name().equals(name)).findFirst()
                 .orElseThrow().getKey();
     }

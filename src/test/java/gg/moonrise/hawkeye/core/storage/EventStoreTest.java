@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import gg.moonrise.hawkeye.core.repository.ActorRepository;
 import gg.moonrise.hawkeye.core.repository.DictionaryRepository;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
-import gg.moonrise.hawkeye.core.repository.SegmentRepository;
 import gg.moonrise.hawkeye.core.sql.SqliteHarness;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.actor.Actor;
@@ -58,8 +57,7 @@ public class EventStoreTest {
     public void setUp() throws SQLException {
         harness = SqliteHarness.open(folder);
         store = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
-                new ActorRepository()), new Archive(new EventRepository(), new SegmentRepository(),
-                new SegmentCache()));
+                new ActorRepository()), Archives.create());
         survival = harness.register("survival", "survival");
     }
 

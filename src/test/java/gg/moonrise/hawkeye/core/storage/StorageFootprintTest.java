@@ -8,7 +8,6 @@ import gg.moonrise.hawkeye.core.queue.IdAssigner;
 import gg.moonrise.hawkeye.core.repository.ActorRepository;
 import gg.moonrise.hawkeye.core.repository.DictionaryRepository;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
-import gg.moonrise.hawkeye.core.repository.SegmentRepository;
 import gg.moonrise.hawkeye.core.sql.Database;
 import gg.moonrise.hawkeye.core.sql.DatabaseFactory;
 import gg.moonrise.hawkeye.core.sql.SqliteHarness;
@@ -68,7 +67,7 @@ public class StorageFootprintTest {
     private double[] hawkeyeBytesPerEvent(List<Sample> workload) throws SQLException {
         try (SqliteHarness harness = SqliteHarness.open(folder.resolve("hawkeye"))) {
             ServerNode node = harness.register("survival", "survival");
-            Archive archive = new Archive(new EventRepository(), new SegmentRepository(), new SegmentCache());
+            Archive archive = Archives.create();
             EventStore store = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
                     new ActorRepository()), archive);
             // The writer numbers ids on the one-second grid; the archive relies on that order.

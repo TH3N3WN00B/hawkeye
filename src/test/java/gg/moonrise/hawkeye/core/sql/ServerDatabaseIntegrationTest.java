@@ -21,10 +21,10 @@ import gg.moonrise.hawkeye.core.repository.SegmentTotals;
 import gg.moonrise.hawkeye.core.repository.ServerRepository;
 import gg.moonrise.hawkeye.core.repository.segment.ByteRange;
 import gg.moonrise.hawkeye.core.storage.Archive;
+import gg.moonrise.hawkeye.core.storage.Archives;
 import gg.moonrise.hawkeye.core.storage.Dictionaries;
 import gg.moonrise.hawkeye.core.storage.EventStore;
 import gg.moonrise.hawkeye.core.storage.QueryResolver;
-import gg.moonrise.hawkeye.core.storage.SegmentCache;
 import gg.moonrise.hawkeye.core.storage.Shard;
 import gg.moonrise.hawkeye.core.storage.ShardScope;
 import gg.moonrise.hawkeye.entity.action.Action;
@@ -97,7 +97,7 @@ public class ServerDatabaseIntegrationTest {
 
         Shard shard = new Shard("it", database, new Dictionaries(new DictionaryRepository(), new ActorRepository(),
                 servers), true);
-        Archive archive = new Archive(new EventRepository(), new SegmentRepository(), new SegmentCache());
+        Archive archive = Archives.create();
         EventStore store = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
                 new ActorRepository()), archive);
         List<PendingEvent> events = new ArrayList<>();

@@ -1,5 +1,6 @@
 package gg.moonrise.hawkeye.core.repository;
 
+import gg.moonrise.hawkeye.core.repository.place.IdRuns;
 import gg.moonrise.hawkeye.core.repository.segment.ByteRange;
 import gg.moonrise.hawkeye.core.repository.segment.PackedSegment;
 import gg.moonrise.hawkeye.core.sql.Dialect;
@@ -14,7 +15,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.StringJoiner;
 import org.jetbrains.annotations.NotNull;
@@ -24,10 +27,14 @@ import org.jetbrains.annotations.Nullable;
  * The archive tables: {@code segment} (one immutable header and body of archive format 2 each, see
  * {@code segment.Segments}) and {@code segment_flag} (the rolled-back rows of a segment as
  * {@link FlagOrdinals}). Candidates carry the header and the flags, never the body; the body is read
- * by byte range, so a lookup about one place transfers the shared frames and one or two units.
+ * by byte range, so a lookup about one place transfers the shared frames and one or two units. Not
+ * final, so tests can count what a read fetches.
  */
 @SpringComponent
-public final class SegmentRepository {
+public class SegmentRepository {
+
+    /** Id runs or ids per statement of {@link #ranges} and {@link #rows}. */
+    public static final int RANGE_BATCH = 200;
 
     private static final String CANDIDATE_COLUMNS = "s.id, s.first_id, s.last_id, s.events, s.header, f.ordinals";
 
@@ -128,6 +135,141 @@ public final class SegmentRepository {
         }
         parameters.add(limit);
         return query(sql, String.join(" AND ", conditions) + order + " LIMIT ?", parameters);
+    }
+
+    /**
+     * The id ranges of the segments whose ids a set holds (those that still exist), in id order. One
+     * statement per {@link #RANGE_BATCH} runs of the set, each run a primary-key range.
+     *
+     * @param connection a connection
+     * @param sql        the shard's SQL context
+     * @param ids        the segment ids
+     * @return the ranges
+     * @throws SQLException when a query fails
+     */
+    public @NotNull List<SegmentRange> ranges(@NotNull Connection connection, @NotNull Sql sql, @NotNull IdRuns ids)
+            throws SQLException {
+        List<SegmentRange> out = new ArrayList<>();
+        for (int from = 0; from < ids.runCount(); from += RANGE_BATCH) {
+            BoundSql query = rangeQuery(sql, ids, from, Math.min(ids.runCount(), from + RANGE_BATCH));
+            try (PreparedStatement statement = connection.prepareStatement(query.sql())) {
+                query.bind(statement);
+                try (ResultSet rows = statement.executeQuery()) {
+                    while (rows.next()) {
+                        out.add(new SegmentRange(rows.getLong(1), rows.getLong(2), rows.getLong(3)));
+                    }
+                }
+            }
+        }
+        out.sort(Comparator.comparingLong(SegmentRange::id));
+        return out;
+    }
+
+    /**
+     * The statement of one batch of {@link #ranges} (also read by the query-plan tests).
+     *
+     * @param sql  the shard's SQL context
+     * @param ids  the segment ids
+     * @param from the first run of the batch
+     * @param to   the run after the last
+     * @return the statement
+     */
+    public static @NotNull BoundSql rangeQuery(@NotNull Sql sql, @NotNull IdRuns ids, int from, int to) {
+        List<Object> parameters = new ArrayList<>();
+        StringJoiner terms = new StringJoiner(" OR ");
+        for (int run = from; run < to; run++) {
+            if (ids.start(run) == ids.end(run)) {
+                terms.add("id = ?");
+                parameters.add(ids.start(run));
+            } else {
+                terms.add("id BETWEEN ? AND ?");
+                parameters.add(ids.start(run));
+                parameters.add(ids.end(run));
+            }
+        }
+        return new BoundSql("SELECT id, first_id, last_id FROM " + sql.tables().segment() + " WHERE " + terms,
+                parameters);
+    }
+
+    /**
+     * Candidate rows (header and flags, never the body) of some segments.
+     *
+     * @param connection a connection
+     * @param sql        the shard's SQL context
+     * @param ids        segment ids
+     * @return the rows of those that exist, in the order of {@code ids}
+     * @throws SQLException when a query fails
+     */
+    public @NotNull List<SegmentRow> rows(@NotNull Connection connection, @NotNull Sql sql, @NotNull List<Long> ids)
+            throws SQLException {
+        Map<Long, SegmentRow> found = new HashMap<>();
+        for (int from = 0; from < ids.size(); from += RANGE_BATCH) {
+            List<Long> batch = ids.subList(from, Math.min(ids.size(), from + RANGE_BATCH));
+            for (SegmentRow row : select(connection, rowsQuery(sql, batch))) {
+                found.put(row.id(), row);
+            }
+        }
+        List<SegmentRow> out = new ArrayList<>(ids.size());
+        for (long id : ids) {
+            SegmentRow row = found.get(id);
+            if (row != null) {
+                out.add(row);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The statement of one batch of {@link #rows} (also read by the query-plan tests).
+     *
+     * @param sql the shard's SQL context
+     * @param ids segment ids, at least one
+     * @return the statement
+     */
+    public static @NotNull BoundSql rowsQuery(@NotNull Sql sql, @NotNull List<Long> ids) {
+        return query(sql, "s.id IN (" + Dialect.placeholders(ids.size()) + ")", new ArrayList<>(ids));
+    }
+
+    /**
+     * The ids of the newest segments below an id, newest first (primary key order).
+     *
+     * @param connection a connection
+     * @param sql        the shard's SQL context
+     * @param belowId    the exclusive segment id bound
+     * @param limit      the most ids
+     * @return the ids, descending
+     * @throws SQLException when the query fails
+     */
+    public @NotNull List<Long> idsBelow(@NotNull Connection connection, @NotNull Sql sql, long belowId, int limit)
+            throws SQLException {
+        List<Long> out = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement("SELECT id FROM " + sql.tables().segment()
+                + " WHERE id < ? ORDER BY id DESC LIMIT ?")) {
+            statement.setLong(1, belowId);
+            statement.setInt(2, limit);
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    out.add(rows.getLong(1));
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The smallest segment id stored (the first primary key entry).
+     *
+     * @param connection a connection
+     * @param sql        the shard's SQL context
+     * @return the id, or 0 when the archive is empty
+     * @throws SQLException when the query fails
+     */
+    public long oldestSegmentId(@NotNull Connection connection, @NotNull Sql sql) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT MIN(id) FROM "
+                + sql.tables().segment());
+                ResultSet rows = statement.executeQuery()) {
+            return rows.next() ? rows.getLong(1) : 0;
+        }
     }
 
     /**

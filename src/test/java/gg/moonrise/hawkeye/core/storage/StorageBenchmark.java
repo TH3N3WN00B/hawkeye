@@ -8,7 +8,6 @@ import gg.moonrise.hawkeye.core.queue.IdAssigner;
 import gg.moonrise.hawkeye.core.repository.ActorRepository;
 import gg.moonrise.hawkeye.core.repository.DictionaryRepository;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
-import gg.moonrise.hawkeye.core.repository.SegmentRepository;
 import gg.moonrise.hawkeye.core.sql.Database;
 import gg.moonrise.hawkeye.core.sql.SqliteHarness;
 import gg.moonrise.hawkeye.entity.event.PendingEvent;
@@ -318,7 +317,7 @@ public class StorageBenchmark {
     }
 
     private static @NotNull Archive archive() {
-        return new Archive(new EventRepository(), new SegmentRepository(), new SegmentCache());
+        return Archives.create();
     }
 
     private @NotNull Path fresh(@NotNull String name) throws IOException {

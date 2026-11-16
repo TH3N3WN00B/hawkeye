@@ -100,6 +100,33 @@ public record Tables(@NotNull String prefix) {
     }
 
     /**
+     * The place index: per region of 32 x 32 chunks, which segments hold rows in which chunk.
+     *
+     * @return the name
+     */
+    public @NotNull String placeRegion() {
+        return prefix + "place_region";
+    }
+
+    /**
+     * The place index of busy chunks: per position, the buckets of segments that touched it.
+     *
+     * @return the name
+     */
+    public @NotNull String placeChunk() {
+        return prefix + "place_chunk";
+    }
+
+    /**
+     * The place index's one-row state ({@code indexed_from}).
+     *
+     * @return the name
+     */
+    public @NotNull String placeState() {
+        return prefix + "place_state";
+    }
+
+    /**
      * The actor index of the development archive format, dropped by schema version 3.
      *
      * @return the name

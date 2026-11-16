@@ -2,6 +2,7 @@ package gg.moonrise.hawkeye.core.repository;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import gg.moonrise.hawkeye.core.repository.place.IdRuns;
 import gg.moonrise.hawkeye.core.sql.Sql;
 import gg.moonrise.hawkeye.core.sql.SqliteHarness;
 import gg.moonrise.hawkeye.entity.query.RollbackState;
@@ -91,6 +92,30 @@ public class EventSqlPlanTest {
                 previous, 32, false));
         assertTrue(oldestFirst.contains("USING INDEX hawkeye_segment_first (first_id>? AND first_id<?)"), oldestFirst);
         assertTrue(!oldestFirst.contains("TEMP B-TREE"), "no sort: " + oldestFirst);
+    }
+
+    @Test
+    public void placeIndexRowsAreReadByPrimaryKey() throws SQLException {
+        for (PlaceIndexRepository.Kind kind : PlaceIndexRepository.Kind.values()) {
+            String plan = explain(PlaceIndexRepository.readQuery(harness.database().sql(), kind, 1,
+                    List.of(5L, 9L, 12L)));
+            assertTrue(plan.contains("SEARCH " + kind.table(harness.database().sql()) + " USING PRIMARY KEY (world=? AND "
+                    + kind.keyColumn() + "=?)"), plan);
+            String trim = explain(PlaceIndexRepository.deleteOlderQuery(harness.database().sql(), kind, 40));
+            assertTrue(trim.contains("_newest (newest<?)"), trim);
+        }
+    }
+
+    @Test
+    public void plannedSegmentsAreReadByPrimaryKeyRanges() throws SQLException {
+        String ranges = explain(SegmentRepository.rangeQuery(harness.database().sql(), IdRuns.of(3, 7, 8, 9, 40), 0,
+                3));
+        assertTrue(ranges.contains("USING INTEGER PRIMARY KEY (rowid=?)"), ranges);
+        assertTrue(ranges.contains("USING INTEGER PRIMARY KEY (rowid>? AND rowid<?)"), ranges);
+        assertTrue(!ranges.contains("SCAN"), ranges);
+        String rows = explain(SegmentRepository.rowsQuery(harness.database().sql(), List.of(4L, 2L, 9L)));
+        assertTrue(rows.contains("USING INTEGER PRIMARY KEY (rowid=?)"), rows);
+        assertTrue(!rows.contains("SCAN"), rows);
     }
 
     private static EventFilter filter(Set<Integer> worlds, List<EventFilter.WorldRange> ranges,

@@ -25,7 +25,9 @@ import org.jetbrains.annotations.NotNull;
  * holds the shard's {@code archive} lease, so a whole network can share one configuration. Each pass
  * packs one segment of {@code archive.segment-events} settled events (or fewer, once they are older
  * than {@code archive.after-hours}) in one transaction on the query pool; passes follow each other until
- * one packs nothing, so the maintenance thread (heartbeats, network jobs) is never held.
+ * one packs nothing, so the maintenance thread (heartbeats, network jobs) is never held. After packing, a
+ * run spends up to {@link #CATCH_UP_TIME} adding segments that are missing from the {@link PlaceIndex}
+ * (written before it existed), newest first, a batch per transaction.
  */
 @Slf4j
 @SpringComponent
@@ -37,6 +39,9 @@ public final class Archiver implements Enableable, Disableable {
 
     /** The first run waits this long after enable. */
     public static final Duration FIRST_RUN = Duration.ofMinutes(2);
+
+    /** How long one run may spend catching the place index up. */
+    public static final Duration CATCH_UP_TIME = Duration.ofSeconds(20);
 
     private final @NotNull HawkeyeConfigProvider configProvider;
     private final @NotNull StorageManager storage;
@@ -94,15 +99,18 @@ public final class Archiver implements Enableable, Disableable {
             running.set(false);
             return CompletableFuture.completedFuture(0L);
         }
-        return passes(home, settings, 0).whenComplete((total, error) -> {
-            running.set(false);
-            if (error != null) {
-                log.warn("Archiving failed; it is retried on the next run", error);
-            } else if (total > 0) {
-                archived.addAndGet(total);
-                log.info("Archived {} event(s)", total);
-            }
-        });
+        return passes(home, settings, 0)
+                .thenCompose(total -> catchUp(home, settings, clock.millis() + CATCH_UP_TIME.toMillis())
+                        .thenApply(ignored -> total))
+                .whenComplete((total, error) -> {
+                    running.set(false);
+                    if (error != null) {
+                        log.warn("Archiving failed; it is retried on the next run", error);
+                    } else if (total > 0) {
+                        archived.addAndGet(total);
+                        log.info("Archived {} event(s)", total);
+                    }
+                });
     }
 
     /**
@@ -127,6 +135,38 @@ public final class Archiver implements Enableable, Disableable {
         }
         return pass.thenCompose(moved -> moved == 0 ? CompletableFuture.completedFuture(total)
                 : passes(home, settings, total + moved));
+    }
+
+    /** Indexes missing segments, a batch per task, until none is missing or the time is up. */
+    private @NotNull CompletableFuture<Void> catchUp(@NotNull Shard home, @NotNull ArchiveSettings settings,
+            long untilMillis) {
+        if (stopped || clock.millis() >= untilMillis) {
+            return CompletableFuture.completedFuture(null);
+        }
+        CompletableFuture<PlaceIndex.CatchUp> batch;
+        try {
+            batch = CompletableFuture.supplyAsync(() -> indexPlaces(home, settings), executors.query());
+        } catch (RejectedExecutionException e) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return batch.thenCompose(result -> result.more() && result.indexed() > 0
+                ? catchUp(home, settings, untilMillis) : CompletableFuture.completedFuture(null));
+    }
+
+    private @NotNull PlaceIndex.CatchUp indexPlaces(@NotNull Shard home, @NotNull ArchiveSettings settings) {
+        try {
+            if (!leases.tryAcquire(home.database(), LEASE, holder(), clock.millis(), leaseMillis(settings))) {
+                held = false;
+                return new PlaceIndex.CatchUp(0, false);
+            }
+            PlaceIndex.CatchUp result = archive.indexPlaces(home, PlaceIndex.CATCH_UP_BATCH);
+            if (result.indexed() > 0) {
+                log.debug("Added {} segment(s) to the place index; more missing: {}", result.indexed(), result.more());
+            }
+            return result;
+        } catch (SQLException e) {
+            throw new IllegalStateException("place index catch-up failed: " + e.getMessage(), e);
+        }
     }
 
     /** One pass, after renewing the lease: a backlog can take longer than the lease lasts. */

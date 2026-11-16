@@ -4,9 +4,12 @@ import gg.moonrise.hawkeye.config.file.ArchiveSettings;
 import gg.moonrise.hawkeye.core.repository.EventFilter;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
 import gg.moonrise.hawkeye.core.repository.EventRow;
+import gg.moonrise.hawkeye.core.repository.SegmentRange;
 import gg.moonrise.hawkeye.core.repository.SegmentRepository;
 import gg.moonrise.hawkeye.core.repository.SegmentRow;
 import gg.moonrise.hawkeye.core.repository.SegmentTotals;
+import gg.moonrise.hawkeye.core.repository.place.IdRuns;
+import gg.moonrise.hawkeye.core.repository.place.SegmentPlaces;
 import gg.moonrise.hawkeye.core.repository.segment.ByteRange;
 import gg.moonrise.hawkeye.core.repository.segment.ColumnRules;
 import gg.moonrise.hawkeye.core.repository.segment.PackedSegment;
@@ -53,8 +56,10 @@ import org.jetbrains.annotations.Nullable;
  * segment's ids (cache or shared frames) and apply the id rules, and it builds rows for the survivors
  * only. Both steps use the SQL's predicate ({@link EventFilter#matchesColumns},
  * {@link EventFilter#matchesId}). Rolled-back flags
- * live beside the segments ({@code segment_flag}); a purge deletes or rewrites whole segments. Every
- * method but {@link #compact} and {@link #totals} runs on the caller's connection and transaction.
+ * live beside the segments ({@code segment_flag}); a purge deletes or rewrites whole segments. The
+ * {@link PlaceIndex} is changed in every transaction that writes or rewrites a segment, and a read with
+ * an area asks only the segments it names. Every method but {@link #compact}, {@link #totals} and
+ * {@link #indexPlaces} runs on the caller's connection and transaction.
  */
 @SpringComponent
 @RequiredArgsConstructor
@@ -69,6 +74,7 @@ public final class Archive {
     private final @NotNull EventRepository eventRepository;
     private final @NotNull SegmentRepository segmentRepository;
     private final @NotNull SegmentCache cache;
+    private final @NotNull PlaceIndex placeIndex;
 
     /**
      * One packing pass, in one transaction: takes the {@code segment-events} oldest hot events that are
@@ -124,7 +130,22 @@ public final class Archive {
             @NotNull Executor executor) throws SQLException {
         Sql sql = shard.database().sql();
         PackedSegment segment = Segments.encode(rows, worldOrder(connection, shard, rows), executor);
-        return segmentRepository.insert(connection, sql, segment);
+        long id = segmentRepository.insert(connection, sql, segment);
+        placeIndex.added(connection, shard, places(id, rows));
+        return id;
+    }
+
+    /**
+     * Indexes some of the segments written before the place index existed (or after it was emptied),
+     * newest first, in transactions of {@link PlaceIndex#CATCH_UP_BATCH}.
+     *
+     * @param shard       the shard
+     * @param maxSegments the most segments to index
+     * @return how many were indexed and whether more are missing
+     * @throws SQLException when reading or writing fails
+     */
+    public @NotNull PlaceIndex.CatchUp indexPlaces(@NotNull Shard shard, int maxSegments) throws SQLException {
+        return placeIndex.catchUp(shard, maxSegments);
     }
 
     /**
@@ -149,15 +170,16 @@ public final class Archive {
         PriorityQueue<Long> best = new PriorityQueue<>(worstFirst);
         hot.forEach(row -> keep(best, row.id(), limit));
         List<EventRow> found = new ArrayList<>();
-        SegmentRow after = null;
+        SegmentPages pages = pages(connection, shard, filter, cursor, newestFirst);
         while (true) {
-            List<SegmentRow> page = segmentRepository.candidates(connection, shard.database().sql(), filter, cursor,
-                    after, SEGMENT_PAGE, newestFirst);
+            List<SegmentRow> page = pages.next();
+            if (page.isEmpty()) {
+                return found;
+            }
             for (SegmentRow segment : page) {
                 if (best.size() >= limit && cannotImprove(segment, best.peek(), newestFirst)) {
                     return found;
                 }
-                after = segment;
                 SegmentMatch match = match(connection, shard, segment, filter);
                 if (match.count() == 0) {
                     continue;
@@ -168,9 +190,6 @@ public final class Archive {
                     found.add(row);
                     keep(best, row.id(), limit);
                 }
-            }
-            if (page.size() < SEGMENT_PAGE) {
-                return found;
             }
         }
     }
@@ -187,16 +206,14 @@ public final class Archive {
     public long count(@NotNull Connection connection, @NotNull Shard shard, @NotNull EventFilter filter)
             throws SQLException {
         long count = 0;
-        SegmentRow after = null;
+        SegmentPages pages = pages(connection, shard, filter, 0, false);
         while (true) {
-            List<SegmentRow> page = segmentRepository.candidates(connection, shard.database().sql(), filter, 0, after,
-                    SEGMENT_PAGE, false);
+            List<SegmentRow> page = pages.next();
+            if (page.isEmpty()) {
+                return count;
+            }
             for (SegmentRow segment : page) {
                 count += count(connection, shard, segment, filter);
-                after = segment;
-            }
-            if (page.size() < SEGMENT_PAGE) {
-                return count;
             }
         }
     }
@@ -314,6 +331,9 @@ public final class Archive {
         }
         segmentRepository.delete(connection, sql, whole);
         whole.forEach(id -> cache.forget(shard.database(), id));
+        if (deleted > 0) {
+            placeIndex.trim(connection, shard);
+        }
         return deleted;
     }
 
@@ -362,12 +382,15 @@ public final class Archive {
         if (removed == 0) {
             return 0;
         }
+        Optional<SegmentPlaces> replacement = Optional.empty();
         if (!kept.isEmpty()) {
             List<Integer> order = Arrays.stream(header.worldIds()).boxed().toList();
-            segmentRepository.insert(connection, sql, Segments.encode(kept, order, CALLING_THREAD));
+            long id = segmentRepository.insert(connection, sql, Segments.encode(kept, order, CALLING_THREAD));
+            replacement = Optional.of(places(id, kept));
         }
         segmentRepository.delete(connection, sql, List.of(segment.id()));
         cache.forget(shard.database(), segment.id());
+        placeIndex.replaced(connection, shard, segment.id(), header, replacement);
         return removed;
     }
 
@@ -471,6 +494,95 @@ public final class Archive {
 
     private @NotNull SegmentHeader header(@NotNull Shard shard, @NotNull SegmentRow segment) {
         return cache.header(shard.database(), segment.id(), segment.header());
+    }
+
+    /** The places of a new segment's rows, for the place index. */
+    private static @NotNull SegmentPlaces places(long segment, @NotNull List<EventRow> rows) {
+        SegmentPlaces.Builder builder = SegmentPlaces.builder(segment);
+        rows.forEach(row -> builder.add(row.world(), row.position()));
+        return builder.build();
+    }
+
+    /**
+     * The candidate segments of a read, page by page in reading order: those the place index names when
+     * the filter has an area it covers (their id ranges fetched first and ordered, then header and
+     * flags page by page), else every segment whose id range overlaps the filter's, keyset-paged.
+     */
+    private @NotNull SegmentPages pages(@NotNull Connection connection, @NotNull Shard shard,
+            @NotNull EventFilter filter, long cursor, boolean newestFirst) throws SQLException {
+        Sql sql = shard.database().sql();
+        Optional<IdRuns> planned = placeIndex.plan(connection, shard, filter);
+        if (planned.isEmpty()) {
+            return new KeysetPages(connection, sql, filter, cursor, newestFirst);
+        }
+        Comparator<SegmentRange> order = newestFirst
+                ? Comparator.comparingLong(SegmentRange::lastId).thenComparingLong(SegmentRange::id).reversed()
+                : Comparator.comparingLong(SegmentRange::firstId).thenComparingLong(SegmentRange::id);
+        List<Long> ids = segmentRepository.ranges(connection, sql, planned.get()).stream()
+                .filter(range -> range.lastId() >= filter.minId() && range.firstId() <= filter.maxId())
+                .filter(range -> cursor == 0 || (newestFirst ? range.firstId() < cursor : range.lastId() > cursor))
+                .sorted(order).map(SegmentRange::id).toList();
+        return new PlannedPages(connection, sql, ids);
+    }
+
+    /** Candidate segments, a page at a time; an empty page ends them. */
+    private interface SegmentPages {
+        @NotNull List<SegmentRow> next() throws SQLException;
+    }
+
+    /** Every segment whose id range overlaps the filter's, by the {@code last_id}/{@code first_id} keyset. */
+    @RequiredArgsConstructor
+    private final class KeysetPages implements SegmentPages {
+
+        private final @NotNull Connection connection;
+        private final @NotNull Sql sql;
+        private final @NotNull EventFilter filter;
+        private final long cursor;
+        private final boolean newestFirst;
+        private @Nullable SegmentRow after;
+        private boolean done;
+
+        @Override
+        public @NotNull List<SegmentRow> next() throws SQLException {
+            if (done) {
+                return List.of();
+            }
+            List<SegmentRow> page = segmentRepository.candidates(connection, sql, filter, cursor, after, SEGMENT_PAGE,
+                    newestFirst);
+            done = page.size() < SEGMENT_PAGE;
+            if (!page.isEmpty()) {
+                after = page.getLast();
+            }
+            return page;
+        }
+    }
+
+    /**
+     * The segments the place index named, in reading order: small first pages, so a lookup that stops
+     * after a segment or two fetches few headers.
+     */
+    @RequiredArgsConstructor
+    private final class PlannedPages implements SegmentPages {
+
+        private final @NotNull Connection connection;
+        private final @NotNull Sql sql;
+        private final @NotNull List<Long> ids;
+        private int next;
+        private int size = 4;
+
+        @Override
+        public @NotNull List<SegmentRow> next() throws SQLException {
+            while (next < ids.size()) {
+                List<Long> page = ids.subList(next, Math.min(ids.size(), next + size));
+                next += page.size();
+                size = Math.min(SEGMENT_PAGE, size * 2);
+                List<SegmentRow> rows = segmentRepository.rows(connection, sql, page);
+                if (!rows.isEmpty()) {
+                    return rows;
+                }
+            }
+            return List.of();
+        }
     }
 
     /**

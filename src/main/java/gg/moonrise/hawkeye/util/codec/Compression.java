@@ -54,6 +54,22 @@ public final class Compression {
     }
 
     /**
+     * Compresses bytes into a frame with the preferred codec at a chosen zstd level (deflate level 9
+     * when zstd is not available): for small rows rewritten often, where level 19 costs more time than
+     * it saves bytes.
+     *
+     * @param raw   the bytes
+     * @param level the zstd level, 1 to 22
+     * @return the frame
+     */
+    public static byte @NotNull [] compressAt(byte @NotNull [] raw, int level) {
+        if (!zstdAvailable() || raw.length > MAX_RAW_BYTES) {
+            return compress(raw, DEFLATE);
+        }
+        return frame(raw, ZSTD, Zstd.compress(raw, level));
+    }
+
+    /**
      * Compresses bytes into a frame with a given codec, falling back to {@link #STORED} when the codec
      * does not make them smaller.
      *
@@ -77,13 +93,19 @@ public final class Compression {
             case DEFLATE -> deflate(raw);
             default -> throw new IllegalArgumentException("unknown codec " + codec);
         };
+        return frame(raw, codec, packed);
+    }
+
+    /** The frame of compressed bytes, or of the raw ones when compressing did not make them smaller. */
+    private static byte @NotNull [] frame(byte @NotNull [] raw, int codec, byte @NotNull [] packed) {
         int used = codec;
-        if (packed.length >= raw.length) {
-            packed = raw;
+        byte[] stored = packed;
+        if (stored.length >= raw.length) {
+            stored = raw;
             used = STORED;
         }
-        ByteWriter out = new ByteWriter(packed.length + 6);
-        out.writeByte(used).writeVarLong(raw.length).writeRaw(packed);
+        ByteWriter out = new ByteWriter(stored.length + 6);
+        out.writeByte(used).writeVarLong(raw.length).writeRaw(stored);
         return out.toByteArray();
     }
 

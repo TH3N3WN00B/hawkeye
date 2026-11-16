@@ -93,6 +93,55 @@ public class MigrationsTest {
         });
     }
 
+    @Test
+    public void version4MarksTheExistingSegmentsAsNotIndexed() throws SQLException {
+        Tables t = database.tables();
+        database.read(connection -> {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("CREATE TABLE IF NOT EXISTS " + t.schemaVersion()
+                        + " (id INTEGER NOT NULL PRIMARY KEY, version INTEGER NOT NULL)");
+                for (int version = 1; version <= 3; version++) {
+                    for (String sql : Schema.statements(version, database.dialect(), t)) {
+                        statement.execute(sql);
+                    }
+                }
+                statement.execute("INSERT INTO " + t.schemaVersion() + " VALUES (1, 3)");
+                for (int i = 0; i < 3; i++) {
+                    statement.execute("INSERT INTO " + t.segment() + " (first_id, last_id, events, header, body) "
+                            + "VALUES (1, 2, 2, x'02', x'00')");
+                }
+                statement.execute("DELETE FROM " + t.segment() + " WHERE id = 3");
+            }
+            return null;
+        });
+        assertEquals(new MigrationResult.Migrated(3, Schema.CURRENT), migrate());
+        database.read(connection -> {
+            try (Statement statement = connection.createStatement()) {
+                assertEquals(3, count(statement, "SELECT indexed_from FROM " + t.placeState()),
+                        "segments 1 and 2 exist and are not indexed");
+                assertEquals(0, count(statement, "SELECT COUNT(*) FROM " + t.placeRegion()));
+                assertEquals(0, count(statement, "SELECT COUNT(*) FROM " + t.placeChunk()));
+                for (String sql : Schema.statements(4, database.dialect(), t)) {
+                    statement.execute(sql);
+                }
+                assertEquals(1, count(statement, "SELECT COUNT(*) FROM " + t.placeState()), "idempotent");
+                assertEquals(3, count(statement, "SELECT indexed_from FROM " + t.placeState()));
+            }
+            return null;
+        });
+    }
+
+    @Test
+    public void version4OnAnEmptyArchiveIndexesFromTheFirstSegment() throws SQLException {
+        migrate();
+        database.read(connection -> {
+            try (Statement statement = connection.createStatement()) {
+                assertEquals(1, count(statement, "SELECT indexed_from FROM " + database.tables().placeState()));
+            }
+            return null;
+        });
+    }
+
     private static long count(Statement statement, String sql) throws SQLException {
         try (ResultSet rows = statement.executeQuery(sql)) {
             rows.next();

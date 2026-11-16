@@ -8,13 +8,12 @@ import gg.moonrise.hawkeye.core.queue.IdAssigner;
 import gg.moonrise.hawkeye.core.repository.ActorRepository;
 import gg.moonrise.hawkeye.core.repository.DictionaryRepository;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
-import gg.moonrise.hawkeye.core.repository.SegmentRepository;
 import gg.moonrise.hawkeye.core.sql.Database;
 import gg.moonrise.hawkeye.core.sql.SqliteHarness;
 import gg.moonrise.hawkeye.core.storage.Archive;
+import gg.moonrise.hawkeye.core.storage.Archives;
 import gg.moonrise.hawkeye.core.storage.EventStore;
 import gg.moonrise.hawkeye.core.storage.QueryResolver;
-import gg.moonrise.hawkeye.core.storage.SegmentCache;
 import gg.moonrise.hawkeye.core.storage.ShardScope;
 import gg.moonrise.hawkeye.entity.actor.ActorKind;
 import gg.moonrise.hawkeye.entity.event.PendingEvent;
@@ -116,7 +115,7 @@ public class ReplayBenchmark {
         report.put("reference", reference(Path.of(export), days));
         try (SqliteHarness harness = SqliteHarness.open(runFolder)) {
             ServerNode node = harness.register(SCOPE, SCOPE);
-            Archive archive = new Archive(new EventRepository(), new SegmentRepository(), new SegmentCache());
+            Archive archive = Archives.create();
             EventStore store = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
                     new ActorRepository()), archive);
             long before = stored(harness.database());
@@ -207,7 +206,7 @@ public class ReplayBenchmark {
         assumeTrue(Files.exists(runFolder.resolve(Targets.FILE)), "no kept database in " + runFolder);
         Map<String, Object> report = new LinkedHashMap<>();
         try (SqliteHarness harness = SqliteHarness.open(runFolder)) {
-            Archive archive = new Archive(new EventRepository(), new SegmentRepository(), new SegmentCache());
+            Archive archive = Archives.create();
             EventStore store = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
                     new ActorRepository()), archive);
             Database database = harness.database();

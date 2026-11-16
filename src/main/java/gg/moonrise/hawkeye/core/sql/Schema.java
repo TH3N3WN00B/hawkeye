@@ -12,7 +12,7 @@ import org.jetbrains.annotations.NotNull;
 public final class Schema {
 
     /** The schema version this build writes. */
-    public static final int CURRENT = 3;
+    public static final int CURRENT = 4;
 
     private Schema() {
     }
@@ -41,6 +41,11 @@ public final class Schema {
                 case SQLITE -> sqliteV3(tables);
                 case MYSQL -> mysqlV3(tables);
                 case POSTGRESQL -> postgresV3(tables);
+            };
+            case 4 -> switch (dialect) {
+                case SQLITE -> sqliteV4(tables);
+                case MYSQL -> mysqlV4(tables);
+                case POSTGRESQL -> postgresV4(tables);
             };
             default -> throw new IllegalArgumentException("unknown schema version " + version);
         };
@@ -213,5 +218,52 @@ public final class Schema {
                 "CREATE INDEX IF NOT EXISTS " + t.segment() + "_first ON " + t.segment() + " (first_id)",
                 "CREATE TABLE IF NOT EXISTS " + t.segmentFlag() + " (segment BIGINT PRIMARY KEY, "
                         + "ordinals BYTEA NOT NULL)");
+    }
+
+    /**
+     * Version 4: the place index ({@code place_region}, {@code place_chunk}, {@code place_state}). Every
+     * segment that exists already is below {@code indexed_from}; the archiver indexes them afterwards.
+     */
+    private static @NotNull List<String> sqliteV4(@NotNull Tables t) {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS " + t.placeRegion() + " (world INTEGER NOT NULL, region INTEGER NOT NULL, "
+                        + "newest INTEGER NOT NULL, body BLOB NOT NULL, PRIMARY KEY (world, region)) WITHOUT ROWID",
+                "CREATE INDEX IF NOT EXISTS " + t.placeRegion() + "_newest ON " + t.placeRegion() + " (newest)",
+                "CREATE TABLE IF NOT EXISTS " + t.placeChunk() + " (world INTEGER NOT NULL, chunk INTEGER NOT NULL, "
+                        + "newest INTEGER NOT NULL, body BLOB NOT NULL, PRIMARY KEY (world, chunk)) WITHOUT ROWID",
+                "CREATE INDEX IF NOT EXISTS " + t.placeChunk() + "_newest ON " + t.placeChunk() + " (newest)",
+                "CREATE TABLE IF NOT EXISTS " + t.placeState() + " (id INTEGER PRIMARY KEY, "
+                        + "indexed_from INTEGER NOT NULL)",
+                "INSERT OR IGNORE INTO " + t.placeState() + " (id, indexed_from) SELECT 1, COALESCE(MAX(id), 0) + 1 FROM "
+                        + t.segment());
+    }
+
+    private static @NotNull List<String> mysqlV4(@NotNull Tables t) {
+        String options = " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin";
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS " + t.placeRegion() + " (world INT NOT NULL, region BIGINT NOT NULL, "
+                        + "newest BIGINT NOT NULL, body MEDIUMBLOB NOT NULL, PRIMARY KEY (world, region), "
+                        + "KEY " + t.placeRegion() + "_newest (newest))" + options,
+                "CREATE TABLE IF NOT EXISTS " + t.placeChunk() + " (world INT NOT NULL, chunk BIGINT NOT NULL, "
+                        + "newest BIGINT NOT NULL, body MEDIUMBLOB NOT NULL, PRIMARY KEY (world, chunk), "
+                        + "KEY " + t.placeChunk() + "_newest (newest))" + options,
+                "CREATE TABLE IF NOT EXISTS " + t.placeState() + " (id INT NOT NULL PRIMARY KEY, "
+                        + "indexed_from BIGINT NOT NULL)" + options,
+                "INSERT INTO " + t.placeState() + " (id, indexed_from) SELECT 1, COALESCE(MAX(id), 0) + 1 FROM "
+                        + t.segment() + " ON DUPLICATE KEY UPDATE indexed_from = " + t.placeState() + ".indexed_from");
+    }
+
+    private static @NotNull List<String> postgresV4(@NotNull Tables t) {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS " + t.placeRegion() + " (world INTEGER NOT NULL, region BIGINT NOT NULL, "
+                        + "newest BIGINT NOT NULL, body BYTEA NOT NULL, PRIMARY KEY (world, region))",
+                "CREATE INDEX IF NOT EXISTS " + t.placeRegion() + "_newest ON " + t.placeRegion() + " (newest)",
+                "CREATE TABLE IF NOT EXISTS " + t.placeChunk() + " (world INTEGER NOT NULL, chunk BIGINT NOT NULL, "
+                        + "newest BIGINT NOT NULL, body BYTEA NOT NULL, PRIMARY KEY (world, chunk))",
+                "CREATE INDEX IF NOT EXISTS " + t.placeChunk() + "_newest ON " + t.placeChunk() + " (newest)",
+                "CREATE TABLE IF NOT EXISTS " + t.placeState() + " (id INTEGER PRIMARY KEY, "
+                        + "indexed_from BIGINT NOT NULL)",
+                "INSERT INTO " + t.placeState() + " (id, indexed_from) SELECT 1, COALESCE(MAX(id), 0) + 1 FROM "
+                        + t.segment() + " ON CONFLICT (id) DO NOTHING");
     }
 }
