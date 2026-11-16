@@ -24,6 +24,8 @@ dependencies {
     implementation(libs.engine)
     compileOnly(libs.bundles.engineRuntime)
     compileOnly(libs.paper)
+    // Hawkeye's own runtime libraries: resolved by HawkeyePluginLoader at server start, never shaded.
+    compileOnly(libs.bundles.hawkeyeRuntime)
 
     // java-development skill: Lombok and @NotNull/@Nullable in main and test code.
     compileOnly(libs.lombok)
@@ -35,6 +37,7 @@ dependencies {
 
     testImplementation(libs.paper)
     testImplementation(libs.bundles.engineRuntime)
+    testImplementation(libs.bundles.hawkeyeRuntime)
     testImplementation(libs.mockbukkit)
     testImplementation(libs.archunit)
     testImplementation(libs.junitJupiter)
@@ -70,6 +73,11 @@ tasks {
         val hosts = layout.projectDirectory.file("src/test/hosts")
         inputs.file(hosts).withPropertyName("hosts").withPathSensitivity(PathSensitivity.NONE)
         systemProperty("jdk.net.hosts.file", hosts.asFile.absolutePath)
+        // HawkeyePluginLoaderTest compares the loader's coordinates with the catalog.
+        val runtimeLibraries = listOf(libs.hikari, libs.sqlite, libs.mariadb, libs.postgresql, libs.caffeine,
+            libs.lettuce).joinToString(",") { library -> library.get().toString() }
+        inputs.property("hawkeyeRuntimeLibraries", runtimeLibraries)
+        systemProperty("hawkeye.runtime.libraries", runtimeLibraries)
     }
     // The shipped jar: build/libs/<pluginName>.jar with our classes and the relocated engine only.
     shadowJar {

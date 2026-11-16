@@ -1,15 +1,33 @@
 package gg.moonrise.hawkeye.config;
 
+import java.util.List;
 import org.jetbrains.annotations.NotNull;
 
 /** Outcome of {@link HawkeyeConfigProvider#reloadConfig()}. */
 public sealed interface ReloadResult {
 
-    /** The file was read and its snapshot is now active. */
-    record Reloaded() implements ReloadResult {
+    /**
+     * Both files were read and their snapshot is now active.
+     *
+     * @param restartRequired sections that changed but only apply after a restart
+     */
+    record Reloaded(@NotNull List<String> restartRequired) implements ReloadResult {
+
+        /**
+         * Copies the list.
+         *
+         * @param restartRequired sections that need a restart
+         */
+        public Reloaded {
+            restartRequired = List.copyOf(restartRequired);
+        }
     }
 
-    /** The file could not be read or written; the previous snapshot stays active. */
+    /**
+     * A file could not be read, written or validated; the previous snapshot stays active.
+     *
+     * @param reason what is wrong
+     */
     record Failed(@NotNull String reason) implements ReloadResult {
     }
 }

@@ -5,10 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import gg.moonrise.hawkeye.command.HawkeyeCommand;
+import gg.moonrise.hawkeye.command.Permissions;
 import gg.moonrise.hawkeye.loader.HawkeyePluginLoader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.yaml.snakeyaml.Yaml;
@@ -29,10 +30,14 @@ public class PaperPluginYmlTest {
     @SuppressWarnings("unchecked")
     public void declaresEveryCommandPermission() throws IOException {
         Map<String, Map<String, Object>> permissions = (Map<String, Map<String, Object>>) load().get("permissions");
-        Map<String, Object> admin = permissions.get(HawkeyeCommand.PERMISSION_ADMIN);
-        assertNotNull(admin, HawkeyeCommand.PERMISSION_ADMIN);
-        assertEquals("op", admin.get("default"));
-        assertTrue(String.valueOf(admin.get("description")).contains("/" + HawkeyeCommand.ROOT));
+        for (String node : List.of(Permissions.HELP, Permissions.INSPECT, Permissions.LOOKUP, Permissions.TELEPORT,
+                Permissions.ROLLBACK, Permissions.PURGE, Permissions.NETWORK, Permissions.ADMIN)) {
+            Map<String, Object> permission = permissions.get(node);
+            assertNotNull(permission, node);
+            assertEquals("op", permission.get("default"), node);
+            Map<String, Object> children = (Map<String, Object>) permissions.get("hawkeye.*").get("children");
+            assertTrue(children.containsKey(node), node + " is a child of hawkeye.*");
+        }
     }
 
     private static Map<String, Object> load() throws IOException {

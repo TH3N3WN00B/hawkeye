@@ -4,11 +4,15 @@ import de.exlll.configlib.NameFormatters;
 import de.exlll.configlib.YamlConfigurationProperties;
 import gg.moonrise.engine.config.Configuration;
 import gg.moonrise.engine.state.Reloadable;
+import gg.moonrise.hawkeye.config.file.HawkeyeConfig;
+import gg.moonrise.hawkeye.config.message.MessagesConfig;
 import gg.moonrise.moss.spring.SpringComponent;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.RequiredArgsConstructor;
@@ -17,41 +21,60 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Owns the {@code config.yml} snapshot. The file is read through the plugin-engine {@link Configuration}
- * (ConfigLib), which writes every default on first start and adds keys missing from an older file. A
- * reload publishes a complete snapshot or none: a file that fails to load keeps the previous one.
+ * Owns the {@code config.yml} and {@code messages.yml} snapshot. Both files are read through the
+ * plugin-engine {@link Configuration} (ConfigLib), which writes every default on first start and adds
+ * keys missing from an older file. A reload publishes both files or neither: a file that fails to
+ * load or validate keeps the previous snapshot.
  */
 @Slf4j
 @SpringComponent
 @RequiredArgsConstructor
 public final class HawkeyeConfigProvider implements Reloadable {
 
-    /** File name inside the plugin data folder. */
-    public static final String FILE_NAME = "config.yml";
+    /** The settings file inside the plugin folder. */
+    public static final String CONFIG_FILE = "config.yml";
 
-    private static final String HEADER = """
-            Hawkeye configuration. Run /hawkeye reload after editing this file.
+    /** The messages file inside the plugin folder. */
+    public static final String MESSAGES_FILE = "messages.yml";
+
+    private static final String CONFIG_HEADER = """
+            Hawkeye configuration. /hawkeye reload applies the logging, lookup, rollback and purge sections;
+            server, storage, writer and network changes need a restart.
+            """;
+
+    private static final String MESSAGES_HEADER = """
+            Hawkeye messages in MiniMessage format: https://docs.advntr.dev/minimessage/format
+            /hawkeye reload applies changes.
             """;
 
     private final @NotNull JavaPlugin plugin;
-    private final AtomicReference<HawkeyeConfig> current = new AtomicReference<>();
+    private final AtomicReference<Snapshot> current = new AtomicReference<>();
 
-    /** Reads the file at startup; a broken file leaves the defaults active until a reload succeeds. */
+    /** Reads the files at startup; broken files leave the defaults active until a reload succeeds. */
     @PostConstruct
     public void load() {
         if (reloadConfig() instanceof ReloadResult.Failed failed) {
             log.error("Using the default configuration: {}", failed.reason());
-            current.compareAndSet(null, new HawkeyeConfig());
+            current.compareAndSet(null, new Snapshot(new HawkeyeConfig(), new MessagesConfig()));
         }
     }
 
     /**
-     * The active snapshot.
+     * The active settings.
      *
-     * @return the configuration last read successfully, or the defaults
+     * @return the settings last read successfully, or the defaults
      */
     public @NotNull HawkeyeConfig get() {
-        return Objects.requireNonNull(current.get(), "the configuration is read in @PostConstruct");
+        return snapshot().config();
+    }
+
+    /**
+     * The active messages.
+     *
+     * @return the messages last read successfully, or the defaults
+     */
+    public @NotNull MessagesConfig messages() {
+        return snapshot().messages();
     }
 
     /** Run by {@code PaperPlugin.reload()} for every {@link Reloadable} bean. */
@@ -63,30 +86,59 @@ public final class HawkeyeConfigProvider implements Reloadable {
     }
 
     /**
-     * Reads {@value #FILE_NAME} and, when it is valid, makes it the active snapshot.
+     * Reads both files and, when both are valid, makes them the active snapshot.
      *
-     * @return whether the file was read
+     * @return whether the files were read, and which restart-only settings changed
      */
     public @NotNull ReloadResult reloadConfig() {
-        Path file = plugin.getDataPath().resolve(FILE_NAME);
+        Path folder = plugin.getDataPath();
         try {
-            Files.createDirectories(file.getParent());
-            HawkeyeConfig loaded = Configuration.config(file.toFile(), HawkeyeConfig.class,
-                    HawkeyeConfigProvider::properties).get();
-            current.set(loaded);
-            return new ReloadResult.Reloaded();
+            Files.createDirectories(folder);
+            HawkeyeConfig config = Configuration.config(folder.resolve(CONFIG_FILE).toFile(), HawkeyeConfig.class,
+                    builder -> properties(builder, CONFIG_HEADER)).get();
+            MessagesConfig messages = Configuration.config(folder.resolve(MESSAGES_FILE).toFile(),
+                    MessagesConfig.class, builder -> properties(builder, MESSAGES_HEADER)).get();
+            List<String> problems = config.problems();
+            if (!problems.isEmpty()) {
+                return new ReloadResult.Failed(CONFIG_FILE + ": " + String.join("; ", problems));
+            }
+            Snapshot previous = current.getAndSet(new Snapshot(config, messages));
+            return new ReloadResult.Reloaded(previous == null ? List.of() : restartOnly(previous.config(), config));
         } catch (IOException | RuntimeException e) {
-            return new ReloadResult.Failed(FILE_NAME + ": " + Objects.requireNonNullElse(e.getMessage(),
-                    e.getClass().getSimpleName()));
+            return new ReloadResult.Failed(Objects.requireNonNullElse(e.getMessage(), e.getClass().getSimpleName()));
         }
     }
 
+    private @NotNull Snapshot snapshot() {
+        return Objects.requireNonNull(current.get(), "the configuration is read in @PostConstruct");
+    }
+
+    private static @NotNull List<String> restartOnly(@NotNull HawkeyeConfig before, @NotNull HawkeyeConfig after) {
+        List<String> changed = new ArrayList<>();
+        if (!before.server().equals(after.server())) {
+            changed.add("server");
+        }
+        if (!before.storage().equals(after.storage())) {
+            changed.add("storage");
+        }
+        if (!before.writer().equals(after.writer())) {
+            changed.add("writer");
+        }
+        if (!before.network().equals(after.network())) {
+            changed.add("network");
+        }
+        return changed;
+    }
+
     private static @NotNull YamlConfigurationProperties.Builder<?> properties(
-            @NotNull YamlConfigurationProperties.Builder<?> builder) {
+            @NotNull YamlConfigurationProperties.Builder<?> builder, @NotNull String header) {
         builder.setNameFormatter(NameFormatters.LOWER_KEBAB_CASE);
         builder.inputNulls(true);
         builder.outputNulls(false);
-        builder.header(HEADER);
+        builder.header(header);
         return builder;
+    }
+
+    private record Snapshot(@NotNull HawkeyeConfig config, @NotNull MessagesConfig messages) {
     }
 }

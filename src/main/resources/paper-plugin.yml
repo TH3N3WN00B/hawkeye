@@ -5,9 +5,42 @@ loader: gg.moonrise.hawkeye.loader.HawkeyePluginLoader
 api-version: '26.3'
 load: POSTWORLD
 folia-supported: true
-description: Paper plugin built on the Moonrise plugin-engine
+description: Block and action logging with lookups, rollbacks and multi-server sync
 authors: [Moonrise Studios]
 permissions:
+  hawkeye.*:
+    description: Every Hawkeye command
+    default: op
+    children:
+      hawkeye.help: true
+      hawkeye.inspect: true
+      hawkeye.lookup: true
+      hawkeye.teleport: true
+      hawkeye.rollback: true
+      hawkeye.purge: true
+      hawkeye.network: true
+      hawkeye.admin: true
+  hawkeye.help:
+    description: /hawkeye and /hawkeye help
+    default: op
+  hawkeye.inspect:
+    description: /hawkeye inspect (the inspector)
+    default: op
+  hawkeye.lookup:
+    description: /hawkeye lookup, /hawkeye near and /hawkeye page
+    default: op
+  hawkeye.teleport:
+    description: /hawkeye tp (clicking a result location)
+    default: op
+  hawkeye.rollback:
+    description: /hawkeye rollback, restore, apply, cancel and undo
+    default: op
+  hawkeye.purge:
+    description: /hawkeye purge
+    default: op
+  hawkeye.network:
+    description: Lookups and rollbacks on other servers (s:<server>, s:#network) and /hawkeye network
+    default: op
   hawkeye.admin:
-    description: /hawkeye, /hawkeye reload and /hawkeye greet
+    description: /hawkeye reload and /hawkeye status
     default: op
