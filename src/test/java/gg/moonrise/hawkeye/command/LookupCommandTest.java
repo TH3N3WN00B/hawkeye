@@ -11,6 +11,7 @@ import gg.moonrise.hawkeye.core.service.lookup.LookupFixtures;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.support.TestCommandManager;
 import gg.moonrise.hawkeye.support.TestCommandSource;
+import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import gg.moonrise.hawkeye.ui.lookup.AwaitReplies;
 import gg.moonrise.moss.paper.MossPaper;
@@ -41,7 +42,10 @@ public class LookupCommandTest {
     @BeforeEach
     public void setUp() {
         server = MockBukkit.mock();
-        TestPlugins.load();
+        TestHawkeyePlugin plugin = TestPlugins.load();
+        // Only the events each test records: no join event for the player added below.
+        TestPlugins.writeConfig(plugin, "logging:\n  sessions: false\n");
+        TestPlugins.reload();
         TestPlugins.awaitStorage();
         commands = TestPlugins.commands();
         console = server.getConsoleSender();

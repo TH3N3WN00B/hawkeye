@@ -21,7 +21,8 @@ public sealed interface Payload {
     }
 
     /**
-     * A sign edit (or the text of a broken sign, with {@code before} empty).
+     * A sign edit, or the text of a broken sign ({@code before} holds the text, {@code after} is empty).
+     * A blank side is an empty line list.
      *
      * @param before the sides before the change
      * @param after  the sides after the change
