@@ -7,11 +7,13 @@ import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
 import gg.moonrise.hawkeye.listener.Recorded;
 import gg.moonrise.hawkeye.support.TestPlugins;
+import java.util.List;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.type.Door;
+import org.bukkit.event.block.BlockFromToEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.junit.jupiter.api.AfterEach;
@@ -69,6 +71,37 @@ public class InteractionListenerTest {
         server.getScheduler().performOneTick();
 
         assertTrue(Recorded.events(Action.INTERACT).isEmpty());
+    }
+
+    @Test
+    public void aClickedDragonEggTeleportingIsABreakAndAPlaceByThePlayer() {
+        Block egg = world.getBlockAt(0, 64, 0);
+        egg.setType(Material.DRAGON_EGG);
+        server.getPluginManager().callEvent(new PlayerInteractEvent(player,
+                org.bukkit.event.block.Action.LEFT_CLICK_BLOCK, null, egg, BlockFace.NORTH, EquipmentSlot.HAND));
+        Block landing = world.getBlockAt(5, 66, -3);
+        server.getPluginManager().callEvent(new BlockFromToEvent(egg, landing));
+
+        List<StoredEvent> events = Recorded.events(Action.BLOCK_BREAK, Action.BLOCK_PLACE);
+        assertEquals(2, events.size(), events.toString());
+        assertTrue(events.stream().allMatch(event -> event.actor().name().equals("Alex")));
+        assertEquals(Action.BLOCK_BREAK, events.get(0).action());
+        assertEquals("minecraft:dragon_egg", events.get(0).subject());
+        assertEquals(0, events.get(0).x());
+        assertEquals(Action.BLOCK_PLACE, events.get(1).action());
+        assertEquals("minecraft:dragon_egg", events.get(1).subject());
+        assertEquals("minecraft:air", events.get(1).secondary());
+        assertEquals(5, events.get(1).x());
+        assertTrue(Recorded.events(Action.INTERACT).isEmpty());
+    }
+
+    @Test
+    public void aDragonEggNobodyClickedIsTheEgg() {
+        Block egg = world.getBlockAt(0, 64, 0);
+        egg.setType(Material.DRAGON_EGG);
+        server.getPluginManager().callEvent(new BlockFromToEvent(egg, world.getBlockAt(2, 64, 0)));
+
+        assertEquals("#dragon_egg", Recorded.only(Action.BLOCK_PLACE).actor().name());
     }
 
     private void rightClick(Block block) {
