@@ -73,6 +73,23 @@ update them in the same change when you learn something durable or an entry stop
   folder is predictable (`<tmp>/TestHawkeyePlugin-0.0.0`), so tests write a `config.yml` before
   loading for start-only settings.
 - `PlayerInteractEvent#isCancelled` is deprecated in Paper 26.3; use `useInteractedBlock()`.
+- Paper 26.3 event behaviour verified in the server jar's bytecode (2026-11-16; the jar is
+  `versions/26.3/paper-26.3.jar` after a first start; grep class files for an event's internal name,
+  and for `CraftEventFactory` helpers such as `handleBlockGrowEvent`, to find where it fires):
+  - `BlockPistonExtendEvent`/`BlockPistonRetractEvent#getBlocks()` is the moved blocks plus the blocks
+    the piston destroys (CraftBukkit concatenates `toPush` and `toDestroy`).
+  - `BlockDestroyEvent` fires only from `Level.destroyBlock`: physics pops after `updateShape` turns a
+    block to air, pistons destroying, entity changes, `/setblock ... destroy`; never for player breaks.
+  - `EntityChangeBlockEvent` already covers cake eating, composters, ender eyes in portal frames,
+    honeycomb waxing, brushing suspicious blocks, cave-vine harvesting, farmland trampling, endermen,
+    ravagers, silverfish, withers, falling blocks and lily pads broken by boats.
+  - `BlockGrowEvent` fires for crops, cactus, sugar cane, stem fruit, cocoa, nether wart, pitcher
+    crops, sweet berries, turtle and sniffer eggs, vines, chorus, budding amethyst and dried ghasts;
+    bamboo, kelp and twisting vines grow through `BlockSpreadEvent`.
+  - Handler lists are per event class: `BlockSpreadEvent`, `BlockFertilizeEvent`, `BlockGrowEvent`,
+    `EntityPlaceEvent` and `BlockDestroyEvent` have their own and never reach a parent's handler;
+    `EntityBlockFormEvent`, `BlockMultiPlaceEvent`, `EntityBreakDoorEvent`, `PlayerDeathEvent` and
+    `HangingBreakByEntityEvent` share their parent's.
 
 ## Owner preferences
 
