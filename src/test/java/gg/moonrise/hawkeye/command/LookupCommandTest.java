@@ -1,8 +1,10 @@
 package gg.moonrise.hawkeye.command;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import gg.moonrise.engine.paper.command.PaperCommand;
 import gg.moonrise.hawkeye.core.service.capture.Actors;
 import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
 import gg.moonrise.hawkeye.core.service.lookup.LookupFixtures;
@@ -11,6 +13,7 @@ import gg.moonrise.hawkeye.support.TestCommandManager;
 import gg.moonrise.hawkeye.support.TestCommandSource;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import gg.moonrise.hawkeye.ui.lookup.AwaitReplies;
+import gg.moonrise.moss.paper.MossPaper;
 import java.util.ArrayList;
 import java.util.List;
 import net.kyori.adventure.text.Component;
@@ -169,6 +172,13 @@ public class LookupCommandTest {
                 .map(Suggestion::suggestion)
                 .toList();
         assertTrue(suggestions.contains("t:1h u:Alex"), suggestions.toString());
+    }
+
+    @Test
+    public void theSharedSuggestionsAreRegisteredBeforeAnyCommandUsesThem() {
+        PaperCommand first = MossPaper.CONTEXT.getBeanProvider(PaperCommand.class).orderedStream().findFirst()
+                .orElseThrow();
+        assertInstanceOf(LookupCommand.class, first);
     }
 
     @Test

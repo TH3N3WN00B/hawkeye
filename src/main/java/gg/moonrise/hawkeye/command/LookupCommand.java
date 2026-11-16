@@ -26,13 +26,18 @@ import org.incendo.cloud.context.CommandContext;
 import org.incendo.cloud.context.CommandInput;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 
 /**
  * {@code /hawkeye lookup [parameters]}, {@code near [radius]} and {@code page <page>}. Lookups run on
  * the query pool and the reply reaches the sender on their own thread. This class also declares the
  * parameter-list suggestions ({@link QueryInput#SUGGESTIONS}) every other parameter command reuses.
+ * Cloud resolves a named suggestion provider when it parses an argument, so this bean is ordered first:
+ * the registry parses it before any command that references the name.
  */
 @SpringComponent
+@Order(Ordered.HIGHEST_PRECEDENCE)
 @RequiredArgsConstructor
 public final class LookupCommand implements PaperCommand {
 
