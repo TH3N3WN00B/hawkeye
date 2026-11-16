@@ -61,7 +61,7 @@ public final class EventWriter implements Enableable, Disableable {
     private final AtomicReference<String> lastError = new AtomicReference<>("");
     private final CompletableFuture<Void> stopped = new CompletableFuture<>();
     private volatile boolean running;
-    private List<PendingEvent> retry = List.of();
+    private volatile List<PendingEvent> retry = List.of();
     private int consecutiveFailures;
     private boolean spoolReplayed;
 
