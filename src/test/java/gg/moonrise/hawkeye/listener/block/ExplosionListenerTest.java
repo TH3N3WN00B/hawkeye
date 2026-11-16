@@ -16,6 +16,7 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Barrel;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockState;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.type.Bed;
 import org.bukkit.block.data.type.RespawnAnchor;
@@ -103,10 +104,19 @@ public class ExplosionListenerTest {
         rightClick(player, foot);
         Block stone = nether.getBlockAt(3, 64, 0);
         stone.setType(Material.STONE);
-        server.getPluginManager().callEvent(new BlockExplodeEvent(head, head.getState(),
+        // The event carries the exploded block's state (on the server the block itself is already gone).
+        BlockState exploded = head.getState();
+        exploded.setBlockData(bed(Bed.Part.HEAD)); // MockBukkit's state of a setBlockData block reads air
+        server.getPluginManager().callEvent(new BlockExplodeEvent(head, exploded,
                 new ArrayList<>(List.of(stone)), 1, ExplosionResult.DESTROY));
 
-        assertEquals("Alex", Recorded.only(Action.BLOCK_BREAK).actor().name());
+        List<StoredEvent> breaks = Recorded.events(Action.BLOCK_BREAK);
+        assertEquals(3, breaks.size(), breaks.toString());
+        assertTrue(breaks.stream().allMatch(event -> event.actor().name().equals("Alex")), breaks.toString());
+        assertTrue(breaks.stream().anyMatch(event -> event.subject().contains("part=foot") && event.x() == 0),
+                breaks.toString());
+        assertTrue(breaks.stream().anyMatch(event -> event.subject().contains("part=head") && event.x() == 1),
+                breaks.toString());
     }
 
     @Test
@@ -117,10 +127,16 @@ public class ExplosionListenerTest {
         charged.setCharges(2);
         anchor.setBlockData(charged);
         rightClick(player, anchor);
-        server.getPluginManager().callEvent(new BlockExplodeEvent(anchor, anchor.getState(),
+        BlockState exploded = anchor.getState();
+        exploded.setBlockData(charged);
+        server.getPluginManager().callEvent(new BlockExplodeEvent(anchor, exploded,
                 blocks(Material.COBBLESTONE), 1, ExplosionResult.DESTROY));
 
-        assertEquals("Alex", Recorded.only(Action.BLOCK_BREAK).actor().name());
+        List<StoredEvent> breaks = Recorded.events(Action.BLOCK_BREAK);
+        assertEquals(2, breaks.size(), breaks.toString());
+        assertTrue(breaks.stream().allMatch(event -> event.actor().name().equals("Alex")), breaks.toString());
+        assertTrue(breaks.stream().anyMatch(event -> event.subject().startsWith("minecraft:respawn_anchor")),
+                breaks.toString());
     }
 
     @Test
@@ -132,13 +148,17 @@ public class ExplosionListenerTest {
         Block anchor = world.getBlockAt(0, 64, 5);
         anchor.setType(Material.RESPAWN_ANCHOR);
         rightClick(player, anchor);
-        server.getPluginManager().callEvent(new BlockExplodeEvent(bed, bed.getState(), blocks(Material.STONE), 1,
+        BlockState bedState = bed.getState();
+        bedState.setBlockData(bed(Bed.Part.FOOT));
+        server.getPluginManager().callEvent(new BlockExplodeEvent(bed, bedState, blocks(Material.STONE), 1,
                 ExplosionResult.DESTROY));
-        server.getPluginManager().callEvent(new BlockExplodeEvent(anchor, anchor.getState(), blocks(Material.DIRT),
+        BlockState anchorState = anchor.getState();
+        server.getPluginManager().callEvent(new BlockExplodeEvent(anchor, anchorState, blocks(Material.DIRT),
                 1, ExplosionResult.DESTROY));
 
+        // Both bed halves, the anchor, and the stone and dirt each explosion destroyed.
         List<StoredEvent> breaks = Recorded.events(Action.BLOCK_BREAK);
-        assertEquals(2, breaks.size());
+        assertEquals(5, breaks.size(), breaks.toString());
         assertTrue(breaks.stream().allMatch(event -> event.actor().name().equals("#explosion")), breaks.toString());
     }
 

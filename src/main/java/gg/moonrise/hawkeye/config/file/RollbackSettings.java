@@ -38,7 +38,8 @@ public final class RollbackSettings {
     @Comment("Reverse container deposits and withdrawals.")
     private boolean restoreContainers = true;
 
-    @Comment("Respawn killed entities on rollback.")
+    @Comment({"Reverse entity changes on rollback: respawn killed and destroyed entities, remove placed and",
+            "spawned ones, and put items back into item frames and on armour stands."})
     private boolean restoreEntities = true;
 
     @Comment("A #preview is cancelled when not applied within this many minutes.")

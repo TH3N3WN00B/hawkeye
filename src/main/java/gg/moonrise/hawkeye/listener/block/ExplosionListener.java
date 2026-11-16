@@ -11,6 +11,7 @@ import gg.moonrise.moss.spring.SpringComponent;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.bukkit.ExplosionResult;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.BlockData;
@@ -60,8 +61,36 @@ public final class ExplosionListener implements Listener {
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockExplode(@NotNull BlockExplodeEvent event) {
+        if (!recorder.enabled(LogCategory.EXPLOSIONS, event.getBlock().getWorld())) {
+            return;
+        }
+        Actor actor = causes.recentCause(event.getBlock()).orElse(Actors.EXPLOSION);
+        // The bed or anchor itself is gone before the event; Paper keeps its state.
+        recordExploded(actor, event.getBlock(), event.getExplodedBlockState().getBlockData());
         if (records(event.getBlock().getWorld(), event.getExplosionResult(), event.blockList())) {
-            record(causes.recentCause(event.getBlock()).orElse(Actors.EXPLOSION), event.blockList());
+            record(actor, event.blockList());
+        }
+    }
+
+    /**
+     * Records the exploding block itself (a bed's both halves, or the anchor), which the server removes
+     * before the event without one of its own.
+     */
+    private void recordExploded(@NotNull Actor actor, @NotNull Block block, @NotNull BlockData data) {
+        if (data.getMaterial().isAir() || causes.recentlyRecorded(block)) {
+            return;
+        }
+        BlockData air = Material.AIR.createBlockData();
+        // Hawkeye's Action, fully qualified: Bukkit's click Action is imported in this file.
+        recorder.block(gg.moonrise.hawkeye.entity.action.Action.BLOCK_BREAK, actor, block, data, air, null);
+        if (data instanceof Bed bed) {
+            Bed other = (Bed) bed.clone();
+            other.setPart(bed.getPart() == Bed.Part.HEAD ? Bed.Part.FOOT : Bed.Part.HEAD);
+            Block half = block.getRelative(bed.getPart() == Bed.Part.HEAD
+                    ? bed.getFacing().getOppositeFace() : bed.getFacing());
+            if (!causes.recentlyRecorded(half)) {
+                recorder.block(gg.moonrise.hawkeye.entity.action.Action.BLOCK_BREAK, actor, half, other, air, null);
+            }
         }
     }
 
