@@ -306,6 +306,10 @@ public class ReplayBenchmark {
                 harness.shard(), LookupQuery.at(block(targets.quiet())), all, 0, 10, true).size()));
         result.put("inspect a block touched once in the busiest chunk, whole history", timed(() -> store.find(
                 harness.shard(), LookupQuery.at(block(targets.quietInBusyChunk())), all, 0, 10, true).size()));
+        // The worst case for a read: the chunk is in nearly every segment, the block in none of them.
+        Area untouched = new Area.Block(busy.world(), x, y >= 0 ? BlockPositions.MIN_Y + 7 : BlockPositions.MAX_Y - 7, z);
+        result.put("inspect a block never touched in the busiest chunk, whole history", timed(() -> store.find(
+                harness.shard(), LookupQuery.at(untouched), all, 0, 10, true).size()));
         result.put("radius 5 around the busy block, newest 10", timed(() -> store.find(harness.shard(), radius, all,
                 0, 10, true).size()));
         result.put("a player's newest 10 events", timed(() -> store.find(harness.shard(), player, all, 0, 10,
