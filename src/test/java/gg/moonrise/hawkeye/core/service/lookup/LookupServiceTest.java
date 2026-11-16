@@ -3,8 +3,10 @@ package gg.moonrise.hawkeye.core.service.lookup;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
 import gg.moonrise.hawkeye.core.service.capture.Actors;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
 import gg.moonrise.hawkeye.entity.query.Area;
@@ -12,11 +14,15 @@ import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import gg.moonrise.hawkeye.entity.query.RollbackState;
 import gg.moonrise.hawkeye.entity.query.ServerScope;
 import gg.moonrise.hawkeye.entity.query.TimeWindow;
+import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import org.bukkit.World;
 import org.junit.jupiter.api.AfterEach;
@@ -30,7 +36,11 @@ public class LookupServiceTest {
 
     private static final LookupQuery EVERYWHERE = LookupQuery.at(new Area.Everywhere());
 
+    /** The threads of {@code HawkeyeExecutors}' query pool. */
+    private static final int QUERY_THREADS = 4;
+
     private ServerMock server;
+    private TestHawkeyePlugin plugin;
 
     @BeforeEach
     public void setUp() {
@@ -148,8 +158,65 @@ public class LookupServiceTest {
         assertEquals("east", count.warnings().getFirst().shard());
     }
 
+    @Test
+    public void aLookupStuckBehindOthersTimesOut() throws Exception {
+        LookupService lookups = start();
+        server.addSimpleWorld("world");
+        TestPlugins.writeConfig(plugin, "lookup:\n  timeout-seconds: 1\n");
+        TestPlugins.reload();
+        CountDownLatch release = new CountDownLatch(1);
+        try {
+            occupy(release, QUERY_THREADS);
+            assertInstanceOf(LookupOutcome.TimedOut.class, lookups.page(EVERYWHERE, 0, 8).get(10, TimeUnit.SECONDS));
+        } finally {
+            release.countDown();
+        }
+        assertInstanceOf(LookupOutcome.Page.class, lookups.page(EVERYWHERE, 0, 8).get(20, TimeUnit.SECONDS));
+    }
+
+    @Test
+    public void aFullQueryPoolRefusesTheLookup() throws Exception {
+        LookupService lookups = start();
+        server.addSimpleWorld("world");
+        CountDownLatch release = new CountDownLatch(1);
+        try {
+            occupy(release, QUERY_THREADS);
+            ExecutorService query = TestPlugins.bean(HawkeyeExecutors.class).query();
+            assertThrows(RejectedExecutionException.class, () -> {
+                for (int i = 0; i < 10_000; i++) {
+                    query.execute(() -> await(release));
+                }
+            });
+            assertEquals(new LookupOutcome.Failed(LookupService.BUSY), lookups.count(EVERYWHERE).get(10,
+                    TimeUnit.SECONDS));
+        } finally {
+            release.countDown();
+        }
+    }
+
+    /** Occupies {@code threads} query threads with tasks that wait for {@code release}. */
+    private static void occupy(CountDownLatch release, int threads) throws InterruptedException {
+        ExecutorService query = TestPlugins.bean(HawkeyeExecutors.class).query();
+        CountDownLatch running = new CountDownLatch(threads);
+        for (int i = 0; i < threads; i++) {
+            query.execute(() -> {
+                running.countDown();
+                await(release);
+            });
+        }
+        assertTrue(running.await(10, TimeUnit.SECONDS), "the query threads did not start");
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private LookupService start() {
-        TestPlugins.load();
+        plugin = TestPlugins.load();
         TestPlugins.awaitStorage();
         return TestPlugins.bean(LookupService.class);
     }
