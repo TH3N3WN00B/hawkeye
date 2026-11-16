@@ -8,8 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import gg.moonrise.hawkeye.command.HawkeyeCommand;
 import gg.moonrise.hawkeye.command.HawkeyeCommandRegistry;
 import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
-import gg.moonrise.hawkeye.core.service.greeting.GreetingService;
-import gg.moonrise.hawkeye.listener.GreetingListener;
+import gg.moonrise.hawkeye.core.queue.EventWriter;
+import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
+import gg.moonrise.hawkeye.core.storage.StorageManager;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import gg.moonrise.moss.paper.MossPaper;
 import java.nio.file.Files;
@@ -38,15 +39,16 @@ public class HawkeyePluginTest {
     @Test
     public void enablesWithEveryBean() {
         assertTrue(plugin.isEnabled());
-        for (Class<?> bean : new Class<?>[] {HawkeyeConfigProvider.class, GreetingService.class,
-                GreetingListener.class, HawkeyeCommand.class, HawkeyeCommandRegistry.class}) {
+        for (Class<?> bean : new Class<?>[] {HawkeyeConfigProvider.class, StorageManager.class, EventWriter.class,
+                EventRecorder.class, HawkeyeCommand.class, HawkeyeCommandRegistry.class}) {
             assertNotNull(MossPaper.CONTEXT.getBean(bean), bean.getSimpleName());
         }
     }
 
     @Test
-    public void writesTheDefaultConfiguration() {
-        assertTrue(Files.isRegularFile(plugin.getDataPath().resolve(HawkeyeConfigProvider.FILE_NAME)));
+    public void writesTheDefaultFiles() {
+        assertTrue(Files.isRegularFile(plugin.getDataPath().resolve(HawkeyeConfigProvider.CONFIG_FILE)));
+        assertTrue(Files.isRegularFile(plugin.getDataPath().resolve(HawkeyeConfigProvider.MESSAGES_FILE)));
     }
 
     @Test

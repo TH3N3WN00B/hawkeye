@@ -1,32 +1,30 @@
 package gg.moonrise.hawkeye.command;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import gg.moonrise.hawkeye.config.message.GeneralMessages;
 import gg.moonrise.hawkeye.support.TestCommandManager;
-import gg.moonrise.hawkeye.support.TestCommandSource;
 import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import java.util.List;
-import org.incendo.cloud.suggestion.Suggestion;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockbukkit.mockbukkit.MockBukkit;
 import org.mockbukkit.mockbukkit.ServerMock;
 import org.mockbukkit.mockbukkit.command.ConsoleCommandSenderMock;
-import org.mockbukkit.mockbukkit.entity.PlayerMock;
 
 public class HawkeyeCommandTest {
 
-    private ServerMock server;
     private TestHawkeyePlugin plugin;
     private TestCommandManager commands;
     private ConsoleCommandSenderMock console;
 
     @BeforeEach
     public void setUp() {
-        server = MockBukkit.mock();
+        ServerMock server = MockBukkit.mock();
         plugin = TestPlugins.load();
         commands = TestPlugins.commands();
         console = server.getConsoleSender();
@@ -38,46 +36,47 @@ public class HawkeyeCommandTest {
     }
 
     @Test
-    public void infoShowsNameAndVersion() {
-        commands.run(console, HawkeyeCommand.ROOT);
-        assertEquals(List.of(plugin.getName() + " " + plugin.getPluginMeta().getVersion()), TestPlugins.drain(console));
+    public void infoShowsTheVersion() {
+        commands.run(console, "hawkeye");
+        List<String> replies = TestPlugins.drain(console);
+        assertEquals(1, replies.size());
+        assertTrue(replies.getFirst().contains(plugin.getPluginMeta().getVersion()), replies.getFirst());
+    }
+
+    @Test
+    public void theAliasRunsTheSameCommand() {
+        commands.run(console, "he help");
+        assertEquals(new GeneralMessages().getHelp().size(), TestPlugins.drain(console).size());
     }
 
     @Test
     public void reloadReportsBothOutcomes() {
-        commands.run(console, HawkeyeCommand.ROOT + " reload");
-        assertEquals(List.of("Configuration reloaded."), TestPlugins.drain(console));
+        commands.run(console, "hawkeye reload");
+        assertEquals(List.of("Hawkeye configuration reloaded."), TestPlugins.drain(console));
 
-        TestPlugins.writeConfig(plugin, "greetings-enabled: [broken]\n");
-        commands.run(console, HawkeyeCommand.ROOT + " reload");
+        TestPlugins.writeConfig(plugin, "server:\n  name: 'Not Valid!'\n");
+        commands.run(console, "hawkeye reload");
         List<String> replies = TestPlugins.drain(console);
         assertEquals(1, replies.size());
         assertTrue(replies.getFirst().startsWith("The configuration could not be reloaded"), replies.getFirst());
+        assertTrue(replies.getFirst().contains("server.name"), replies.getFirst());
     }
 
     @Test
-    public void greetSendsTheGreetingToTheTarget() {
-        PlayerMock target = server.addPlayer("Alex");
-        TestPlugins.drain(target);
-        commands.run(console, HawkeyeCommand.ROOT + " greet Alex");
-        assertEquals(List.of("Welcome back, Alex."), TestPlugins.drain(target));
-        assertEquals(List.of("Greeted Alex."), TestPlugins.drain(console));
+    public void reloadNamesRestartOnlySections() {
+        TestPlugins.writeConfig(plugin, "server:\n  name: other\n");
+        commands.run(console, "hawkeye reload");
+        List<String> replies = TestPlugins.drain(console);
+        assertEquals(2, replies.size(), replies.toString());
+        assertTrue(replies.get(1).contains("server"), replies.get(1));
     }
 
     @Test
-    public void greetNamesAMissingPlayer() {
-        commands.run(console, HawkeyeCommand.ROOT + " greet Nobody");
-        assertEquals(List.of("No online player is called Nobody."), TestPlugins.drain(console));
-    }
-
-    @Test
-    public void suggestsOnlinePlayersContainingTheInput() {
-        server.addPlayer("Alex");
-        server.addPlayer("Steve");
-        server.addPlayer("alexandra");
-        List<String> suggestions = commands.suggestionFactory()
-                .suggestImmediately(new TestCommandSource(console), HawkeyeCommand.ROOT + " greet LEX")
-                .list().stream().map(Suggestion::suggestion).toList();
-        assertEquals(List.of("Alex", "alexandra"), suggestions);
+    public void statusShowsTheServerAndQueue() {
+        commands.run(console, "hawkeye status");
+        List<String> replies = TestPlugins.drain(console);
+        assertFalse(replies.isEmpty());
+        assertTrue(replies.stream().anyMatch(line -> line.contains("Server: server")), replies.toString());
+        assertTrue(replies.stream().anyMatch(line -> line.contains("Queue:")), replies.toString());
     }
 }

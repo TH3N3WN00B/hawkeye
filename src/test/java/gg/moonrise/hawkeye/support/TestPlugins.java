@@ -1,6 +1,8 @@
 package gg.moonrise.hawkeye.support;
 
 import gg.moonrise.hawkeye.command.HawkeyeCommandRegistry;
+import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
+import gg.moonrise.hawkeye.config.ReloadResult;
 import gg.moonrise.moss.paper.MossPaper;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -32,6 +34,13 @@ public final class TestPlugins {
      */
     public static @NotNull TestHawkeyePlugin load() {
         return MockBukkit.load(TestHawkeyePlugin.class);
+    }
+
+    /** Reloads the configuration files and fails the test when they are invalid. */
+    public static void reload() {
+        if (bean(HawkeyeConfigProvider.class).reloadConfig() instanceof ReloadResult.Failed failed) {
+            throw new IllegalStateException("reload failed: " + failed.reason());
+        }
     }
 
     /**

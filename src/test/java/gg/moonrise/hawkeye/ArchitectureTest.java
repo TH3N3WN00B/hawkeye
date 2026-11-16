@@ -41,7 +41,8 @@ public class ArchitectureTest {
                         ROOT + ".type..", ROOT + ".indicator..", ROOT + ".integration..")
                 .layer("Service").definedBy(ROOT + ".core.service..")
                 .layer("Backend").definedBy(ROOT + ".core.repository..", ROOT + ".core.sql..",
-                        ROOT + ".core.time..", ROOT + ".currency..")
+                        ROOT + ".core.time..", ROOT + ".core.storage..", ROOT + ".core.queue..",
+                        ROOT + ".core.scheduler..", ROOT + ".core.bus..")
                 .layer("Bottom").definedBy(ROOT + ".entity..", ROOT + ".config..", ROOT + ".util..")
                 .whereLayer("Plugin").mayNotBeAccessedByAnyLayer()
                 .whereLayer("Loader").mayNotBeAccessedByAnyLayer()
