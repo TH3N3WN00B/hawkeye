@@ -43,7 +43,8 @@ public class ArchitectureTest {
                 .layer("Backend").definedBy(ROOT + ".core.repository..", ROOT + ".core.sql..",
                         ROOT + ".core.time..", ROOT + ".core.storage..", ROOT + ".core.queue..",
                         ROOT + ".core.scheduler..", ROOT + ".core.bus..")
-                .layer("Bottom").definedBy(ROOT + ".entity..", ROOT + ".config..", ROOT + ".util..")
+                .layer("Bottom").definedBy(ROOT + ".entity..", ROOT + ".config..", ROOT + ".util..",
+                        ROOT + ".api..")
                 .whereLayer("Plugin").mayNotBeAccessedByAnyLayer()
                 .whereLayer("Loader").mayNotBeAccessedByAnyLayer()
                 .whereLayer("PlayerFacing").mayOnlyBeAccessedByLayers("Plugin")
