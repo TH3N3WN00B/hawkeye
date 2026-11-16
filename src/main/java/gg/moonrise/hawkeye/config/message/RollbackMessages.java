@@ -9,18 +9,18 @@ import lombok.Getter;
 @Configuration
 public final class RollbackMessages {
 
-    @Comment("Reply when a rollback or restore starts. Placeholders: <mode> (rollback/restore), <events>.")
-    private String started = "<gray>Starting <mode> of <white><events></white> event(s)...";
+    @Comment("Reply when a rollback or restore starts. Placeholders: <mode> (mode-rollback/-restore), <events>.")
+    private String started = "<gray>Starting the <mode> of <white><events></white> event(s)...";
 
     @Comment("Progress, at most every few seconds. Placeholders: <mode>, <done>, <total>, <percent>.")
     private String progress = "<gray><mode>: <white><percent>%</white> (<done>/<total> chunks)";
 
-    @Comment({"Reply when a rollback or restore is done. Placeholders: <mode>, <blocks>, <items>, <entities>,",
-            "<seconds>."})
-    private String finished = "<green><mode> done:</green> <gray><blocks> block(s), <items> item stack(s), "
+    @Comment({"Reply when a rollback or restore is done. Placeholders: <mode>, <events>, <blocks>, <items>,",
+            "<entities>, <seconds>."})
+    private String finished = "<green>Finished the <mode>:</green> <gray><blocks> block(s), <items> item stack(s), "
             + "<entities> entit(ies) in <seconds>s.";
 
-    @Comment("Reply when nothing matched.")
+    @Comment("Reply when nothing matched. Placeholder: <mode>.")
     private String nothingToDo = "<gray>Nothing to <mode>.";
 
     @Comment("Reply when a rollback would change more than rollback.max-events. Placeholders: <events>, <max>.")
@@ -30,7 +30,7 @@ public final class RollbackMessages {
     private String areaRequired = "<red>Give an area: r:<radius> needs a player; from the console use r:#<world> or "
             + "r:#global.";
 
-    @Comment("Reply when a preview is shown. Placeholders: <blocks>, <minutes>.")
+    @Comment("Reply when a preview is shown. Placeholders: <mode>, <blocks>, <minutes>.")
     private String previewShown = "<gray>Previewing <white><blocks></white> block(s). "
             + "<click:run_command:'/hawkeye apply'><green>[apply]</green></click> "
             + "<click:run_command:'/hawkeye cancel'><red>[cancel]</red></click> <dark_gray>(expires in <minutes>m)";
@@ -56,4 +56,16 @@ public final class RollbackMessages {
 
     @Comment("Network job failed on a server. Placeholders: <server>, <mode>, <reason>.")
     private String networkJobFailed = "<red><mode> failed on <server>: <reason>";
+
+    @Comment("How <mode> reads for a rollback.")
+    private String modeRollback = "rollback";
+
+    @Comment("How <mode> reads for a restore.")
+    private String modeRestore = "restore";
+
+    @Comment("Reply when a rollback or restore names other servers with s:, which this server cannot change.")
+    private String networkUnsupported = "<red>Rollbacks and restores only change this server's worlds; leave out s:.";
+
+    @Comment("Sent when a preview was not applied in time. Placeholder: <mode>.")
+    private String previewExpired = "<gray>Your <mode> preview expired; the real blocks are back.";
 }
