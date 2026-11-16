@@ -15,12 +15,15 @@ import org.jetbrains.annotations.NotNull;
  */
 public final class ColumnRules {
 
+    private final SegmentHeader header;
     private final EventFilter filter;
     private final int[] worlds;
     private final boolean[] worldWanted;
     private final boolean[] actorWanted;
     private final boolean[] typeWanted;
     private final boolean actions;
+    private final int lastWorld;
+    private final long lastPosition;
 
     /**
      * Prepares the rules.
@@ -35,6 +38,7 @@ public final class ColumnRules {
         if (needsPalettes(filter) && palettes.isEmpty()) {
             throw new IllegalArgumentException("the filter names actors or types: the palettes are needed");
         }
+        this.header = header;
         this.filter = filter;
         this.worlds = header.worldIds();
         boolean[] wanted = new boolean[worlds.length];
@@ -47,6 +51,17 @@ public final class ColumnRules {
         this.actorWanted = filter.filtersActors() ? actorRule(filter, palettes.orElseThrow().actors()) : null;
         this.typeWanted = filter.filtersTypes() ? typeRule(filter, palettes.orElseThrow().types()) : null;
         this.actions = !filter.actions().isEmpty();
+        int maxWorld = -1;
+        long maxPosition = Long.MIN_VALUE;
+        for (EventFilter.WorldRange range : filter.positions()) {
+            int index = indexOf(worlds, range.world());
+            if (index > maxWorld || index == maxWorld && range.to() > maxPosition) {
+                maxWorld = index;
+                maxPosition = range.to();
+            }
+        }
+        this.lastWorld = maxWorld;
+        this.lastPosition = maxPosition;
     }
 
     /**
@@ -69,8 +84,12 @@ public final class ColumnRules {
      */
     public int @NotNull [] match(@NotNull UnitScan scan, int @NotNull [] rolledBack) {
         int rows = scan.rows();
+        if (filter.hasArea() && header.unitInfo(scan.unit()).placed()) {
+            // Placed rows are sorted by (world index, position): none after the area's last key can match.
+            rows = lastWorld < 0 ? 0 : scan.positionsUpTo(lastWorld, lastPosition);
+        }
         int[] worldIndexes = worldWanted != null || filter.hasArea() ? scan.worldIndexes() : null;
-        long[] positions = filter.hasArea() ? scan.positions() : null;
+        long[] positions = filter.hasArea() ? positionsOf(scan) : null;
         int[] actorIndexes = actorWanted != null ? scan.actorIndexes() : null;
         int[] actionCodes = actions ? scan.actions() : null;
         int[] subjects = typeWanted != null ? scan.subjects() : null;
@@ -98,7 +117,21 @@ public final class ColumnRules {
             }
             out[size++] = i;
         }
-        return size == rows ? out : Arrays.copyOf(out, size);
+        return size == out.length ? out : Arrays.copyOf(out, size);
+    }
+
+    /** The positions array; for a placed unit only the rows up to the area's last key are filled. */
+    private long @NotNull [] positionsOf(@NotNull UnitScan scan) {
+        return header.unitInfo(scan.unit()).placed() ? scan.decodedPositions() : scan.positions();
+    }
+
+    private static int indexOf(int @NotNull [] values, int value) {
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == value) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private static boolean wanted(boolean @NotNull [] rule, int index, @NotNull String what) {
