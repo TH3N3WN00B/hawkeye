@@ -172,8 +172,13 @@ public final class SegmentEncoder {
         for (SegmentUnit info : infos) {
             mask |= info.actionMask();
         }
+        long[] positions = new long[unplaced];
+        for (int i = 0; i < unplaced; i++) {
+            positions[i] = rows[i].position();
+        }
+        Regions regions = Regions.of(worldIndexes, positions, 0, unplaced);
         SegmentHeader header = SegmentHeader.of(count, unplaced, baseSlot, lastSlot - baseSlot, worlds, nodes, actors,
-                mask, chunkWorlds, chunkBases, sharedLengths, infos);
+                mask, chunkWorlds, chunkBases, regions, sharedLengths, infos);
         return new PackedSegment(sortedIds[0], sortedIds[count - 1], count, header.toBytes(), body.toByteArray(),
                 rolledBack());
     }

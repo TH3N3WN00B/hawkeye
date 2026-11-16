@@ -124,6 +124,59 @@ public class ArchiveTest {
     }
 
     @Test
+    public void areaAndWorldPruningKeepsChatInsideTheAreaAndCombinedFilters() throws SQLException {
+        Random random = new Random(23);
+        events.clear();
+        for (int i = 0; i < EVENTS; i++) {
+            PendingEvent event = event(random, T0 + i * STEP);
+            if (event.action() == Action.CHAT) {
+                // Chat said where it happened: mostly among the block changes, some far from everything else.
+                long position = random.nextInt(4) == 0
+                        ? BlockPositions.pack(3_000 + random.nextInt(5), 64, 3_000 + random.nextInt(5))
+                        : BlockPositions.pack(random.nextInt(80) - 40, 64, random.nextInt(80) - 40);
+                event = new PendingEvent(event.stamp(), random.nextBoolean() ? "world" : "nether", position,
+                        event.actor(), event.action(), event.subject(), event.secondary(), event.amount(),
+                        event.data());
+            }
+            events.add(event);
+        }
+        archiveInTwoWaves();
+        LookupQuery everything = LookupQuery.at(new Area.Everywhere());
+        List<Long> flagged = pages(referenceStore, reference, everything, true).stream().filter(id -> id % 3 == 0)
+                .toList();
+        assertEquals(flagged.size(), referenceStore.setRolledBack(reference.shard(), flagged, true));
+        assertEquals(flagged.size(), store.setRolledBack(harness.shard(), flagged, true));
+
+        Area.Box farChat = new Area.Box("world", 2_990, 0, 2_990, 3_010, 100, 3_010);
+        Area.Box near = new Area.Box("world", -30, 60, -30, 30, 70, 30);
+        List<LookupQuery> queries = List.of(
+                LookupQuery.at(farChat),
+                query(farChat, Set.of("player2", "player3"), Set.of(Action.CHAT), Set.of()),
+                LookupQuery.at(new Area.World("nether")),
+                LookupQuery.at(new Area.World("world")).withRollbackState(RollbackState.ACTIVE),
+                query(near, Set.of("player1", "player3"), Set.of(Action.BLOCK_BREAK, Action.CHAT), Set.of())
+                        .withRollbackState(RollbackState.ROLLED_BACK),
+                query(near, Set.of("player1", "player3"), Set.of(Action.BLOCK_BREAK, Action.CHAT), Set.of())
+                        .withRollbackState(RollbackState.ACTIVE),
+                query(new Area.Box("nether", -40, 60, -40, 40, 70, 40), Set.of("player0"), Set.of(), Set.of(
+                        "minecraft:stone")).withRollbackState(RollbackState.ACTIVE),
+                query(near, Set.of(), Set.of(Action.CONTAINER_DEPOSIT), Set.of("minecraft:diamond"))
+                        .withTime(new TimeWindow(T0 + 4_000_000, T0 + 18_000_000)));
+        for (int i = 0; i < queries.size(); i++) {
+            LookupQuery query = queries.get(i);
+            List<Long> expected = pages(referenceStore, reference, query, true);
+            assertTrue(expected.size() > 0, "pruning query " + i + " matches something");
+            assertEquals(expected, pages(store, harness, query, true), "newest-first pages of pruning query " + i);
+            assertEquals(expected.reversed(), pages(store, harness, query, false),
+                    "oldest-first pages of pruning query " + i);
+            assertEquals(expected.size(), store.count(harness.shard(), query, ALL), "count of pruning query " + i);
+            assertEquals(describe(referenceStore.find(reference.shard(), query, ALL, 0, 10_000, true)),
+                    describe(store.find(harness.shard(), query, ALL, 0, 10_000, true)),
+                    "every column of pruning query " + i);
+        }
+    }
+
+    @Test
     public void rollbackFlagsOfArchivedEventsAreSetClearedAndSeen() throws SQLException {
         archiveInTwoWaves();
         LookupQuery box = queries().get(2);

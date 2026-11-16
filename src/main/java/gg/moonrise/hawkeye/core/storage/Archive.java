@@ -8,8 +8,11 @@ import gg.moonrise.hawkeye.core.repository.SegmentRepository;
 import gg.moonrise.hawkeye.core.repository.SegmentRow;
 import gg.moonrise.hawkeye.core.repository.SegmentTotals;
 import gg.moonrise.hawkeye.core.repository.segment.ByteRange;
+import gg.moonrise.hawkeye.core.repository.segment.ColumnRules;
 import gg.moonrise.hawkeye.core.repository.segment.PackedSegment;
+import gg.moonrise.hawkeye.core.repository.segment.Palettes;
 import gg.moonrise.hawkeye.core.repository.segment.SegmentHeader;
+import gg.moonrise.hawkeye.core.repository.segment.SegmentMatch;
 import gg.moonrise.hawkeye.core.repository.segment.Segments;
 import gg.moonrise.hawkeye.core.repository.segment.SharedColumns;
 import gg.moonrise.hawkeye.core.sql.Database;
@@ -33,6 +36,7 @@ import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.concurrent.Executor;
+import java.util.function.LongPredicate;
 import java.util.function.Predicate;
 import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
@@ -44,8 +48,11 @@ import org.jetbrains.annotations.Nullable;
  * table into immutable segments of archive format 2 ({@link Segments}), up to
  * {@code archive.segment-events} at a time; reads merge both tiers, so lookups, rollbacks and purges
  * behave the same whichever tier holds an event. A read parses each candidate's header, skips segments
- * and units that cannot match, fetches the shared frames and the matching units by byte range and
- * filters the rows with the same predicate as the SQL ({@link EventFilter#matches}). Rolled-back flags
+ * and units that cannot match, fetches the selected units by byte range and matches the filter's
+ * column rules on their columns ({@link Segments#match}); only when a row matched does it get the
+ * segment's ids (cache or shared frames) and apply the id rules, and it builds rows for the survivors
+ * only. Both steps use the SQL's predicate ({@link EventFilter#matchesColumns},
+ * {@link EventFilter#matchesId}). Rolled-back flags
  * live beside the segments ({@code segment_flag}); a purge deletes or rewrites whole segments. Every
  * method but {@link #compact} and {@link #totals} runs on the caller's connection and transaction.
  */
@@ -150,13 +157,17 @@ public final class Archive {
                 if (best.size() >= limit && cannotImprove(segment, best.peek(), newestFirst)) {
                     return found;
                 }
-                for (EventRow row : read(connection, shard, segment, filter)) {
-                    if (beyond(row.id(), cursor, newestFirst) && filter.matches(row)) {
-                        found.add(row);
-                        keep(best, row.id(), limit);
-                    }
-                }
                 after = segment;
+                SegmentMatch match = match(connection, shard, segment, filter);
+                if (match.count() == 0) {
+                    continue;
+                }
+                SegmentHeader header = header(shard, segment);
+                SharedColumns shared = shared(connection, shard, segment, header);
+                for (EventRow row : match.rows(shared, idRule(segment, header, filter, cursor, newestFirst))) {
+                    found.add(row);
+                    keep(best, row.id(), limit);
+                }
             }
             if (page.size() < SEGMENT_PAGE) {
                 return found;
@@ -181,11 +192,7 @@ public final class Archive {
             List<SegmentRow> page = segmentRepository.candidates(connection, shard.database().sql(), filter, 0, after,
                     SEGMENT_PAGE, false);
             for (SegmentRow segment : page) {
-                for (EventRow row : read(connection, shard, segment, filter)) {
-                    if (filter.matches(row)) {
-                        count++;
-                    }
-                }
+                count += count(connection, shard, segment, filter);
                 after = segment;
             }
             if (page.size() < SEGMENT_PAGE) {
@@ -292,7 +299,7 @@ public final class Archive {
                     touched++;
                     continue;
                 }
-                if (!purgedWorlds.isEmpty() && read(connection, shard, segment, purged).stream().noneMatch(drop)) {
+                if (!purgedWorlds.isEmpty() && count(connection, shard, segment, purged) == 0) {
                     continue;
                 }
                 int removed = rewrite(connection, shard, segment, header, drop);
@@ -364,12 +371,63 @@ public final class Archive {
         return removed;
     }
 
-    /** The rows of the units of a segment that may match a filter, with flags; empty when none may. */
-    private @NotNull List<EventRow> read(@NotNull Connection connection, @NotNull Shard shard,
+    /**
+     * The first step of a read: the rows of a segment whose columns pass the filter's column rules.
+     * Fetches only the units the header selects (and the palette frame, when the filter needs it and
+     * it is not cached), in one statement; computes no ids and builds no rows.
+     */
+    private @NotNull SegmentMatch match(@NotNull Connection connection, @NotNull Shard shard,
             @NotNull SegmentRow segment, @NotNull EventFilter filter) throws SQLException {
         SegmentHeader header = header(shard, segment);
         int[] units = header.units(filter);
-        return units.length == 0 ? List.of() : decode(connection, shard, segment, header, units);
+        if (units.length == 0) {
+            return Segments.match(header, filter, Optional.empty(), units, List.of(), segment.rolledBack());
+        }
+        Database database = shard.database();
+        boolean needsPalettes = ColumnRules.needsPalettes(filter);
+        Optional<Palettes> palettes = needsPalettes ? cache.palettes(database, segment.id()) : Optional.empty();
+        boolean fetchPalettes = needsPalettes && palettes.isEmpty();
+        List<ByteRange> ranges = new ArrayList<>(units.length + 1);
+        for (int unit : units) {
+            ranges.add(header.unit(unit));
+        }
+        if (fetchPalettes) {
+            ranges.add(header.palettes());
+        }
+        List<byte[]> bytes = segmentRepository.readRanges(connection, database.sql(), segment.id(), ranges);
+        if (fetchPalettes) {
+            Palettes decoded = Segments.palettes(header, bytes.getLast());
+            cache.keep(database, segment.id(), decoded);
+            palettes = Optional.of(decoded);
+            bytes = bytes.subList(0, units.length);
+        }
+        return Segments.match(header, filter, palettes, units, bytes, segment.rolledBack());
+    }
+
+    /**
+     * How many events of a segment match a filter: column matches counted directly when the
+     * segment's ids all pass the id rules, else with ids computed for the matches (never rows).
+     */
+    private long count(@NotNull Connection connection, @NotNull Shard shard, @NotNull SegmentRow segment,
+            @NotNull EventFilter filter) throws SQLException {
+        SegmentMatch match = match(connection, shard, segment, filter);
+        if (match.count() == 0) {
+            return 0;
+        }
+        SegmentHeader header = header(shard, segment);
+        if (idsAllPass(segment, header, filter, 0, false)) {
+            return match.count();
+        }
+        return match.count(shared(connection, shard, segment, header), idRule(segment, header, filter, 0, false));
+    }
+
+    /** The id rules for a segment's rows: none when every id of the segment passes them. */
+    private static @NotNull LongPredicate idRule(@NotNull SegmentRow segment, @NotNull SegmentHeader header,
+            @NotNull EventFilter filter, long cursor, boolean newestFirst) {
+        if (idsAllPass(segment, header, filter, cursor, newestFirst)) {
+            return id -> true;
+        }
+        return id -> filter.matchesId(id) && beyond(id, cursor, newestFirst);
     }
 
     private @NotNull List<EventRow> decode(@NotNull Connection connection, @NotNull Shard shard,
@@ -449,6 +507,19 @@ public final class Archive {
             return false;
         }
         return newestFirst ? segment.lastId() < worstKept : segment.firstId() > worstKept;
+    }
+
+    /**
+     * Whether every id of a segment passes the id rules: its id range inside the filter's, entirely
+     * beyond the cursor, and its only node a listed one (or no nodes listed).
+     */
+    private static boolean idsAllPass(@NotNull SegmentRow segment, @NotNull SegmentHeader header,
+            @NotNull EventFilter filter, long cursor, boolean newestFirst) {
+        boolean inRange = segment.firstId() >= filter.minId() && segment.lastId() <= filter.maxId();
+        boolean pastCursor = cursor == 0 || (newestFirst ? segment.lastId() < cursor : segment.firstId() > cursor);
+        int[] nodes = header.nodeIds();
+        boolean nodesPass = filter.nodes().isEmpty() || nodes.length == 1 && filter.nodes().contains(nodes[0]);
+        return inRange && pastCursor && nodesPass;
     }
 
     private static boolean beyond(long id, long cursor, boolean newestFirst) {

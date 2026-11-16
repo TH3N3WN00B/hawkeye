@@ -2,6 +2,7 @@ package gg.moonrise.hawkeye.core.storage;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import gg.moonrise.hawkeye.core.repository.segment.Palettes;
 import gg.moonrise.hawkeye.core.repository.segment.SegmentHeader;
 import gg.moonrise.hawkeye.core.repository.segment.SharedColumns;
 import gg.moonrise.hawkeye.core.sql.Database;
@@ -11,7 +12,7 @@ import java.util.Optional;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Parsed segment headers and decoded shared frames, by segment. A segment never changes after it is
+ * Parsed segment headers, decoded shared frames and palettes, by segment. A segment never changes after it is
  * written, and a rewrite inserts a new segment and deletes the old one ({@code AUTOINCREMENT} and
  * identity columns never hand out an id twice), so an entry never goes stale; deleted segments simply
  * age out. Entries are keyed by the {@link Database} object too, so two shards, or a database reopened
@@ -30,6 +31,9 @@ public final class SegmentCache {
     /** The weight bound of the shared-frames cache, in bytes of ids and palettes. */
     public static final long SHARED_BYTES = 32L * 1024 * 1024;
 
+    /** The weight bound of the palette cache, in bytes of the palettes. */
+    public static final long PALETTE_BYTES = 8L * 1024 * 1024;
+
     private final Cache<Key, SegmentHeader> headers = Caffeine.newBuilder()
             .maximumWeight(HEADER_BYTES)
             .weigher((Key key, SegmentHeader header) -> header.chunkBases().length * (Long.BYTES + Integer.BYTES)
@@ -39,6 +43,10 @@ public final class SegmentCache {
             .maximumWeight(SHARED_BYTES)
             .weigher((Key key, SharedColumns columns) -> columns.ids().length * Long.BYTES
                     + (columns.actorPalette().length + columns.typePalette().length) * Integer.BYTES + 64)
+            .build();
+    private final Cache<Key, Palettes> palettes = Caffeine.newBuilder()
+            .maximumWeight(PALETTE_BYTES)
+            .weigher((Key key, Palettes value) -> value.weight())
             .build();
 
     /**
@@ -77,6 +85,33 @@ public final class SegmentCache {
     }
 
     /**
+     * A segment's palettes, when cached on their own or with the shared frames.
+     *
+     * @param database the shard's database
+     * @param segment  the segment id
+     * @return the palettes, or empty
+     */
+    public @NotNull Optional<Palettes> palettes(@NotNull Database database, long segment) {
+        Key key = new Key(database, segment);
+        Palettes kept = palettes.getIfPresent(key);
+        if (kept != null) {
+            return Optional.of(kept);
+        }
+        return Optional.ofNullable(shared.getIfPresent(key)).map(SharedColumns::palettes);
+    }
+
+    /**
+     * Keeps a segment's palettes.
+     *
+     * @param database the shard's database
+     * @param segment  the segment id
+     * @param value    the palettes
+     */
+    public void keep(@NotNull Database database, long segment, @NotNull Palettes value) {
+        palettes.put(new Key(database, segment), value);
+    }
+
+    /**
      * Drops what is kept about a segment (after it was deleted, so the memory is freed early).
      *
      * @param database the shard's database
@@ -86,6 +121,7 @@ public final class SegmentCache {
         Key key = new Key(database, segment);
         headers.invalidate(key);
         shared.invalidate(key);
+        palettes.invalidate(key);
     }
 
     /**

@@ -23,6 +23,8 @@ import org.jetbrains.annotations.NotNull;
  *   varint  chunk count, then per chunk of the placed rows, sorted by (world index, chunk x, chunk z):
  *           varint world index delta; zig-zag chunk x (delta when the world is unchanged, else absolute);
  *           zig-zag chunk z (delta when world and chunk x are unchanged, else absolute)
+ *   varint  region count, then per region holding an unplaced row (32 x 32 chunks: chunk &gt;&gt; 5),
+ *           sorted by (world index, region x, region z), coded like the chunks
  *   varint  byte lengths of the time, node, rank and palette frames (0 for an absent one)
  *   varint  unit count, then per unit:
  *           varint rows; byte placed (0 or 1); placed only: varint world index, long first position;
@@ -31,7 +33,9 @@ import org.jetbrains.annotations.NotNull;
  *           varint actor count, actor indexes (ascending: the first, then deltas); long action mask
  * </pre>
  * The per-unit and per-segment slot ranges are not required by the format contract; they let an id
- * range skip units and segments, and cost a few bytes per unit.
+ * range skip units and segments, and cost a few bytes per unit. The region list lets a world or area
+ * filter skip the unplaced units (chat, commands, sessions), which the chunk list and the unit keys
+ * do not describe: a few dozen entries, as those rows come from a few hundred players at most.
  */
 public final class SegmentHeader {
 
@@ -47,7 +51,11 @@ public final class SegmentHeader {
     /** The packed-position bits below a chunk column's base. */
     public static final long CHUNK_LOCAL_MASK = (1L << 20) - 1;
 
+    /** How many chunk bits a region coordinate drops. */
+    public static final int REGION_SHIFT = 5;
+
     private static final int MAX_CHUNK = (1 << 21) - 1;
+    private static final int MAX_REGION = MAX_CHUNK >> REGION_SHIFT;
 
     private final int events;
     private final int unplaced;
@@ -59,6 +67,7 @@ public final class SegmentHeader {
     private final long actionMask;
     private final int[] chunkWorlds;
     private final long[] chunkBases;
+    private final Regions regions;
     private final int[] sharedLengths;
     private final List<SegmentUnit> units;
     private final int[] unitStarts;
@@ -67,7 +76,8 @@ public final class SegmentHeader {
 
     private SegmentHeader(int events, int unplaced, long baseSlot, long slotSpan, int @NotNull [] worlds,
             int @NotNull [] nodes, int @NotNull [] actors, long actionMask, int @NotNull [] chunkWorlds,
-            long @NotNull [] chunkBases, int @NotNull [] sharedLengths, @NotNull List<SegmentUnit> units) {
+            long @NotNull [] chunkBases, @NotNull Regions regions, int @NotNull [] sharedLengths,
+            @NotNull List<SegmentUnit> units) {
         this.events = events;
         this.unplaced = unplaced;
         this.baseSlot = baseSlot;
@@ -78,6 +88,7 @@ public final class SegmentHeader {
         this.actionMask = actionMask;
         this.chunkWorlds = chunkWorlds;
         this.chunkBases = chunkBases;
+        this.regions = regions;
         this.sharedLengths = sharedLengths;
         this.units = List.copyOf(units);
         this.unitStarts = new int[units.size()];
@@ -114,6 +125,7 @@ public final class SegmentHeader {
      * @param chunkWorlds   per chunk of the placed rows: its world index
      * @param chunkBases    per chunk: the packed position of its first block (local bits 0), sorted with
      *                      the world index
+     * @param regions       the regions of the unplaced rows
      * @param sharedLengths the lengths of the four shared frames ({@link SharedFrame} order)
      * @param units         the units
      * @return the header
@@ -121,10 +133,10 @@ public final class SegmentHeader {
      */
     public static @NotNull SegmentHeader of(int events, int unplaced, long baseSlot, long slotSpan,
             int @NotNull [] worlds, int @NotNull [] nodes, int @NotNull [] actors, long actionMask,
-            int @NotNull [] chunkWorlds, long @NotNull [] chunkBases, int @NotNull [] sharedLengths,
-            @NotNull List<SegmentUnit> units) {
+            int @NotNull [] chunkWorlds, long @NotNull [] chunkBases, @NotNull Regions regions,
+            int @NotNull [] sharedLengths, @NotNull List<SegmentUnit> units) {
         return new SegmentHeader(events, unplaced, baseSlot, slotSpan, worlds.clone(), nodes.clone(), actors.clone(),
-                actionMask, chunkWorlds.clone(), chunkBases.clone(), sharedLengths.clone(), units);
+                actionMask, chunkWorlds.clone(), chunkBases.clone(), regions, sharedLengths.clone(), units);
     }
 
     /**
@@ -152,6 +164,7 @@ public final class SegmentHeader {
         int[] chunkWorlds = new int[chunks];
         long[] chunkBases = new long[chunks];
         readChunks(in, chunkWorlds, chunkBases);
+        Regions regions = readRegions(in);
         int[] sharedLengths = new int[SharedFrame.values().length];
         for (int i = 0; i < sharedLengths.length; i++) {
             sharedLengths[i] = in.readVarInt();
@@ -165,7 +178,7 @@ public final class SegmentHeader {
             throw new CodecException(in.remaining() + " unread byte(s) after the segment header");
         }
         return new SegmentHeader(events, unplaced, baseSlot, slotSpan, worlds, nodes, actors, actionMask,
-                chunkWorlds, chunkBases, sharedLengths, units);
+                chunkWorlds, chunkBases, regions, sharedLengths, units);
     }
 
     /**
@@ -182,6 +195,7 @@ public final class SegmentHeader {
         writeInts(out, actors, true);
         out.writeLong(actionMask);
         writeChunks(out);
+        writeRegions(out);
         for (int length : sharedLengths) {
             out.writeVarLong(length);
         }
@@ -405,6 +419,26 @@ public final class SegmentHeader {
         return chunkBases;
     }
 
+    /**
+     * The regions holding an unplaced row (32 x 32 chunks each), sorted by (world index, x, z).
+     *
+     * @return the regions
+     */
+    public @NotNull Regions unplacedRegions() {
+        return regions;
+    }
+
+    /**
+     * The byte range of the palette frame, the last shared frame: a reader that needs only the
+     * palettes fetches this.
+     *
+     * @return the range
+     */
+    public @NotNull ByteRange palettes() {
+        int length = frameLength(SharedFrame.PALETTES);
+        return new ByteRange(unitOffsets[0] - length, length);
+    }
+
     private void validate() {
         if (events < 1 || events > MAX_EVENTS) {
             throw new CodecException("implausible segment event count " + events);
@@ -431,6 +465,7 @@ public final class SegmentHeader {
         }
         checkAscending(actors, "actor");
         validateChunks();
+        validateRegions();
         validateShared();
         validateUnits();
     }
@@ -443,6 +478,21 @@ public final class SegmentHeader {
             if (i > 0 && (chunkWorlds[i] < chunkWorlds[i - 1]
                     || chunkWorlds[i] == chunkWorlds[i - 1] && chunkBases[i] <= chunkBases[i - 1])) {
                 throw new CodecException("chunk list not sorted");
+            }
+        }
+    }
+
+    private void validateRegions() {
+        int[] regionWorlds = regions.worlds();
+        if ((regionWorlds.length == 0) != (unplaced == 0)) {
+            throw new CodecException("the region list does not match the " + unplaced + " unplaced rows");
+        }
+        for (int i = 0; i < regionWorlds.length; i++) {
+            if (regionWorlds[i] < 0 || regionWorlds[i] >= worlds.length) {
+                throw new CodecException("region world index " + regionWorlds[i] + " out of " + worlds.length);
+            }
+            if (i > 0 && Regions.compare(regions, i - 1, regions, i) >= 0) {
+                throw new CodecException("region list not sorted");
             }
         }
     }
@@ -600,6 +650,46 @@ public final class SegmentHeader {
             world = chunkWorlds[i];
             chunkX = x;
             chunkZ = z;
+        }
+    }
+
+    private static @NotNull Regions readRegions(@NotNull ByteReader in) {
+        int count = count(in, 3);
+        int[] regionWorlds = new int[count];
+        int[] xs = new int[count];
+        int[] zs = new int[count];
+        long world = 0;
+        long regionX = 0;
+        long regionZ = 0;
+        for (int i = 0; i < count; i++) {
+            long worldDelta = in.readVarLong();
+            long x = in.readZigZag();
+            long z = in.readZigZag();
+            boolean sameWorld = i > 0 && worldDelta == 0;
+            world += worldDelta;
+            regionX = sameWorld ? regionX + x : x;
+            regionZ = sameWorld && x == 0 ? regionZ + z : z;
+            if (world > Integer.MAX_VALUE || regionX < -MAX_REGION - 1L || regionX > MAX_REGION
+                    || regionZ < -MAX_REGION - 1L || regionZ > MAX_REGION) {
+                throw new CodecException("region " + regionX + ", " + regionZ + " out of range");
+            }
+            regionWorlds[i] = (int) world;
+            xs[i] = (int) regionX;
+            zs[i] = (int) regionZ;
+        }
+        return new Regions(regionWorlds, xs, zs);
+    }
+
+    private void writeRegions(@NotNull ByteWriter out) {
+        int[] regionWorlds = regions.worlds();
+        int[] xs = regions.xs();
+        int[] zs = regions.zs();
+        out.writeVarLong(regionWorlds.length);
+        for (int i = 0; i < regionWorlds.length; i++) {
+            boolean sameWorld = i > 0 && regionWorlds[i] == regionWorlds[i - 1];
+            out.writeVarLong(i == 0 ? regionWorlds[i] : regionWorlds[i] - regionWorlds[i - 1]);
+            out.writeZigZag(sameWorld ? (long) xs[i] - xs[i - 1] : xs[i]);
+            out.writeZigZag(sameWorld && xs[i] == xs[i - 1] ? (long) zs[i] - zs[i - 1] : zs[i]);
         }
     }
 

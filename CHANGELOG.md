@@ -18,7 +18,10 @@ All notable changes to this project are documented in this file. The format is b
   (archive format 2: zstd frames, units of 16,384 rows read by byte range, ranks implied by the
   stored order), about 1.2 bytes per event on replayed real history and about 6 per random block
   event on SQLite, against about 80 for CoreProtect's relational layout; rolled-back flags of
-  archived events live beside the segments; every read merges both tiers.
+  archived events live beside the segments; every read merges both tiers. An archive read matches a
+  lookup's place, actor, action, type and rollback conditions on a unit's columns before it decodes
+  ids or builds rows, and block and area lookups skip the chat and command rows of segments whose
+  players were elsewhere.
 - CoreProtect-compatible parameters (`u: t: r: a: i: e: s: #preview #count`) for lookups, rollbacks,
   restores and purges.
 - Multi-server operation: shared databases, shards read in parallel for network lookups, network

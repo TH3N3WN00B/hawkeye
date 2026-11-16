@@ -126,9 +126,13 @@ by `core.storage.Archive` under the `archive` lease (one server per shard).
   placed rows never share a unit.
 - **Header** (uncompressed, about 1-2 KB for a full segment, cached parsed by segment id): version
   (2), counts, base slot, the world, node and actor lists, an action mask, every distinct chunk of
-  the placed rows, the lengths of the shared frames and, per unit, its row count, first key, frame
-  lengths, actors, action mask and slot range. From it a reader decides whether the segment and which
-  units can match an `EventFilter`, and where their bytes are.
+  the placed rows, every distinct region (32 x 32 chunks, `chunk >> 5`) of the unplaced rows as
+  sorted, delta-coded (world index, region x, region z) entries, the lengths of the shared frames
+  and, per unit, its row count, first key, frame lengths, actors, action mask and slot range. From it
+  a reader decides whether the segment and which units can match an `EventFilter`, and where their
+  bytes are: placed units by the chunk list and their first keys, unplaced units by the region list
+  (a world or area that reaches none of those regions skips them). The byte layout is in the
+  `SegmentHeader` Javadoc.
 - **Body.** Frames (`util.codec.Compression`: stored, zstd level 19, or deflate level 9 when zstd's
   native library does not load). First the shared frames: per row the slot delta, the node index (with
   several nodes), the rank difference from the expected rank (omitted when all are 0, the normal case
@@ -136,12 +140,21 @@ by `core.storage.Archive` under the `archive` lease (one server per shard).
   chunk x/z deltas, local x/z byte, y delta, actor, action, subject, secondary, amount, data length)
   and a payload frame.
 - **Reading.** Candidates are found by id range on `last_id` (header and flags, never the body), in
-  reading order (`last_id DESC` or `first_id ASC`, keyset paged). Each header is checked; for a
-  matching segment one statement fetches the shared range (unless its decoded form is cached, about
-  32 MB by weight) and the matching units by `substr` on the body, touching ranges merged. Rows are
-  decoded with their flags and filtered with `EventFilter.matches`, the Java twin of the SQL predicate
-  (`EventFilterTest` checks they agree). A page stops reading segments once none can beat its worst
-  event (by `first_id`/`last_id`).
+  reading order (`last_id DESC` or `first_id ASC`, keyset paged). Each header selects the units that
+  can match; a read then has two steps. (1) One statement fetches the selected units by `substr` on the
+  body, touching ranges merged, plus the palette frame (the small last shared frame) when the filter
+  names actors or types and the palettes are not cached. Each unit's scalar frame is decompressed and
+  only the columns the filter needs are decoded into primitive arrays; the column rules (world, area
+  and bounds, actors, actions, types, rolled-back flag: `EventFilter.matchesColumns`) give the
+  matching row numbers. No row object is built and no payload decompressed. (2) Only when a row
+  matched are the segment's ids obtained (the decoded shared frames, cached by weight, about 32 MB,
+  else fetched and decoded), the id rules applied (`EventFilter.matchesId`: id range and nodes, and
+  the keyset cursor) and rows built for the survivors; a unit's payload frame is decompressed only
+  when a surviving row has data. A segment whose ids all pass the id rules (id range inside the
+  filter's, beyond the cursor, its one node listed) skips the per-row id check, and a count of such a
+  segment counts column matches without computing ids. `EventFilter.matches` is the Java twin of the
+  SQL predicate (`EventFilterTest` checks they agree); both steps use its rule methods. A page stops
+  reading segments once none can beat its worst event (by `first_id`/`last_id`).
 - **Flags.** A rollback of archived events maps their ids to ordinals (from the shared frames) and
   rewrites the segment's `segment_flag` row under a lock on the segment row; a body is never rewritten
   for a flag.

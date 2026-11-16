@@ -80,47 +80,87 @@ public record EventFilter(
 
     /**
      * Whether a row passes this filter: the same predicate {@link EventSql} writes as SQL, for events
-     * read from archive segments. {@code EventFilterTest} checks that both agree.
+     * read from archive segments. {@code EventFilterTest} checks that both agree. It is
+     * {@link #matchesId} and {@link #matchesColumns}; an archive read applies the two separately, the
+     * column rules first.
      *
      * @param row the row
      * @return {@code true} when the row matches
      */
     public boolean matches(@NotNull EventRow row) {
-        if (row.id() < minId || row.id() > maxId) {
-            return false;
-        }
-        if (!positions.isEmpty()) {
-            if (!inPositions(row)) {
-                return false;
-            }
-        } else if (!worlds.isEmpty() && !worlds.contains(row.world())) {
-            return false;
-        }
-        if (!nodes.isEmpty() && !nodes.contains(EventIds.node(row.id()))) {
-            return false;
-        }
-        if (!actors.isEmpty() && !actors.contains(row.actor()) || excludedActors.contains(row.actor())) {
-            return false;
-        }
-        if (!actions.isEmpty() && !actions.contains(row.action())) {
-            return false;
-        }
-        if (!types.isEmpty() && !types.contains(row.subject()) || excludedTypes.contains(row.subject())) {
-            return false;
-        }
-        return switch (rollbackState) {
-            case ANY -> true;
-            case ACTIVE -> !row.rolledBack();
-            case ROLLED_BACK -> row.rolledBack();
-        };
+        return matchesId(row.id()) && matchesColumns(row.world(), row.position(), row.actor(), row.action(),
+                row.subject(), row.rolledBack());
     }
 
-    private boolean inPositions(@NotNull EventRow row) {
-        long position = row.position();
+    /**
+     * The rules that need a row's id: the id range and the nodes.
+     *
+     * @param id the event id
+     * @return {@code true} when the id passes
+     */
+    public boolean matchesId(long id) {
+        return id >= minId && id <= maxId && (nodes.isEmpty() || nodes.contains(EventIds.node(id)));
+    }
+
+    /**
+     * Every rule that a row's own columns decide (all but {@link #matchesId}).
+     *
+     * @param world      the world id
+     * @param position   the packed position
+     * @param actor      the actor id
+     * @param action     the action code
+     * @param subject    the subject type id, or 0
+     * @param rolledBack whether the row is rolled back
+     * @return {@code true} when the row passes
+     */
+    public boolean matchesColumns(int world, long position, int actor, int action, int subject, boolean rolledBack) {
+        return matchesPlace(world, position) && matchesActor(actor) && matchesAction(action)
+                && matchesType(subject) && matchesRollback(rolledBack);
+    }
+
+    /**
+     * Whether a filter's place rules need the position, not just the world ({@link #matchesWorld}).
+     *
+     * @return {@code true} when there are position ranges
+     */
+    public boolean hasArea() {
+        return !positions.isEmpty();
+    }
+
+    /**
+     * The place rule: inside a position range when there are any ({@link #inPositions}), else in a
+     * listed world.
+     *
+     * @param world    the world id
+     * @param position the packed position
+     * @return {@code true} when the place passes
+     */
+    public boolean matchesPlace(int world, long position) {
+        return positions.isEmpty() ? matchesWorld(world) : inPositions(world, position);
+    }
+
+    /**
+     * The whole-world rule, used when there are no position ranges.
+     *
+     * @param world the world id
+     * @return {@code true} when no world is listed or the world is
+     */
+    public boolean matchesWorld(int world) {
+        return worlds.isEmpty() || worlds.contains(world);
+    }
+
+    /**
+     * Whether a place is inside one of the position ranges (with its local-x trim) and the bounds.
+     *
+     * @param world    the world id
+     * @param position the packed position
+     * @return {@code true} when inside
+     */
+    public boolean inPositions(int world, long position) {
         int localX = (int) ((position >>> 16) & 15);
         boolean inside = false;
         for (WorldRange range : positions) {
-            if (range.world() == row.world() && position >= range.from() && position <= range.to()
+            if (range.world() == world && position >= range.from() && position <= range.to()
                     && localX >= range.minLocalX() && localX <= range.maxLocalX()) {
                 inside = true;
                 break;
@@ -132,6 +172,68 @@ public record EventFilter(
         int y = BlockPositions.y(position);
         int z = BlockPositions.z(position);
         return y >= bounds.minY() && y <= bounds.maxY() && z >= bounds.minZ() && z <= bounds.maxZ();
+    }
+
+    /**
+     * The actor rule: listed (when any are) and not excluded.
+     *
+     * @param actor the actor id
+     * @return {@code true} when the actor passes
+     */
+    public boolean matchesActor(int actor) {
+        return (actors.isEmpty() || actors.contains(actor)) && !excludedActors.contains(actor);
+    }
+
+    /**
+     * Whether the actor rule can drop a row.
+     *
+     * @return {@code true} when actors are listed or excluded
+     */
+    public boolean filtersActors() {
+        return !actors.isEmpty() || !excludedActors.isEmpty();
+    }
+
+    /**
+     * The action rule.
+     *
+     * @param action the action code
+     * @return {@code true} when no action is listed or the action is
+     */
+    public boolean matchesAction(int action) {
+        return actions.isEmpty() || actions.contains(action);
+    }
+
+    /**
+     * The subject type rule: listed (when any are) and not excluded.
+     *
+     * @param subject the subject type id, or 0
+     * @return {@code true} when the subject passes
+     */
+    public boolean matchesType(int subject) {
+        return (types.isEmpty() || types.contains(subject)) && !excludedTypes.contains(subject);
+    }
+
+    /**
+     * Whether the type rule can drop a row.
+     *
+     * @return {@code true} when types are listed or excluded
+     */
+    public boolean filtersTypes() {
+        return !types.isEmpty() || !excludedTypes.isEmpty();
+    }
+
+    /**
+     * The rolled-back rule.
+     *
+     * @param rolledBack whether the row is rolled back
+     * @return {@code true} when the flag passes
+     */
+    public boolean matchesRollback(boolean rolledBack) {
+        return switch (rollbackState) {
+            case ANY -> true;
+            case ACTIVE -> !rolledBack;
+            case ROLLED_BACK -> rolledBack;
+        };
     }
 
     /**

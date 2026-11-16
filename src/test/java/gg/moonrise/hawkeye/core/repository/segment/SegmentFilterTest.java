@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
@@ -65,6 +66,99 @@ public class SegmentFilterTest {
         log.info("{} of 400 random filters matched; {} units selected on average of {}", nonEmpty,
                 selected / 400.0, header.unitCount());
         assertTrue(nonEmpty > 100, "the random filters exercise matches: " + nonEmpty);
+    }
+
+    @Test
+    public void matchingColumnsFirstFindsExactlyTheMatchingRows() {
+        Random random = new Random(17);
+        SharedColumns shared = Segments.shared(header, slice(header.shared()));
+        Palettes palettes = Segments.palettes(header, slice(header.palettes()));
+        assertEquals(shared.palettes(), palettes, "the palette frame alone decodes like the shared frames");
+        for (int i = 0; i < 400; i++) {
+            EventFilter filter = withTypes(random, randomFilter(random));
+            List<EventRow> want = all.stream().filter(filter::matches).toList();
+            int[] units = header.units(filter);
+            List<byte[]> frames = Arrays.stream(units).mapToObj(unit -> slice(header.unit(unit))).toList();
+            SegmentMatch match = Segments.match(header, filter, Optional.of(palettes), units, frames,
+                    packed.rolledBack());
+            List<EventRow> got = match.rows(shared, filter::matchesId).stream()
+                    .sorted((a, b) -> Long.compare(a.id(), b.id())).toList();
+            assertRows(want, got);
+            assertEquals(want.size(), match.count(shared, filter::matchesId), "count of filter " + filter);
+            long columnMatches = all.stream().filter(row -> filter.matchesColumns(row.world(), row.position(),
+                    row.actor(), row.action(), row.subject(), row.rolledBack())).count();
+            if (filter.minId() == 0 && filter.maxId() == Long.MAX_VALUE && filter.nodes().isEmpty()) {
+                // Without id rules the header drops no unit by its slots: every column match is counted.
+                assertEquals(columnMatches, match.count(), "column matches of filter " + filter);
+            } else {
+                assertTrue(match.count() >= want.size() && match.count() <= columnMatches, "filter " + filter);
+            }
+        }
+    }
+
+    @Test
+    public void unplacedUnitsAreSkippedByAreasAndWorldsTheirRowsAreNotIn() {
+        long chatAt = BlockPositions.pack(100, 64, 100);
+        long far = BlockPositions.pack(5_000, 64, 5_000);
+        List<EventRow> input = new ArrayList<>();
+        long slot = 60_000;
+        for (int i = 0; i < 20_000; i++) {
+            input.add(new EventRow(EventIds.fromSlot(slot, 1, i), 7, chatAt, 3, 45, 0, 0, 0, 0, new byte[] {1}));
+        }
+        for (int i = 0; i < 20_000; i++) {
+            input.add(new EventRow(EventIds.fromSlot(slot, 1, 20_000 + i), 2, far + (long) (i % 16) * (1L << 12), 4,
+                    1, 9, 0, 0, 0, null));
+        }
+        PackedSegment segment = Segments.encode(input, WORLD_ORDER);
+        SegmentHeader parsed = SegmentHeader.parse(segment.header());
+        assertEquals(1, parsed.unplacedRegions().size(), "one region holds every chat row");
+        int unplacedUnits = 2;
+
+        assertSelectsUnplaced(parsed, block(7, chatAt), true);
+        assertSelectsUnplaced(parsed, block(7, BlockPositions.pack(100 + 600, 64, 100)), false);
+        assertSelectsUnplaced(parsed, block(2, chatAt), false);
+        assertSelectsUnplaced(parsed, worlds(Set.of(7)), true);
+        assertSelectsUnplaced(parsed, worlds(Set.of(2)), false);
+        assertEquals(unplacedUnits, Arrays.stream(parsed.units(worlds(Set.of(7)))).count(),
+                "world 7 holds only the chat units");
+        EventFilter wholeChunk = new EventFilter(0, Long.MAX_VALUE, Set.of(), BlockPositions.columnRanges(6, 6, 6, 6)
+                .stream().map(range -> WorldRange.of(7, range.from(), range.to())).toList(), Bounds.NONE, Set.of(),
+                Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), RollbackState.ANY);
+        assertSelectsUnplaced(parsed, wholeChunk, true);
+    }
+
+    private static void assertSelectsUnplaced(SegmentHeader parsed, EventFilter filter, boolean expected) {
+        boolean selected = Arrays.stream(parsed.units(filter)).anyMatch(unit -> !parsed.unitInfo(unit).placed());
+        assertEquals(expected, selected, "unplaced units for " + filter);
+    }
+
+    private static EventFilter block(int world, long position) {
+        return new EventFilter(0, Long.MAX_VALUE, Set.of(), List.of(WorldRange.of(world, position, position)),
+                Bounds.NONE, Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), Set.of(), RollbackState.ANY);
+    }
+
+    private static EventFilter worlds(Set<Integer> worlds) {
+        return new EventFilter(0, Long.MAX_VALUE, worlds, List.of(), Bounds.NONE, Set.of(), Set.of(), Set.of(),
+                Set.of(), Set.of(), Set.of(), RollbackState.ANY);
+    }
+
+    private static EventFilter withTypes(Random random, EventFilter filter) {
+        Set<Integer> types = new HashSet<>();
+        Set<Integer> excluded = new HashSet<>();
+        if (random.nextInt(4) == 0) {
+            types.add(all.get(random.nextInt(all.size())).subject());
+            types.add(random.nextInt(300));
+        }
+        if (random.nextInt(5) == 0) {
+            excluded.add(random.nextInt(300));
+        }
+        return new EventFilter(filter.minId(), filter.maxId(), filter.worlds(), filter.positions(), filter.bounds(),
+                filter.nodes(), filter.actors(), filter.excludedActors(), filter.actions(), types, excluded,
+                filter.rollbackState());
+    }
+
+    private static byte[] slice(ByteRange range) {
+        return Arrays.copyOfRange(packed.body(), range.offset(), range.end());
     }
 
     @Test

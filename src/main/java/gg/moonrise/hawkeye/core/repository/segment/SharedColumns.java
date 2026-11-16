@@ -13,13 +13,11 @@ import org.jetbrains.annotations.NotNull;
 public final class SharedColumns {
 
     private final long[] ids;
-    private final int[] actorPalette;
-    private final int[] typePalette;
+    private final Palettes palettes;
 
-    private SharedColumns(long @NotNull [] ids, int @NotNull [] actorPalette, int @NotNull [] typePalette) {
+    private SharedColumns(long @NotNull [] ids, @NotNull Palettes palettes) {
         this.ids = ids;
-        this.actorPalette = actorPalette;
-        this.typePalette = typePalette;
+        this.palettes = palettes;
     }
 
     /**
@@ -46,7 +44,6 @@ public final class SharedColumns {
         at += header.frameLength(SharedFrame.NODE);
         byte[] rank = frame(bytes, at, header.frameLength(SharedFrame.RANK));
         at += header.frameLength(SharedFrame.RANK);
-        byte[] palettes = frame(bytes, at, header.frameLength(SharedFrame.PALETTES));
         if (time.length < events || node.length > 0 && node.length < events || rank.length > 0 && rank.length < events) {
             throw new CodecException("a shared column is shorter than the " + events + " rows");
         }
@@ -65,14 +62,8 @@ public final class SharedColumns {
             finish(in, "node");
         }
         long[] ids = readIds(header, slots, nodeIndexes, rank);
-        ByteReader in = new ByteReader(palettes);
-        int[] actorPalette = readPalette(in);
-        int[] typePalette = readPalette(in);
-        finish(in, "palette");
-        if (actorPalette.length != header.actorIds().length) {
-            throw new CodecException("the actor palette does not match the header's actor list");
-        }
-        return new SharedColumns(ids, actorPalette, typePalette);
+        Palettes palettes = Palettes.decode(header, bytes, at, header.frameLength(SharedFrame.PALETTES));
+        return new SharedColumns(ids, palettes);
     }
 
     /**
@@ -90,7 +81,7 @@ public final class SharedColumns {
      * @return the palette (the array itself: do not modify)
      */
     public int @NotNull [] actorPalette() {
-        return actorPalette;
+        return palettes.actors();
     }
 
     /**
@@ -99,7 +90,16 @@ public final class SharedColumns {
      * @return the palette (the array itself: do not modify)
      */
     public int @NotNull [] typePalette() {
-        return typePalette;
+        return palettes.types();
+    }
+
+    /**
+     * Both palettes.
+     *
+     * @return the palettes
+     */
+    public @NotNull Palettes palettes() {
+        return palettes;
     }
 
     private static byte @NotNull [] frame(byte @NotNull [] bytes, int offset, int length) {
@@ -146,18 +146,6 @@ public final class SharedColumns {
             finish(in, "rank");
         }
         return ids;
-    }
-
-    private static int @NotNull [] readPalette(@NotNull ByteReader in) {
-        int count = in.readVarInt();
-        if (count > in.remaining()) {
-            throw new CodecException("palette of " + count + " exceeds its frame");
-        }
-        int[] values = new int[count];
-        for (int i = 0; i < count; i++) {
-            values[i] = in.readVarInt();
-        }
-        return values;
     }
 
     private static void finish(@NotNull ByteReader in, @NotNull String column) {

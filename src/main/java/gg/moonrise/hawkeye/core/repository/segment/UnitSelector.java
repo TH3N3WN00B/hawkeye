@@ -12,8 +12,9 @@ import org.jetbrains.annotations.NotNull;
  * Picks the units of a segment that can hold a row an {@link EventFilter} accepts, from the header
  * alone. It may pick a unit that holds no match, never skip one that holds a match: it checks the id
  * range against slot ranges, the nodes, the worlds, the position ranges against the chunk list and the
- * placed units' key ranges, the actors and the action masks. Unplaced units are not ordered by place,
- * so the area never excludes them.
+ * placed units' key ranges, the actors and the action masks. Unplaced units are not ordered by place:
+ * a world or area filter excludes them all when it reaches none of the regions the header lists for
+ * the unplaced rows.
  */
 public final class UnitSelector {
 
@@ -49,6 +50,7 @@ public final class UnitSelector {
         boolean[] actors = wantedActors();
         long actionMask = wantedActions();
         boolean[] area = placedArea().orElse(null);
+        boolean unplacedReached = unplacedReached();
         int[] out = new int[header.unitCount()];
         int size = 0;
         for (int u = 0; u < header.unitCount(); u++) {
@@ -57,7 +59,7 @@ public final class UnitSelector {
                     || (unit.actionMask() & actionMask) == 0 || !actorsMayMatch(unit.actors(), actors)) {
                 continue;
             }
-            if (unit.placed() && area != null && !area[u - firstPlaced]) {
+            if (unit.placed() ? area != null && !area[u - firstPlaced] : !unplacedReached) {
                 continue;
             }
             out[size++] = u;
@@ -134,6 +136,30 @@ public final class UnitSelector {
             }
         }
         return Optional.of(area);
+    }
+
+    /** Whether the filter's worlds or area reach a region of the unplaced rows. */
+    private boolean unplacedReached() {
+        Regions regions = header.unplacedRegions();
+        int[] worlds = header.worldIds();
+        if (!filter.positions().isEmpty()) {
+            for (WorldRange range : filter.positions()) {
+                int world = indexOf(worlds, range.world());
+                if (world >= 0 && regions.meets(world, range.from(), range.to())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (filter.worlds().isEmpty()) {
+            return true;
+        }
+        for (int i = 0; i < worlds.length; i++) {
+            if (filter.worlds().contains(worlds[i]) && regions.holdsWorld(i)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void markWorlds(boolean @NotNull [] area) {
