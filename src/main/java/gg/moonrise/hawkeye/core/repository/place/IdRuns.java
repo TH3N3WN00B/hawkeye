@@ -352,6 +352,31 @@ public final class IdRuns {
     }
 
     /**
+     * Skips runs written by {@link #writeRuns}, returning the first start without building a set.
+     *
+     * @param in    the reader
+     * @param count how many runs
+     * @param base  the value the first start was coded against
+     * @return the first start ({@code base} when there are no runs)
+     * @throws CodecException when the runs are corrupt
+     */
+    public static long skipRuns(@NotNull ByteReader in, int count, long base) {
+        if (count < 0 || count > in.remaining()) {
+            throw new CodecException("run count " + count + " with " + in.remaining() + " bytes left");
+        }
+        long first = base;
+        for (int i = 0; i < count; i++) {
+            if (i == 0) {
+                first = base + in.readZigZag();
+            } else {
+                in.readVarLong();
+            }
+            in.readVarLong();
+        }
+        return first;
+    }
+
+    /**
      * Adds a run after every run already held, joining it to the last one when they touch.
      *
      * @param from the first value

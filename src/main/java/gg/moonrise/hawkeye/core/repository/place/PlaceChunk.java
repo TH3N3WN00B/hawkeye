@@ -150,7 +150,7 @@ public final class PlaceChunk {
      */
     public static @NotNull PlaceChunk fromBody(int world, long chunk, byte @NotNull [] body) {
         PlaceChunk out = new PlaceChunk(world, chunk);
-        read(body, local -> true, (local, buckets) -> out.positions.put(local, buckets));
+        read(body, local -> true, Integer.MAX_VALUE, (local, buckets) -> out.positions.put(local, buckets));
         return out;
     }
 
@@ -158,18 +158,19 @@ public final class PlaceChunk {
      * The buckets of the positions a predicate accepts, read straight from a body without building the
      * row (the read path of a lookup).
      *
-     * @param body    the body
-     * @param accepts which in-chunk keys count
+     * @param body     the body
+     * @param accepts  which in-chunk keys count
+     * @param maxLocal no key above this is accepted: the read stops there (positions are sorted)
      * @return the union of their buckets
      * @throws CodecException when the body is corrupt
      */
-    public static @NotNull IdRuns bucketsWhere(byte @NotNull [] body, @NotNull IntPredicate accepts) {
+    public static @NotNull IdRuns bucketsWhere(byte @NotNull [] body, @NotNull IntPredicate accepts, int maxLocal) {
         IdRuns out = new IdRuns();
-        read(body, accepts, (local, buckets) -> out.addAll(buckets));
+        read(body, accepts, maxLocal, (local, buckets) -> out.addAll(buckets));
         return out;
     }
 
-    private static void read(byte @NotNull [] body, @NotNull IntPredicate accepts, @NotNull Sink sink) {
+    private static void read(byte @NotNull [] body, @NotNull IntPredicate accepts, int maxLocal, @NotNull Sink sink) {
         byte[] raw = Compression.decompress(body, 0, body.length);
         ByteReader in = new ByteReader(raw);
         int count = in.readVarInt();
@@ -187,14 +188,20 @@ public final class PlaceChunk {
             if (local > PlaceKeys.LOCAL_MASK) {
                 throw new CodecException("in-chunk key " + local + " out of range");
             }
-            IdRuns buckets = IdRuns.readRuns(in, in.readVarInt(), previousFirst);
-            if (buckets.isEmpty()) {
+            if (local > maxLocal) {
+                return;
+            }
+            int runs = in.readVarInt();
+            if (runs == 0) {
                 throw new CodecException("position " + local + " lists no bucket");
             }
             if (accepts.test(local)) {
+                IdRuns buckets = IdRuns.readRuns(in, runs, previousFirst);
                 sink.accept(local, buckets);
+                previousFirst = buckets.start(0);
+            } else {
+                previousFirst = IdRuns.skipRuns(in, runs, previousFirst);
             }
-            previousFirst = buckets.start(0);
         }
         if (in.hasRemaining()) {
             throw new CodecException("unread bytes after the chunk row's positions");

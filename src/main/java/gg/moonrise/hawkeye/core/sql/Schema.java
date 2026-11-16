@@ -223,14 +223,17 @@ public final class Schema {
     /**
      * Version 4: the place index ({@code place_region}, {@code place_chunk}, {@code place_state}). Every
      * segment that exists already is below {@code indexed_from}; the archiver indexes them afterwards.
+     * SQLite keeps rowid tables here: a {@code WITHOUT ROWID} row is stored in an index b-tree, which
+     * holds only about a quarter page of it before spilling to an overflow page, and most busy-chunk
+     * rows are larger than that.
      */
     private static @NotNull List<String> sqliteV4(@NotNull Tables t) {
         return List.of(
                 "CREATE TABLE IF NOT EXISTS " + t.placeRegion() + " (world INTEGER NOT NULL, region INTEGER NOT NULL, "
-                        + "newest INTEGER NOT NULL, body BLOB NOT NULL, PRIMARY KEY (world, region)) WITHOUT ROWID",
+                        + "newest INTEGER NOT NULL, body BLOB NOT NULL, PRIMARY KEY (world, region))",
                 "CREATE INDEX IF NOT EXISTS " + t.placeRegion() + "_newest ON " + t.placeRegion() + " (newest)",
                 "CREATE TABLE IF NOT EXISTS " + t.placeChunk() + " (world INTEGER NOT NULL, chunk INTEGER NOT NULL, "
-                        + "newest INTEGER NOT NULL, body BLOB NOT NULL, PRIMARY KEY (world, chunk)) WITHOUT ROWID",
+                        + "newest INTEGER NOT NULL, body BLOB NOT NULL, PRIMARY KEY (world, chunk))",
                 "CREATE INDEX IF NOT EXISTS " + t.placeChunk() + "_newest ON " + t.placeChunk() + " (newest)",
                 "CREATE TABLE IF NOT EXISTS " + t.placeState() + " (id INTEGER PRIMARY KEY, "
                         + "indexed_from INTEGER NOT NULL)",

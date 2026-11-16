@@ -7,13 +7,18 @@ import gg.moonrise.hawkeye.config.file.ArchiveSettings;
 import gg.moonrise.hawkeye.core.queue.IdAssigner;
 import gg.moonrise.hawkeye.core.repository.ActorRepository;
 import gg.moonrise.hawkeye.core.repository.DictionaryRepository;
+import gg.moonrise.hawkeye.core.repository.EventFilter;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
+import gg.moonrise.hawkeye.core.repository.PlaceIndexRepository;
+import gg.moonrise.hawkeye.core.repository.place.IdRuns;
 import gg.moonrise.hawkeye.core.sql.Database;
 import gg.moonrise.hawkeye.core.sql.SqliteHarness;
 import gg.moonrise.hawkeye.core.storage.Archive;
 import gg.moonrise.hawkeye.core.storage.Archives;
 import gg.moonrise.hawkeye.core.storage.EventStore;
+import gg.moonrise.hawkeye.core.storage.CountingSegmentRepository;
 import gg.moonrise.hawkeye.core.storage.PlaceIndex;
+import gg.moonrise.hawkeye.core.storage.SegmentCache;
 import gg.moonrise.hawkeye.core.storage.QueryResolver;
 import gg.moonrise.hawkeye.core.storage.ShardScope;
 import gg.moonrise.hawkeye.entity.actor.ActorKind;
@@ -225,10 +230,58 @@ public class ReplayBenchmark {
             });
             report.put("fileBytesAfter", Files.size(file));
             progress("place index: " + report);
-            report.put("lookups", lookups(store, harness, Targets.load(runFolder.resolve(Targets.FILE))));
+            Targets targets = Targets.load(runFolder.resolve(Targets.FILE));
+            report.put("lookups", lookups(store, harness, targets));
+            report.put("placeProfile", placeProfile(harness, targets));
         }
         Files.writeString(folder.resolve("lookup-report.json"), json(report), StandardCharsets.UTF_8);
         progress("lookups on the kept database: " + report);
+    }
+
+    /**
+     * Per place lookup, the steps apart: the index plan alone (median of three, warm), how many segment
+     * ids it names, and how many segment bodies the newest-10 read then touches.
+     */
+    private static @NotNull Map<String, Object> placeProfile(@NotNull SqliteHarness harness,
+            @NotNull Targets targets) throws SQLException {
+        CountingSegmentRepository counting = new CountingSegmentRepository();
+        SegmentCache cache = new SegmentCache();
+        PlaceIndex index = new PlaceIndex(new PlaceIndexRepository(), counting, cache);
+        EventStore store = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
+                new ActorRepository()), new Archive(new EventRepository(), counting, cache, index));
+        QueryResolver resolver = new QueryResolver(new DictionaryRepository(), new ActorRepository());
+        Profile.Place busy = targets.busy();
+        int x = BlockPositions.x(busy.position());
+        int y = BlockPositions.y(busy.position());
+        int z = BlockPositions.z(busy.position());
+        Map<String, LookupQuery> queries = new LinkedHashMap<>();
+        queries.put("busy block", LookupQuery.at(block(busy)));
+        queries.put("touched once, quiet chunk", LookupQuery.at(block(targets.quiet())));
+        queries.put("touched once, busiest chunk", LookupQuery.at(block(targets.quietInBusyChunk())));
+        queries.put("never touched, busiest chunk", LookupQuery.at(new Area.Block(busy.world(), x,
+                y >= 0 ? BlockPositions.MIN_Y + 7 : BlockPositions.MAX_Y - 7, z)));
+        queries.put("radius 5", LookupQuery.at(new Area.Box(busy.world(), x - 5, Math.max(BlockPositions.MIN_Y, y - 5),
+                z - 5, x + 5, Math.min(BlockPositions.MAX_Y, y + 5), z + 5)));
+        Map<String, Object> result = new LinkedHashMap<>();
+        ShardScope all = new ShardScope.All();
+        for (Map.Entry<String, LookupQuery> entry : queries.entrySet()) {
+            EventFilter filter = harness.database().read(connection -> resolver.resolve(connection, harness.shard(),
+                    entry.getValue(), all)).orElseThrow();
+            Map<String, Object> one = new LinkedHashMap<>();
+            IdRuns[] plan = new IdRuns[1];
+            one.put("plan", timed(() -> {
+                plan[0] = harness.database().read(connection -> index.plan(connection, harness.shard(), filter))
+                        .orElseThrow();
+                return (int) plan[0].count();
+            }));
+            one.put("candidateRuns", plan[0].runCount());
+            store.find(harness.shard(), entry.getValue(), all, 0, 10, true);
+            counting.takeBodyReads();
+            one.put("find", timed(() -> store.find(harness.shard(), entry.getValue(), all, 0, 10, true).size()));
+            one.put("bodyReadsPerFind", counting.takeBodyReads().size() / 4);
+            result.put(entry.getKey(), one);
+        }
+        return result;
     }
 
     /** Adds every segment that is missing from the place index, newest first, and times it. */

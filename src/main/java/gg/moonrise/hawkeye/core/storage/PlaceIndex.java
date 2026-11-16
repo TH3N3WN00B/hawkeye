@@ -239,7 +239,8 @@ public final class PlaceIndex {
             }
             int world = entry.getKey().world();
             long base = PlaceKeys.base(entry.getKey().chunk());
-            IdRuns buckets = PlaceChunk.bucketsWhere(body, local -> filter.inPositions(world, base | local));
+            IdRuns buckets = PlaceChunk.bucketsWhere(body, local -> filter.inPositions(world, base | local),
+                    maxLocal(filter, world, base));
             out.addAll(entry.getValue().inBuckets(buckets, PlaceChunk.BUCKET_SHIFT));
         }
         if (indexedFrom.get() > 1) {
@@ -522,6 +523,18 @@ public final class PlaceIndex {
                     out.put(new ChunkRef(world, key), body));
         }
         return out;
+    }
+
+    /** The largest in-chunk key of a chunk that any of the filter's ranges reaches. */
+    private static int maxLocal(@NotNull EventFilter filter, int world, long base) {
+        long max = -1;
+        long last = base | PlaceKeys.LOCAL_MASK;
+        for (WorldRange range : filter.positions()) {
+            if (range.world() == world && range.from() <= last && range.to() >= base) {
+                max = Math.max(max, Math.min(range.to(), last) - base);
+            }
+        }
+        return (int) max;
     }
 
     /** Whether a range accepts every position of a chunk (no partial test is needed there). */

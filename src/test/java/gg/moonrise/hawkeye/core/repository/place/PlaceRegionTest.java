@@ -76,7 +76,9 @@ public class PlaceRegionTest {
         assertEquals(chunk, decoded);
         int lonely = PlaceKeys.local(BlockPositions.pack(111, -60, 103));
         assertEquals(IdRuns.of(0, 9), decoded.positions().get(lonely));
-        assertEquals(IdRuns.of(0, 9), PlaceChunk.bucketsWhere(chunk.toBody(19), local -> local == lonely));
+        assertEquals(IdRuns.of(0, 9), PlaceChunk.bucketsWhere(chunk.toBody(19), local -> local == lonely, lonely));
+        assertEquals(new IdRuns(), PlaceChunk.bucketsWhere(chunk.toBody(9), local -> local == lonely, lonely - 1),
+                "the read stops at the largest key asked for");
 
         decoded.trim(16);
         assertEquals(IdRuns.of(9), decoded.positions().get(lonely));

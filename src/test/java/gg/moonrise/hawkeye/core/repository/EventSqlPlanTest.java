@@ -99,8 +99,9 @@ public class EventSqlPlanTest {
         for (PlaceIndexRepository.Kind kind : PlaceIndexRepository.Kind.values()) {
             String plan = explain(PlaceIndexRepository.readQuery(harness.database().sql(), kind, 1,
                     List.of(5L, 9L, 12L)));
-            assertTrue(plan.contains("SEARCH " + kind.table(harness.database().sql()) + " USING PRIMARY KEY (world=? AND "
-                    + kind.keyColumn() + "=?)"), plan);
+            assertTrue(plan.contains("SEARCH " + kind.table(harness.database().sql()) + " USING INDEX sqlite_autoindex_"
+                    + kind.table(harness.database().sql()) + "_1 (world=? AND " + kind.keyColumn() + "=?)"), plan);
+            assertTrue(!plan.contains("SCAN"), plan);
             String trim = explain(PlaceIndexRepository.deleteOlderQuery(harness.database().sql(), kind, 40));
             assertTrue(trim.contains("_newest (newest<?)"), trim);
         }
