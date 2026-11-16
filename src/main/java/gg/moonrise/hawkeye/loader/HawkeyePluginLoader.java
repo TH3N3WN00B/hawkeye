@@ -7,8 +7,8 @@ import org.jetbrains.annotations.NotNull;
 /**
  * Paper plugin loader. The engine's {@link PaperPluginLoader} resolves plugin-engine's runtime
  * libraries (Spring, Moss, Cloud, ConfigLib) from Maven Central and the Moonrise repositories at
- * server start; {@link #libraries()} adds Hawkeye's own (the pool, the three JDBC drivers, the cache
- * and the Redis client), so none of them is shaded into the plugin jar.
+ * server start; {@link #libraries()} adds Hawkeye's own (the pool, the three JDBC drivers, the cache,
+ * the Redis client and the zstd compressor), so none of them is shaded into the plugin jar.
  *
  * <p>Keep these coordinates in step with {@code gradle/libs.versions.toml}:
  * {@code HawkeyePluginLoaderTest} fails the build when they drift.
@@ -22,7 +22,8 @@ public final class HawkeyePluginLoader extends PaperPluginLoader {
             "org.mariadb.jdbc:mariadb-java-client:3.5.1",
             "org.postgresql:postgresql:42.7.13",
             "com.github.ben-manes.caffeine:caffeine:3.2.3",
-            "io.lettuce:lettuce-core:6.5.1.RELEASE");
+            "io.lettuce:lettuce-core:6.5.1.RELEASE",
+            "com.github.luben:zstd-jni:1.5.7-6");
 
     @Override
     public @NotNull List<String> libraries() {

@@ -75,7 +75,7 @@ tasks {
         systemProperty("jdk.net.hosts.file", hosts.asFile.absolutePath)
         // HawkeyePluginLoaderTest compares the loader's coordinates with the catalog.
         val runtimeLibraries = listOf(libs.hikari, libs.sqlite, libs.mariadb, libs.postgresql, libs.caffeine,
-            libs.lettuce).joinToString(",") { library -> library.get().toString() }
+            libs.lettuce, libs.zstd).joinToString(",") { library -> library.get().toString() }
         inputs.property("hawkeyeRuntimeLibraries", runtimeLibraries)
         systemProperty("hawkeye.runtime.libraries", runtimeLibraries)
     }
