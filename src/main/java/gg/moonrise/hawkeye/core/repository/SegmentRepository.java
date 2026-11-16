@@ -110,7 +110,8 @@ public final class SegmentRepository {
         String order;
         if (newestFirst) {
             if (after != null) {
-                conditions.add("(s.last_id < ? OR (s.last_id = ? AND s.id < ?))");
+                // The first term bounds the index walk; an OR alone would start every page at the newest segment.
+                conditions.add("s.last_id <= ? AND (s.last_id < ? OR s.id < ?)");
                 parameters.add(after.lastId());
                 parameters.add(after.lastId());
                 parameters.add(after.id());
@@ -118,7 +119,7 @@ public final class SegmentRepository {
             order = " ORDER BY s.last_id DESC, s.id DESC";
         } else {
             if (after != null) {
-                conditions.add("(s.first_id > ? OR (s.first_id = ? AND s.id > ?))");
+                conditions.add("s.first_id >= ? AND (s.first_id > ? OR s.id > ?)");
                 parameters.add(after.firstId());
                 parameters.add(after.firstId());
                 parameters.add(after.id());

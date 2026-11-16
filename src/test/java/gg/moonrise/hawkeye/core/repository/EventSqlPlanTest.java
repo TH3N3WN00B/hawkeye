@@ -2,6 +2,7 @@ package gg.moonrise.hawkeye.core.repository;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import gg.moonrise.hawkeye.core.sql.Sql;
 import gg.moonrise.hawkeye.core.sql.SqliteHarness;
 import gg.moonrise.hawkeye.entity.query.RollbackState;
 import gg.moonrise.hawkeye.util.BlockPositions;
@@ -74,6 +75,22 @@ public class EventSqlPlanTest {
         assertTrue(plan.contains("USING INDEX hawkeye_segment_last (last_id>?)"), plan);
         assertTrue(plan.contains("USING INTEGER PRIMARY KEY (rowid=?)"), plan);
         assertTrue(!plan.contains("TEMP B-TREE"), "no sort: " + plan);
+    }
+
+    @Test
+    public void aLaterPageOfArchiveCandidatesSeeksToWhereThePreviousOneEnded() throws SQLException {
+        SegmentRow previous = new SegmentRow(40, 1_000, 5_000, 10, new byte[0], new int[0]);
+        Sql sql = harness.database().sql();
+
+        String newestFirst = explain(SegmentRepository.candidateQuery(sql, EventFilter.everything(5, 9_000), 0,
+                previous, 32, true));
+        assertTrue(newestFirst.contains("USING INDEX hawkeye_segment_last (last_id>? AND last_id<?)"), newestFirst);
+        assertTrue(!newestFirst.contains("TEMP B-TREE"), "no sort: " + newestFirst);
+
+        String oldestFirst = explain(SegmentRepository.candidateQuery(sql, EventFilter.everything(5, 9_000), 0,
+                previous, 32, false));
+        assertTrue(oldestFirst.contains("USING INDEX hawkeye_segment_first (first_id>? AND first_id<?)"), oldestFirst);
+        assertTrue(!oldestFirst.contains("TEMP B-TREE"), "no sort: " + oldestFirst);
     }
 
     private static EventFilter filter(Set<Integer> worlds, List<EventFilter.WorldRange> ranges,

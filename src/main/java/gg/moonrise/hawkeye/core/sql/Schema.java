@@ -180,6 +180,7 @@ public final class Schema {
                         + "first_id INTEGER NOT NULL, last_id INTEGER NOT NULL, events INTEGER NOT NULL, "
                         + "header BLOB NOT NULL, body BLOB NOT NULL)",
                 "CREATE INDEX IF NOT EXISTS " + t.segment() + "_last ON " + t.segment() + " (last_id)",
+                "CREATE INDEX IF NOT EXISTS " + t.segment() + "_first ON " + t.segment() + " (first_id)",
                 "CREATE TABLE IF NOT EXISTS " + t.segmentFlag() + " (segment INTEGER PRIMARY KEY, "
                         + "ordinals BLOB NOT NULL)");
     }
@@ -192,7 +193,8 @@ public final class Schema {
                 "CREATE TABLE IF NOT EXISTS " + t.segment() + " (id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, "
                         + "first_id BIGINT NOT NULL, last_id BIGINT NOT NULL, events INT NOT NULL, "
                         + "header MEDIUMBLOB NOT NULL, body LONGBLOB NOT NULL, "
-                        + "KEY " + t.segment() + "_last (last_id))" + options,
+                        + "KEY " + t.segment() + "_last (last_id), "
+                        + "KEY " + t.segment() + "_first (first_id))" + options,
                 "CREATE TABLE IF NOT EXISTS " + t.segmentFlag() + " (segment BIGINT NOT NULL PRIMARY KEY, "
                         + "ordinals MEDIUMBLOB NOT NULL)" + options);
     }
@@ -208,6 +210,7 @@ public final class Schema {
                 // TOAST chunks of the requested range.
                 "ALTER TABLE " + t.segment() + " ALTER COLUMN body SET STORAGE EXTERNAL",
                 "CREATE INDEX IF NOT EXISTS " + t.segment() + "_last ON " + t.segment() + " (last_id)",
+                "CREATE INDEX IF NOT EXISTS " + t.segment() + "_first ON " + t.segment() + " (first_id)",
                 "CREATE TABLE IF NOT EXISTS " + t.segmentFlag() + " (segment BIGINT PRIMARY KEY, "
                         + "ordinals BYTEA NOT NULL)");
     }
