@@ -67,7 +67,9 @@ import org.junit.jupiter.api.Test;
  * pool; {@code live} writes every event to the hot table and lets the archiver pack it, as a server
  * does: the same segments, byte for byte, at about a tenth of the speed), {@code HAWKEYE_REPLAY_THREADS}
  * {@code HAWKEYE_REPLAY_KEEP=1} to keep the database and {@code HAWKEYE_REPLAY_RESUME=1} to add the
- * chosen days to a kept database (a long history in several runs). Give the test JVM memory with
+ * chosen days to a kept database (a long history in several runs). {@link #lookupsOnAKeptDatabase()}
+ * ({@code HAWKEYE_REPLAY_LOOKUPS=1}) times the lookups again on a kept database, without replaying,
+ * and writes {@code lookup-report.json}. Give the test JVM memory with
  * {@code HAWKEYE_TEST_HEAP=3g}, and point {@code SQLITE_TMPDIR} at a disk.
  */
 public class ReplayBenchmark {
@@ -182,7 +184,9 @@ public class ReplayBenchmark {
             report.put("bodyBytes", count(database, "SELECT COALESCE(SUM(LENGTH(body)), 0) FROM "
                     + database.tables().segment()));
             progress("stored: " + report.get("file"));
-            report.put("lookups", lookups(store, harness, profile, lastMillis));
+            Targets targets = profile.targets(lastMillis);
+            targets.save(runFolder.resolve(Targets.FILE));
+            report.put("lookups", lookups(store, harness, targets));
             progress("lookups: " + report.get("lookups"));
             report.put("vacuumedBytes", vacuumed(database, runFolder));
         }
@@ -191,6 +195,28 @@ public class ReplayBenchmark {
             deleteFolder(runFolder);
         }
         progress("done");
+    }
+
+    @Test
+    public void lookupsOnAKeptDatabase() throws IOException, SQLException {
+        String directory = System.getenv("HAWKEYE_BENCH_DIR");
+        assumeTrue("1".equals(System.getenv("HAWKEYE_REPLAY_LOOKUPS")) && directory != null && !directory.isBlank(),
+                "HAWKEYE_REPLAY_LOOKUPS=1 and HAWKEYE_BENCH_DIR are not set");
+        folder = Path.of(directory);
+        Path runFolder = folder.resolve("replay-run");
+        assumeTrue(Files.exists(runFolder.resolve(Targets.FILE)), "no kept database in " + runFolder);
+        Map<String, Object> report = new LinkedHashMap<>();
+        try (SqliteHarness harness = SqliteHarness.open(runFolder)) {
+            Archive archive = new Archive(new EventRepository(), new SegmentRepository(), new SegmentCache());
+            EventStore store = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
+                    new ActorRepository()), archive);
+            Database database = harness.database();
+            report.put("events", stored(database));
+            report.put("segments", count(database, "SELECT COUNT(*) FROM " + database.tables().segment()));
+            report.put("lookups", lookups(store, harness, Targets.load(runFolder.resolve(Targets.FILE))));
+        }
+        Files.writeString(folder.resolve("lookup-report.json"), json(report), StandardCharsets.UTF_8);
+        progress("lookups on the kept database: " + report);
     }
 
     /** Numbers the replayed events the way the writer does and hands them on a segment at a time. */
@@ -250,42 +276,44 @@ public class ReplayBenchmark {
 
     /** Typical lookups against the finished database: the first run and the median of three more, in ms. */
     private static @NotNull Map<String, Object> lookups(@NotNull EventStore store, @NotNull SqliteHarness harness,
-            @NotNull Profile profile, long lastMillis) throws SQLException {
+            @NotNull Targets targets) throws SQLException {
         Map<String, Object> result = new LinkedHashMap<>();
-        Profile.Place busy = profile.busiest();
-        Profile.Place quiet = profile.quietest();
+        Profile.Place busy = targets.busy();
+        long lastMillis = targets.lastMillis();
         result.put("busyBlock", busy.world() + " " + BlockPositions.x(busy.position()) + " "
                 + BlockPositions.y(busy.position()) + " " + BlockPositions.z(busy.position()) + " (" + busy.events()
-                + " events in the first " + PROFILED_EVENTS + ")");
+                + " of the first " + PROFILED_EVENTS + " events)");
         LookupQuery busyBlock = LookupQuery.at(block(busy));
-        LookupQuery quietBlock = LookupQuery.at(block(quiet));
         int x = BlockPositions.x(busy.position());
         int y = BlockPositions.y(busy.position());
         int z = BlockPositions.z(busy.position());
         LookupQuery radius = LookupQuery.at(new Area.Box(busy.world(), x - 5, Math.max(BlockPositions.MIN_Y, y - 5),
                 z - 5, x + 5, Math.min(BlockPositions.MAX_Y, y + 5), z + 5));
         LookupQuery player = new LookupQuery(new ServerScope.Local(), new Area.Everywhere(), TimeWindow.ALL,
-                Set.of(profile.busiestPlayer()), Set.of(), Set.of(), Set.of(), Set.of(), RollbackState.ANY);
+                Set.of(targets.player()), Set.of(), Set.of(), Set.of(), Set.of(), RollbackState.ANY);
         LookupQuery lastHour = LookupQuery.at(new Area.Everywhere())
                 .withTime(new TimeWindow(lastMillis - TimeUnit.HOURS.toMillis(1), lastMillis));
         LookupQuery lastDayAtBlock = busyBlock.withTime(new TimeWindow(lastMillis - TimeUnit.DAYS.toMillis(1),
                 lastMillis));
-        result.put("inspect a busy block, newest 10", timed(() -> store.find(harness.shard(), busyBlock,
-                new ShardScope.All(), 0, 10, true).size()));
-        List<StoredEvent> firstPage = store.find(harness.shard(), busyBlock, new ShardScope.All(), 0, 10, true);
+        ShardScope all = new ShardScope.All();
+        result.put("inspect a busy block, newest 10", timed(() -> store.find(harness.shard(), busyBlock, all, 0, 10,
+                true).size()));
+        List<StoredEvent> firstPage = store.find(harness.shard(), busyBlock, all, 0, 10, true);
         long cursor = firstPage.isEmpty() ? 0 : firstPage.getLast().id();
-        result.put("the next page of it", timed(() -> store.find(harness.shard(), busyBlock, new ShardScope.All(),
-                cursor, 10, true).size()));
-        result.put("inspect a block touched once, whole history", timed(() -> store.find(harness.shard(), quietBlock,
-                new ShardScope.All(), 0, 10, true).size()));
-        result.put("radius 5 around the busy block, newest 10", timed(() -> store.find(harness.shard(), radius,
-                new ShardScope.All(), 0, 10, true).size()));
-        result.put("a player's newest 10 events (" + profile.busiestPlayer() + ")", timed(() -> store.find(
-                harness.shard(), player, new ShardScope.All(), 0, 10, true).size()));
-        result.put("everything in the last hour, newest 10", timed(() -> store.find(harness.shard(), lastHour,
-                new ShardScope.All(), 0, 10, true).size()));
+        result.put("the next page of it", timed(() -> store.find(harness.shard(), busyBlock, all, cursor, 10,
+                true).size()));
+        result.put("inspect a block touched once in a quiet chunk, whole history", timed(() -> store.find(
+                harness.shard(), LookupQuery.at(block(targets.quiet())), all, 0, 10, true).size()));
+        result.put("inspect a block touched once in the busiest chunk, whole history", timed(() -> store.find(
+                harness.shard(), LookupQuery.at(block(targets.quietInBusyChunk())), all, 0, 10, true).size()));
+        result.put("radius 5 around the busy block, newest 10", timed(() -> store.find(harness.shard(), radius, all,
+                0, 10, true).size()));
+        result.put("a player's newest 10 events", timed(() -> store.find(harness.shard(), player, all, 0, 10,
+                true).size()));
+        result.put("everything in the last hour, newest 10", timed(() -> store.find(harness.shard(), lastHour, all,
+                0, 10, true).size()));
         result.put("count the busy block's last day", timed(() -> (int) Math.min(Integer.MAX_VALUE,
-                store.count(harness.shard(), lastDayAtBlock, new ShardScope.All()))));
+                store.count(harness.shard(), lastDayAtBlock, all))));
         return result;
     }
 
@@ -451,6 +479,33 @@ public class ReplayBenchmark {
         return '"' + String.valueOf(value).replace("\\", "\\\\").replace("\"", "\\\"") + '"';
     }
 
+    /** What the lookups are timed on; saved with a kept database so they can be timed again. */
+    private record Targets(@NotNull Profile.Place busy, @NotNull Profile.Place quiet,
+            @NotNull Profile.Place quietInBusyChunk, @NotNull String player, long lastMillis) {
+
+        private static final String FILE = "lookup-targets.txt";
+
+        private void save(@NotNull Path file) throws IOException {
+            Files.write(file, List.of(line(busy), line(quiet), line(quietInBusyChunk), player,
+                    String.valueOf(lastMillis)), StandardCharsets.UTF_8);
+        }
+
+        private static @NotNull Targets load(@NotNull Path file) throws IOException {
+            List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
+            return new Targets(place(lines.get(0)), place(lines.get(1)), place(lines.get(2)), lines.get(3),
+                    Long.parseLong(lines.get(4)));
+        }
+
+        private static @NotNull String line(@NotNull Profile.Place place) {
+            return place.world() + "\t" + place.position() + "\t" + place.events();
+        }
+
+        private static @NotNull Profile.Place place(@NotNull String line) {
+            String[] fields = line.split("\t");
+            return new Profile.Place(fields[0], Long.parseLong(fields[1]), Integer.parseInt(fields[2]));
+        }
+    }
+
     /** One timed lookup; returns the number of rows it found. */
     @FunctionalInterface
     private interface Lookup {
@@ -460,6 +515,9 @@ public class ReplayBenchmark {
 
     /** Where and by whom the first events happened, to pick realistic lookups. */
     private static final class Profile {
+
+        /** A packed position without its bits inside the chunk (x & 15, z & 15, y). */
+        private static final int CHUNK_SHIFT = 20;
 
         private final Map<String, Map<Long, int[]>> places = new HashMap<>();
         private final Map<String, int[]> players = new HashMap<>();
@@ -491,20 +549,34 @@ public class ReplayBenchmark {
             return best;
         }
 
-        private synchronized @NotNull Place quietest() {
-            for (Map.Entry<String, Map<Long, int[]>> world : places.entrySet()) {
-                for (Map.Entry<Long, int[]> place : world.getValue().entrySet()) {
-                    if (place.getValue()[0] == 1) {
-                        return new Place(world.getKey(), place.getKey(), 1);
-                    }
+        /** The lookups worth timing: the busiest block, blocks touched once in a quiet and in the busiest chunk. */
+        private synchronized @NotNull Targets targets(long lastMillis) {
+            Place busy = busiest();
+            Map<Long, int[]> chunks = new HashMap<>();
+            Map<Long, int[]> inWorld = places.getOrDefault(busy.world(), Map.of());
+            inWorld.forEach((position, events) -> chunks.computeIfAbsent(position >> CHUNK_SHIFT,
+                    chunk -> new int[1])[0] += events[0]);
+            Place quiet = busy;
+            Place quietInBusyChunk = busy;
+            int quietChunk = Integer.MAX_VALUE;
+            for (Map.Entry<Long, int[]> place : inWorld.entrySet()) {
+                if (place.getValue()[0] != 1) {
+                    continue;
+                }
+                long position = place.getKey();
+                int chunkEvents = chunks.get(position >> CHUNK_SHIFT)[0];
+                if (chunkEvents < quietChunk || chunkEvents == quietChunk && position < quiet.position()) {
+                    quietChunk = chunkEvents;
+                    quiet = new Place(busy.world(), position, 1);
+                }
+                if (position >> CHUNK_SHIFT == busy.position() >> CHUNK_SHIFT
+                        && (quietInBusyChunk == busy || position < quietInBusyChunk.position())) {
+                    quietInBusyChunk = new Place(busy.world(), position, 1);
                 }
             }
-            return busiest();
-        }
-
-        private synchronized @NotNull String busiestPlayer() {
-            return players.entrySet().stream().max(Comparator.comparingInt(entry -> entry.getValue()[0]))
+            String player = players.entrySet().stream().max(Comparator.comparingInt(entry -> entry.getValue()[0]))
                     .map(Map.Entry::getKey).orElse("nobody");
+            return new Targets(busy, quiet, quietInBusyChunk, player, lastMillis);
         }
 
         /** A block and how many profiled events happened there. */
