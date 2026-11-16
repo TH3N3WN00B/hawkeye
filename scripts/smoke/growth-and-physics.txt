@@ -1,0 +1,21 @@
+# Crop growth, blocks falling off their support, and a dispenser pouring water, on a real server.
+# Expects a flat overworld (level-type=minecraft:flat): grass at y -61, air from y -60.
+hawkeye purge t:1s => Purge done
+forceload add 16 16 32 32
+gamerule randomTickSpeed 4000
+gamerule random_tick_speed 4000
+setblock 20 -61 20 minecraft:farmland[moisture=7]
+setblock 20 -60 20 minecraft:wheat[age=6]
+execute if block 20 -60 20 minecraft:wheat[age=7] => Test passed
+hawkeye lookup a:grow t:1h r:#world => #growth grew wheat
+gamerule randomTickSpeed 3
+gamerule random_tick_speed 3
+setblock 24 -60 24 minecraft:stone
+setblock 24 -59 24 minecraft:torch
+setblock 24 -60 24 minecraft:air destroy
+execute if block 24 -59 24 minecraft:air => Test passed
+hawkeye lookup a:-block t:1h r:#world i:torch => broke torch
+setblock 28 -60 28 minecraft:dispenser[facing=east]{Items:[{Slot:0b,id:"minecraft:water_bucket",count:1}]}
+setblock 28 -59 28 minecraft:redstone_block
+hawkeye lookup u:#dispenser t:1h r:#world => #dispenser placed water
+hawkeye status => connected
