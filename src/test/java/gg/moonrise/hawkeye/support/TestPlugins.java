@@ -3,6 +3,9 @@ package gg.moonrise.hawkeye.support;
 import gg.moonrise.hawkeye.command.HawkeyeCommandRegistry;
 import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.config.ReloadResult;
+import gg.moonrise.hawkeye.core.queue.EventWriter;
+import gg.moonrise.hawkeye.core.storage.StorageManager;
+import gg.moonrise.hawkeye.core.storage.StorageState;
 import gg.moonrise.moss.paper.MossPaper;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -10,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.command.CommandSender;
@@ -34,6 +38,29 @@ public final class TestPlugins {
      */
     public static @NotNull TestHawkeyePlugin load() {
         return MockBukkit.load(TestHawkeyePlugin.class);
+    }
+
+    /**
+     * Waits until the plugin's SQLite database is migrated and this server registered.
+     *
+     * @return the ready state
+     */
+    public static @NotNull StorageState.Ready awaitStorage() {
+        try {
+            return bean(StorageManager.class).ready().get(20, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new IllegalStateException("storage did not become ready", e);
+        }
+    }
+
+    /** Writes every queued event and waits for it, so the database holds what was recorded. */
+    public static void flush() {
+        awaitStorage();
+        try {
+            bean(EventWriter.class).flush().get(20, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new IllegalStateException("flush failed", e);
+        }
     }
 
     /** Reloads the configuration files and fails the test when they are invalid. */
