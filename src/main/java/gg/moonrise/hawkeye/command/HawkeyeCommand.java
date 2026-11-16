@@ -7,6 +7,7 @@ import gg.moonrise.hawkeye.config.ReloadResult;
 import gg.moonrise.hawkeye.config.message.GeneralMessages;
 import gg.moonrise.hawkeye.config.message.StatusMessages;
 import gg.moonrise.hawkeye.core.service.status.StatusService;
+import gg.moonrise.hawkeye.core.service.thread.ServerThreads;
 import gg.moonrise.moss.spring.SpringComponent;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ public final class HawkeyeCommand implements PaperCommand {
     private final @NotNull JavaPlugin plugin;
     private final @NotNull HawkeyeConfigProvider configProvider;
     private final @NotNull StatusService statusService;
+    private final @NotNull ServerThreads threads;
 
     @Command(Permissions.ROOT)
     @CommandDescription("Shows the Hawkeye version")
@@ -70,7 +72,12 @@ public final class HawkeyeCommand implements PaperCommand {
     @CommandDescription("Shows the queue, storage and writer health")
     @Permission(Permissions.ADMIN)
     public void status(@NotNull CommandSourceStack source) {
-        StatusService.Status status = statusService.status();
+        CommandSender sender = source.getSender();
+        statusService.full().thenAccept(full -> threads.runFor(sender, () -> tellStatus(sender, full)));
+    }
+
+    private void tellStatus(@NotNull CommandSender sender, @NotNull StatusService.Full full) {
+        StatusService.Status status = full.status();
         StatusMessages messages = configProvider.messages().getStatus();
         StatusService.Counters writer = status.counters();
         int node = status.health() instanceof StatusService.Health.Ready ready ? ready.node() : 0;
@@ -82,7 +89,7 @@ public final class HawkeyeCommand implements PaperCommand {
             case StatusService.Health.Incompatible incompatible -> Message.of(messages.getStateFailed())
                     .asComponent(Placeholder.unparsed("reason", "schema version " + incompatible.version()));
         };
-        messages.getStatus().forEach(line -> Message.of(line).send(source.getSender(),
+        messages.getStatus().forEach(line -> Message.of(line).send(sender,
                 Placeholder.unparsed("version", plugin.getPluginMeta().getVersion()),
                 Placeholder.unparsed("server", status.server()),
                 Placeholder.unparsed("node", Integer.toString(node)),
@@ -93,7 +100,15 @@ public final class HawkeyeCommand implements PaperCommand {
                 Placeholder.unparsed("dropped", Long.toString(writer.dropped())),
                 Placeholder.unparsed("batches", Long.toString(writer.batches())),
                 Placeholder.unparsed("last-flush-ms", Long.toString(writer.lastFlushMillis())),
-                Placeholder.unparsed("spooled", Long.toString(writer.spooled()))));
+                Placeholder.unparsed("spooled", Long.toString(writer.spooled())),
+                Placeholder.unparsed("archived", known(full.archive().events())),
+                Placeholder.unparsed("segments", known(full.archive().segments())),
+                Placeholder.unparsed("jobs-running", Integer.toString(full.jobs().running())),
+                Placeholder.unparsed("jobs-waiting", Integer.toString(full.jobs().waiting()))));
+    }
+
+    private @NotNull String known(long value) {
+        return value < 0 ? configProvider.messages().getLookup().getUnknownTotal() : Long.toString(value);
     }
 
     private @NotNull GeneralMessages general() {

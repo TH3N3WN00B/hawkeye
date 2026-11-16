@@ -8,6 +8,7 @@ import gg.moonrise.hawkeye.config.message.GeneralMessages;
 import gg.moonrise.hawkeye.support.TestCommandManager;
 import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
 import gg.moonrise.hawkeye.support.TestPlugins;
+import gg.moonrise.hawkeye.ui.lookup.AwaitReplies;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,13 +19,14 @@ import org.mockbukkit.mockbukkit.command.ConsoleCommandSenderMock;
 
 public class HawkeyeCommandTest {
 
+    private ServerMock server;
     private TestHawkeyePlugin plugin;
     private TestCommandManager commands;
     private ConsoleCommandSenderMock console;
 
     @BeforeEach
     public void setUp() {
-        ServerMock server = MockBukkit.mock();
+        server = MockBukkit.mock();
         plugin = TestPlugins.load();
         commands = TestPlugins.commands();
         console = server.getConsoleSender();
@@ -72,11 +74,15 @@ public class HawkeyeCommandTest {
     }
 
     @Test
-    public void statusShowsTheServerAndQueue() {
+    public void statusShowsTheServerQueueAndArchive() {
+        TestPlugins.awaitStorage();
         commands.run(console, "hawkeye status");
-        List<String> replies = TestPlugins.drain(console);
+        List<String> replies = AwaitReplies.until(server, console,
+                received -> received.stream().anyMatch(line -> line.contains("Archive:")));
         assertFalse(replies.isEmpty());
         assertTrue(replies.stream().anyMatch(line -> line.contains("Server: server")), replies.toString());
         assertTrue(replies.stream().anyMatch(line -> line.contains("Queue:")), replies.toString());
+        assertTrue(replies.stream().anyMatch(line -> line.contains("Archive: 0 event(s) in 0 segment(s)")),
+                replies.toString());
     }
 }

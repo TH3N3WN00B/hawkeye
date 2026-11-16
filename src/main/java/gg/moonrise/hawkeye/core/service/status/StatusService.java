@@ -3,9 +3,15 @@ package gg.moonrise.hawkeye.core.service.status;
 import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.queue.EventWriter;
 import gg.moonrise.hawkeye.core.queue.WriterStats;
+import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
+import gg.moonrise.hawkeye.core.service.network.NetworkJobService;
+import gg.moonrise.hawkeye.core.storage.Archive;
 import gg.moonrise.hawkeye.core.storage.StorageManager;
 import gg.moonrise.hawkeye.core.storage.StorageState;
 import gg.moonrise.moss.spring.SpringComponent;
+import java.sql.SQLException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 
@@ -17,6 +23,24 @@ public final class StatusService {
     private final @NotNull StorageManager storage;
     private final @NotNull EventWriter writer;
     private final @NotNull HawkeyeConfigProvider configProvider;
+    private final @NotNull Archive archive;
+    private final @NotNull NetworkJobService networkJobs;
+    private final @NotNull HawkeyeExecutors executors;
+
+    /**
+     * The status with the archive's size, read from the database on a query thread.
+     *
+     * @return the full status; the archive figures are -1 when they could not be read
+     */
+    public @NotNull CompletableFuture<Full> full() {
+        Status status = status();
+        Jobs jobs = new Jobs(networkJobs.runningJobs(), networkJobs.watchedJobs());
+        try {
+            return CompletableFuture.supplyAsync(() -> new Full(status, archiveTotals(), jobs), executors.query());
+        } catch (RejectedExecutionException e) {
+            return CompletableFuture.completedFuture(new Full(status, new ArchiveTotals(-1, -1), jobs));
+        }
+    }
 
     /**
      * The current status.
@@ -35,6 +59,45 @@ public final class StatusService {
         return new Status(configProvider.get().server().name(), configProvider.get().storage().type().name(), health,
                 new Counters(stats.queued(), stats.written(), stats.batches(), stats.dropped(), stats.spooled(),
                         stats.failures(), stats.lastFlushMillis(), stats.lastError()));
+    }
+
+    private @NotNull ArchiveTotals archiveTotals() {
+        return storage.readyNow().map(ready -> {
+            try {
+                long[] totals = archive.totals(ready.home());
+                return new ArchiveTotals(totals[0], totals[1]);
+            } catch (SQLException | RuntimeException e) {
+                return new ArchiveTotals(-1, -1);
+            }
+        }).orElse(new ArchiveTotals(-1, -1));
+    }
+
+    /**
+     * The status plus what needs a database read.
+     *
+     * @param status  the in-memory status
+     * @param archive the archive's size
+     * @param jobs    the network jobs in flight
+     */
+    public record Full(@NotNull Status status, @NotNull ArchiveTotals archive, @NotNull Jobs jobs) {
+    }
+
+    /**
+     * The archive's size.
+     *
+     * @param events   archived events, -1 when unknown
+     * @param segments archive segments, -1 when unknown
+     */
+    public record ArchiveTotals(long events, long segments) {
+    }
+
+    /**
+     * Network jobs in flight.
+     *
+     * @param running jobs this server is applying
+     * @param waiting jobs this server dispatched and waits for
+     */
+    public record Jobs(int running, int waiting) {
     }
 
     /**

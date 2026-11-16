@@ -11,13 +11,16 @@ import lombok.Getter;
 public final class StatusMessages {
 
     @Comment({"Reply to /hawkeye status. Placeholders: <version>, <server>, <node>, <storage>, <state>, <queued>,",
-            "<written>, <dropped>, <batches>, <last-flush-ms>, <spooled>."})
+            "<written>, <dropped>, <batches>, <last-flush-ms>, <spooled>, <archived>, <segments>, <jobs-running>,",
+            "<jobs-waiting>."})
     private List<String> status = List.of(
             "<#7dd3fc>----- Hawkeye <version> -----",
             "<gray>Server: <white><server></white> (node <node>) on <white><storage></white>: <state>",
             "<gray>Queue: <white><queued></white> waiting, <white><written></white> written in <batches> batch(es), "
                     + "last flush <last-flush-ms> ms",
-            "<gray>Dropped: <white><dropped></white>, spooled to disk: <white><spooled></white>");
+            "<gray>Dropped: <white><dropped></white>, spooled to disk: <white><spooled></white>",
+            "<gray>Archive: <white><archived></white> event(s) in <white><segments></white> segment(s); network jobs: "
+                    + "<white><jobs-running></white> running, <white><jobs-waiting></white> awaited");
 
     @Comment("<state> while the database is connected.")
     private String stateReady = "<green>connected</green>";
