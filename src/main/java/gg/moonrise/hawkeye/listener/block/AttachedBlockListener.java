@@ -105,9 +105,13 @@ public final class AttachedBlockListener implements Listener {
         });
     }
 
-    /** Whether a neighbour can fall off: not air, and not a fluid or fire, which change on their own. */
+    /**
+     * Whether a neighbour can fall off: not air, and not a fluid, fire or a block a piston is moving,
+     * which change on their own (and must never come back in a rollback).
+     */
     private static boolean watched(@NotNull Material material) {
         return !material.isAir() && !BlockChanges.isFire(material) && material != Material.WATER
-                && material != Material.LAVA && material != Material.BUBBLE_COLUMN;
+                && material != Material.LAVA && material != Material.BUBBLE_COLUMN
+                && material != Material.MOVING_PISTON;
     }
 }

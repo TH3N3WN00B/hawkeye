@@ -136,14 +136,18 @@ public class AttachedBlockListenerTest {
     }
 
     @Test
-    public void aNeighbourRecordedOtherwiseOrThatOnlyChangedIsNotRecordedNextTick() {
+    public void onlyAVanishedNeighbourThatNothingElseRecordedCountsNextTick() {
         Block support = block(0, 64, Material.STONE);
         Block torch = block(0, 65, Material.TORCH);
         Block grass = block(1, 64, Material.GRASS_BLOCK);
+        Block fire = block(-1, 64, Material.FIRE);
+        Block moving = block(0, 63, Material.MOVING_PISTON);
         breakBlock(support);
         destroy(torch);
         torch.setType(Material.AIR);
         grass.setType(Material.DIRT);
+        fire.setType(Material.AIR);
+        moving.setType(Material.AIR);
         server.getScheduler().performOneTick();
 
         assertEquals(2, Recorded.events(Action.BLOCK_BREAK).size());
