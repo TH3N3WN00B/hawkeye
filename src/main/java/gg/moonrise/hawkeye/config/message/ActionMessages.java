@@ -41,7 +41,7 @@ public final class ActionMessages {
     private String bookEdit = "<gray>wrote a book:</gray> <white><text></white>";
     private String gamemodeChange = "<yellow>switched to</yellow> <white><text></white>";
     private String join = "<green>joined</green>";
-    private String quit = "<red>left</red>";
+    private String quit = "<red>left</red> <gray><text></gray>";
 
     @Comment("<action> for an action this version does not know (written by a newer Hawkeye).")
     private String unknown = "<gray>did something</gray>";

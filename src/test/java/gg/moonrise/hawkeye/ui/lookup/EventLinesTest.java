@@ -70,7 +70,9 @@ public class EventLinesTest {
                 new Payload.Text("hello <b>there</b>")))));
         assertEquals("ran /spawn", plain(lines.action(event(Action.COMMAND, "", 0, new Payload.Text("/spawn")))));
         assertEquals("joined", plain(lines.action(event(Action.JOIN, "", 0, null))));
-        assertEquals("left", plain(lines.action(event(Action.QUIT, "", 0, null))));
+        assertEquals("left ", plain(lines.action(event(Action.QUIT, "", 0, null))));
+        assertEquals("left kicked: AFK", plain(lines.action(event(Action.QUIT, "", 0,
+                new Payload.Text("kicked: AFK")))));
     }
 
     @Test
