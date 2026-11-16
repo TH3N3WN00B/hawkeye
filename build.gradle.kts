@@ -67,6 +67,8 @@ tasks {
     }
     test {
         useJUnitPlatform()
+        // The opt-in storage benchmarks hold whole segments of events in memory: HAWKEYE_TEST_HEAP=3g.
+        providers.environmentVariable("HAWKEYE_TEST_HEAP").orNull?.let { heap -> maxHeapSize = heap }
         // MockBukkit builds a Bukkit LibraryLoader on every registerEvents call, and its Maven resolver asks
         // InetAddress.getLocalHost(). On macOS a host name missing from /etc/hosts makes each lookup wait 5 s
         // for mDNS, so the test JVM resolves names from this file only (docs/knowledge "Environment facts").

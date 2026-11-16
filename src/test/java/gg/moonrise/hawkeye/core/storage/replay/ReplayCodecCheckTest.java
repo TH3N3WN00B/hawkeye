@@ -56,10 +56,12 @@ public class ReplayCodecCheckTest {
         pack.add(assigner.take(Long.MAX_VALUE, true));
         pack.flush();
         reporter.publishEntry("result", String.format("%d events, %d segments, %.3f B/event (header %.3f, body %.3f), "
-                        + "rank frames %d bytes in %d segments, time frames %.3f B/event, encode %.1f s",
+                        + "rank frames %d bytes in %d segments, time frames %.3f B/event, encode %.1f s "
+                        + "(compressing frames %.1f s, the slowest frame %.2f s)",
                 pack.events, pack.segments, (double) (pack.headerBytes + pack.bodyBytes) / pack.events,
                 (double) pack.headerBytes / pack.events, (double) pack.bodyBytes / pack.events, pack.rankBytes,
-                pack.rankSegments, (double) pack.timeBytes / pack.events, pack.encodeNanos / 1e9));
+                pack.rankSegments, (double) pack.timeBytes / pack.events, pack.encodeNanos / 1e9, pack.frameNanos / 1e9,
+                pack.slowestFrameNanos / 1e9));
     }
 
     /** Signals the end of the slice from inside the replay callback. */
@@ -83,6 +85,8 @@ public class ReplayCodecCheckTest {
         private long rankSegments;
         private long timeBytes;
         private long encodeNanos;
+        private long frameNanos;
+        private long slowestFrameNanos;
 
         private void add(List<PendingEvent> batch) {
             for (PendingEvent event : batch) {
@@ -109,7 +113,13 @@ public class ReplayCodecCheckTest {
             // The writer ranks by world name, so the packer orders worlds by name.
             List<Integer> worldOrder = new ArrayList<>(worlds.values());
             long start = System.nanoTime();
-            PackedSegment segment = Segments.encode(rows, worldOrder);
+            PackedSegment segment = Segments.encode(rows, worldOrder, task -> {
+                long began = System.nanoTime();
+                task.run();
+                long took = System.nanoTime() - began;
+                frameNanos += took;
+                slowestFrameNanos = Math.max(slowestFrameNanos, took);
+            });
             encodeNanos += System.nanoTime() - start;
             SegmentHeader header = SegmentHeader.parse(segment.header());
             if (segments == 0) {
