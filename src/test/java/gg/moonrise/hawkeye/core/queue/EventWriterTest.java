@@ -56,7 +56,8 @@ public class EventWriterTest {
         TestPlugins.bean(EventWriter.class).flush().get(20, TimeUnit.SECONDS);
 
         List<StoredEvent> events = TestPlugins.bean(EventStore.class).find(ready.home(),
-                LookupQuery.at(new Area.Box("world", 0, 0, 0, 9, 100, 0)),
+                // The player's join is recorded at the spawn, inside this box: count only the placements.
+                LookupQuery.at(new Area.Box("world", 0, 0, 0, 9, 100, 0)).withActions(Set.of(Action.BLOCK_PLACE)),
                 new ShardScope.Scopes(Set.of("server")), 0, 100, true);
         assertEquals(10, events.size());
         assertTrue(events.stream().allMatch(event -> event.actor().name().equals("Alex")));
