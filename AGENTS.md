@@ -1,8 +1,10 @@
 # AGENTS.md
 
-Hawkeye: a Paper 26.3 plugin (Folia supported) by Moonrise Studios on the Moonrise plugin-engine
+Hawkeye: block and action logging with lookups, rollbacks and multi-server sync (a CoreProtect
+alternative), a Paper 26.3 plugin (Folia supported) by Moonrise Studios on the Moonrise plugin-engine
 (Moss/Spring, Cloud 2, ConfigLib, Lombok). Base package `gg.moonrise.hawkeye`. This file is the
-canonical rule set for every agent and contributor; `CLAUDE.md` only points here.
+canonical rule set for every agent and contributor; `CLAUDE.md` only points here. The storage
+format, threading model and multi-server protocol are specified in `docs/architecture.md`.
 
 Read before changing anything:
 
