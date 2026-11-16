@@ -59,8 +59,17 @@ All notable changes to this project are documented in this file. The format is b
 
 - A block a piston destroys is recorded as broken, no longer as moved one block on.
 - Flowing water and lava are recorded with their flowing level, so a restore never creates sources.
+- Killed mobs are stored with their entity again (Paper 26.3 refuses to serialize a dying mob without
+  `EntitySerializationFlag.FORCE`), so a rollback respawns them, at full health and at rest.
+- Item and entity snapshots are stored as raw NBT instead of Paper's per-item gzip, and entity
+  snapshots are normalized (UUID, motion, fire, timers, spawn bookkeeping, combat memory; position and
+  rotation for mobs only), so the archive compresses them together: about 7 bytes per kill and under
+  2 bytes per repeated item on a real server. Rows written in Paper's gzip form still read.
+- Removed entities (paintings, frames, vehicles, bucketed mobs) are serialized only with
+  `rollback.restore-entities` on, as kills already were.
 
 ### Tests
 
 - MockBukkit, SQLite and opt-in MySQL/PostgreSQL integration tests, an ArchUnit layer check, a
-  storage footprint guard, `verifyPluginJar`, and a real-server smoke test (`scripts/smoke`).
+  storage footprint guard, `verifyPluginJar`, and real-server smoke tests (`scripts/smoke`: TNT and
+  kill rollbacks).

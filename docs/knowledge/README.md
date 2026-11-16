@@ -41,9 +41,41 @@ update them in the same change when you learn something durable or an entry stop
   payload bytes); without payloads an event costs about 19 B. The run takes 103 minutes on this host
   (insert about 24k/s, archive about 48k/s).
 - Paper 26.3's `UnsafeValues#serializeEntity` rejects an entity that is no longer valid unless it is
-  passed `EntitySerializationFlag.FORCE`, and a mob in its `EntityDeathEvent` is no longer valid. Verified
-  with `/kill` on a real server: zombie, villager, cow and skeleton kills were stored without entity
-  bytes, an armour stand with them. `EntityBytes.serialize` does not pass `FORCE` yet.
+  passed `EntitySerializationFlag.FORCE`, and a mob in its `EntityDeathEvent` is no longer valid.
+  `EntityBytes.serialize` passes it (before, `/kill`ed zombies, villagers, cows and skeletons were
+  stored without entity bytes; armour stands worked).
+- Item and entity payloads (verified 2026-11-16): `ItemStack#serializeAsBytes` and `serializeEntity`
+  return gzip NBT (`1f 8b`), and `deserializeBytes`/`deserializeEntity` read only gzip. Hawkeye stores
+  raw NBT (`0a`) and gzips it again on read (`util.nbt.NbtGzip`); gzip rows from earlier builds read
+  as they are. MockBukkit's `serializeAsBytes` returns Java serialization (`ac ed`), which passes
+  through unchanged.
+- Paper writes some entity keys with a dot in the key itself at the top level (`Paper.Origin`,
+  `Paper.OriginWorld`, `Paper.SpawnReason`, `Spigot.ticksLived`, `Bukkit.updateLevel`), not as nested
+  compounds, and writes `attributes` in hash order (it differs between identical mobs).
+- Entity normalization rule (`util.EntitySnapshots`): strip only what a respawn resets, re-rolls or
+  gets from the event row: UUID, motion, fall distance, fire, air, on-ground, portal cooldown, hurt and
+  death timers, spawn bookkeeping (`Paper.Origin*`, `Spigot.ticksLived`, world UUIDs), the knockback
+  timer, combat memory (`last_hurt_by_*`, anger), `EggLayTime`, the villager
+  `golem_detected_recently` memory, `random_spawn_bonus` modifiers; `Health` of a dying entity; `Pos`
+  and `Rotation` of a `Mob` only. Attributes are sorted by id. Minecraft loads every stripped tag as
+  absent: a respawned kill has full health, no fire, zero fall distance (checked with vanilla
+  `/execute if entity ... nbt=` in `scripts/smoke/kill-rollback.txt`). Kept on purpose: variants, sound
+  variants, `LeftHanded`, baby state, names, equipment and drop chances, villager data and gossip,
+  the zombie `spawn_reinforcements` base (rolled at spawn, but gameplay state), persistence, AI flags,
+  tags. `random_spawn_bonus` did not appear on `/summon`ed mobs in 26.3.
+- Measured 2026-11-16 on Paper 26.3 build 253 (`kill-rollback.txt`, 401 kills of 11 farm types plus
+  babies, named and equipped mobs and an armour stand; zstd level 19 over the concatenated payloads):
+  about 500 bytes raw per kill and 6.8 bytes per kill compressed together. Compressed per type alone:
+  spider 9.3, enderman 9.8, iron golem 10.0, cow 10.5, creeper 10.6, sheep 11.4, skeleton 12.1,
+  chicken 14.3, pig 14.6, villager 14.6, zombie 18.4 (babies, named and equipped ones, the random
+  reinforcement chance). The same normalized snapshots gzipped one by one cost 49 bytes per kill
+  compressed together. Items: 108 hopper moves of identical named, enchanted swords are 193 bytes raw
+  and 1.4 bytes each compressed together; a broken chest of 27 of them is one 5.3 KB payload that
+  compresses to 229 bytes (8.5 per item).
+- Real-server smoke runs wait several commands after `forceload` before cleaning up (entities load
+  after the chunks), and select the whole force-loaded area: mobs walk to its edge in a minute. Iron
+  golems kill zombies and zombies hunt villagers within about 60 blocks, so `kill-rollback.txt` keeps
+  them 200 blocks apart. 26.3 prints `Count: N` (capital C) for `/execute if entity`.
 - This Linux build host has no JDK 25 and no Docker. `settings.gradle.kts` applies the foojay toolchain
   resolver, which downloaded Temurin 25 into `~/.gradle/jdks`. SQLite runs for real in every storage
   test.

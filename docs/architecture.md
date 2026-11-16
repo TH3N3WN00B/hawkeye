@@ -89,10 +89,15 @@ All tables carry the configured prefix (default `hawkeye_`).
   `subject` for a break and `secondary` for a place; restore does the opposite. For item actions
   `subject` is the material and `amount` the count; for kills it is the entity type.
 - **`flags`.** Bit 0: rolled back.
-- **`data`.** An optional payload, tagged by its first byte (`util.codec.Payloads`): text (chat,
-  commands), sign sides (before and after), an item (Paper's version-safe item bytes, only when the
-  item has components), an inventory snapshot (a broken container), or an entity (Paper's
-  version-safe entity bytes, for kill rollback). Large text payloads are deflated.
+- **`data`.** An optional payload, tagged by its first byte (`util.codec.PayloadCodec`): text (chat,
+  commands), sign sides (before and after), an item (only when the item has components), an inventory
+  snapshot (a broken container), or an entity (for kill and removal rollback). Items and entities are
+  the NBT of Paper's version-safe serialization (it carries the data version, so the server's data
+  fixers upgrade old rows), stored uncompressed (`util.ItemBytes`, `util.EntityBytes`) so the archive,
+  which compresses many rows together, finds what repeats between snapshots; rows in Paper's own gzip
+  form (from earlier builds) read the same. Entity snapshots are normalized first
+  (`util.EntitySnapshots`): what a respawn resets, re-rolls or takes from the event row is stripped.
+  Large text and sign payloads are deflated; nothing else is compressed per row.
 
 ### Archive
 
