@@ -26,6 +26,9 @@ public final class BlockPositions {
     /** The largest packable y. */
     public static final int MAX_Y = 2047;
 
+    /** Chunks per region side, as a shift: regions are 8 x 8 chunks. */
+    public static final int REGION_SHIFT = 3;
+
     private static final int CHUNK_Z_OFFSET = 1 << 21;
     private static final long CHUNK_Z_MASK = (1L << 22) - 1;
     private static final long CHUNK_LOCAL_MASK = (1L << 20) - 1;
@@ -135,6 +138,61 @@ public final class BlockPositions {
      */
     public static @NotNull List<Range> blockRanges(int minX, int minZ, int maxX, int maxZ) {
         return columnRanges(minX >> 4, minZ >> 4, maxX >> 4, maxZ >> 4);
+    }
+
+    /**
+     * The region key of a packed position: regions are 8 x 8 chunks (128 x 128 blocks), keyed
+     * region-x-major so a run of regions with the same region x is one contiguous key range.
+     *
+     * @param position a packed position
+     * @return the region key
+     */
+    public static long regionKey(long position) {
+        return regionKey(chunkX(position) >> REGION_SHIFT, chunkZ(position) >> REGION_SHIFT);
+    }
+
+    /**
+     * The key of a region.
+     *
+     * @param regionX region x (chunk x &gt;&gt; 3)
+     * @param regionZ region z (chunk z &gt;&gt; 3)
+     * @return the key
+     */
+    public static long regionKey(int regionX, int regionZ) {
+        return ((long) regionX << 32) | (((long) regionZ + (1L << 31)) & 0xFFFFFFFFL);
+    }
+
+    /**
+     * The region x of a region key.
+     *
+     * @param key a region key
+     * @return region x
+     */
+    public static int regionX(long key) {
+        return (int) (key >> 32);
+    }
+
+    /**
+     * The region z of a region key.
+     *
+     * @param key a region key
+     * @return region z
+     */
+    public static int regionZ(long key) {
+        return (int) ((key & 0xFFFFFFFFL) - (1L << 31));
+    }
+
+    /**
+     * Packs a position from its region and its offset inside the region.
+     *
+     * @param regionKey the region key
+     * @param localX    x inside the region, 0 to 127
+     * @param y         block y
+     * @param localZ    z inside the region, 0 to 127
+     * @return the packed position
+     */
+    public static long fromRegion(long regionKey, int localX, int y, int localZ) {
+        return pack((regionX(regionKey) << 7) | localX, y, (regionZ(regionKey) << 7) | localZ);
     }
 
     private static long chunkBase(int chunkX, int chunkZ) {

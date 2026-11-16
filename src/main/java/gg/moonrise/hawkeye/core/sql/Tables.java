@@ -80,4 +80,22 @@ public record Tables(@NotNull String prefix) {
     public @NotNull String lease() {
         return prefix + "lease";
     }
+
+    /**
+     * The archive segments.
+     *
+     * @return the name
+     */
+    public @NotNull String segment() {
+        return prefix + "segment";
+    }
+
+    /**
+     * Which actors appear in which archive segment.
+     *
+     * @return the name
+     */
+    public @NotNull String segmentActor() {
+        return prefix + "segment_actor";
+    }
 }

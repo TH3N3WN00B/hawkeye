@@ -1,6 +1,8 @@
 package gg.moonrise.hawkeye.core.repository;
 
 import gg.moonrise.hawkeye.entity.query.RollbackState;
+import gg.moonrise.hawkeye.util.BlockPositions;
+import gg.moonrise.hawkeye.util.EventIds;
 import java.util.List;
 import java.util.Set;
 import org.jetbrains.annotations.NotNull;
@@ -62,6 +64,74 @@ public record EventFilter(
         actions = Set.copyOf(actions);
         types = Set.copyOf(types);
         excludedTypes = Set.copyOf(excludedTypes);
+    }
+
+    /**
+     * A filter that matches every event in an id range.
+     *
+     * @param minId the smallest id
+     * @param maxId the largest id
+     * @return the filter
+     */
+    public static @NotNull EventFilter everything(long minId, long maxId) {
+        return new EventFilter(minId, maxId, Set.of(), List.of(), Bounds.NONE, Set.of(), Set.of(), Set.of(), Set.of(),
+                Set.of(), Set.of(), RollbackState.ANY);
+    }
+
+    /**
+     * Whether a row passes this filter: the same predicate {@link EventSql} writes as SQL, for events
+     * read from archive segments. {@code EventFilterTest} checks that both agree.
+     *
+     * @param row the row
+     * @return {@code true} when the row matches
+     */
+    public boolean matches(@NotNull EventRow row) {
+        if (row.id() < minId || row.id() > maxId) {
+            return false;
+        }
+        if (!positions.isEmpty()) {
+            if (!inPositions(row)) {
+                return false;
+            }
+        } else if (!worlds.isEmpty() && !worlds.contains(row.world())) {
+            return false;
+        }
+        if (!nodes.isEmpty() && !nodes.contains(EventIds.node(row.id()))) {
+            return false;
+        }
+        if (!actors.isEmpty() && !actors.contains(row.actor()) || excludedActors.contains(row.actor())) {
+            return false;
+        }
+        if (!actions.isEmpty() && !actions.contains(row.action())) {
+            return false;
+        }
+        if (!types.isEmpty() && !types.contains(row.subject()) || excludedTypes.contains(row.subject())) {
+            return false;
+        }
+        return switch (rollbackState) {
+            case ANY -> true;
+            case ACTIVE -> !row.rolledBack();
+            case ROLLED_BACK -> row.rolledBack();
+        };
+    }
+
+    private boolean inPositions(@NotNull EventRow row) {
+        long position = row.position();
+        int localX = (int) ((position >>> 16) & 15);
+        boolean inside = false;
+        for (WorldRange range : positions) {
+            if (range.world() == row.world() && position >= range.from() && position <= range.to()
+                    && localX >= range.minLocalX() && localX <= range.maxLocalX()) {
+                inside = true;
+                break;
+            }
+        }
+        if (!inside || !bounds.active()) {
+            return inside;
+        }
+        int y = BlockPositions.y(position);
+        int z = BlockPositions.z(position);
+        return y >= bounds.minY() && y <= bounds.maxY() && z >= bounds.minZ() && z <= bounds.maxZ();
     }
 
     /**

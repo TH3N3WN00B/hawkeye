@@ -106,6 +106,19 @@ public final class ByteReader {
     }
 
     /**
+     * Reads a number of raw bytes without a length prefix.
+     *
+     * @param length how many bytes
+     * @return the bytes
+     */
+    public byte @NotNull [] readRaw(int length) {
+        require(length);
+        byte[] out = Arrays.copyOfRange(bytes, offset, offset + length);
+        offset += length;
+        return out;
+    }
+
+    /**
      * Reads a length-prefixed UTF-8 string.
      *
      * @return the text

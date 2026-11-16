@@ -18,6 +18,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -31,14 +32,19 @@ import org.jetbrains.annotations.NotNull;
 /**
  * The event operations the services and the writer use, on any shard: writing a batch, reading
  * pages, counting, flagging and purging. Owns all connection and transaction handling around the
- * repositories, so no service touches SQL.
+ * repositories, so no service touches SQL. Every read merges the hot {@code event} table with the
+ * packed archive ({@link Archive}), so callers never see which tier holds an event.
  */
 @SpringComponent
 @RequiredArgsConstructor
 public final class EventStore {
 
+    /** Archive segments processed per purge batch. */
+    public static final int PURGE_SEGMENTS = 64;
+
     private final @NotNull EventRepository eventRepository;
     private final @NotNull QueryResolver queryResolver;
+    private final @NotNull Archive archive;
 
     /**
      * Writes a batch: dictionary values are interned first in auto-commit mode (so an id never refers
@@ -82,9 +88,15 @@ public final class EventStore {
             if (filter.isEmpty()) {
                 return List.of();
             }
-            List<EventRow> rows = eventRepository.find(connection, shard.database().sql(), filter.get(), cursor, limit,
-                    newestFirst);
-            return stored(connection, shard, rows);
+            Sql sql = shard.database().sql();
+            List<EventRow> hot = eventRepository.find(connection, sql, filter.get(), cursor, limit, newestFirst);
+            List<EventRow> archived = archive.find(connection, sql, filter.get(), cursor, limit, newestFirst, hot);
+            List<EventRow> rows = new ArrayList<>(hot.size() + archived.size());
+            rows.addAll(hot);
+            rows.addAll(archived);
+            Comparator<EventRow> order = Comparator.comparingLong(EventRow::id);
+            rows.sort(newestFirst ? order.reversed() : order);
+            return stored(connection, shard, rows.size() > limit ? rows.subList(0, limit) : rows);
         });
     }
 
@@ -101,17 +113,21 @@ public final class EventStore {
             throws SQLException {
         return shard.database().read(connection -> {
             Optional<EventFilter> filter = queryResolver.resolve(connection, shard, query, scope);
-            return filter.isEmpty() ? 0L : eventRepository.count(connection, shard.database().sql(), filter.get());
+            if (filter.isEmpty()) {
+                return 0L;
+            }
+            Sql sql = shard.database().sql();
+            return eventRepository.count(connection, sql, filter.get()) + archive.count(connection, sql, filter.get());
         });
     }
 
     /**
-     * Sets or clears the rolled-back flag of events, in one transaction.
+     * Sets or clears the rolled-back flag of events, in one transaction, in whichever tier holds them.
      *
      * @param shard      the shard
      * @param ids        the event ids
      * @param rolledBack the new value
-     * @return the number of events updated
+     * @return the number of events whose flag was set (hot events count whether or not they changed)
      * @throws SQLException when writing fails
      */
     public int setRolledBack(@NotNull Shard shard, @NotNull Collection<Long> ids, boolean rolledBack)
@@ -119,25 +135,35 @@ public final class EventStore {
         if (ids.isEmpty()) {
             return 0;
         }
-        return shard.database().transaction(connection -> eventRepository.setRolledBack(connection,
-                shard.database().sql(), ids, rolledBack));
+        Sql sql = shard.database().sql();
+        return shard.database().transaction(connection -> {
+            int hot = eventRepository.setRolledBack(connection, sql, ids, rolledBack);
+            return hot < ids.size() ? hot + archive.setRolledBack(connection, sql, ids, rolledBack) : hot;
+        });
     }
 
     /**
-     * Deletes one batch of events older than a time.
+     * Deletes one batch of events older than a time: up to {@code limit} hot events, and once the hot
+     * tier has none left, up to {@link #PURGE_SEGMENTS} archive segments (or their older parts).
      *
      * @param shard        the shard
      * @param beforeMillis events strictly older than this are deleted
      * @param worlds       world ids to purge, or empty for every world
-     * @param limit        the most events in this batch
-     * @return the number deleted; fewer than {@code limit} means the purge is complete
+     * @param limit        the most hot events in this batch
+     * @return the number of events deleted; 0 means the purge is complete
      * @throws SQLException when deleting fails
      */
     public int purgeBatch(@NotNull Shard shard, long beforeMillis, @NotNull Collection<Integer> worlds, int limit)
             throws SQLException {
         long belowId = EventIds.floor(beforeMillis);
-        return shard.database().read(connection -> eventRepository.deleteBatch(connection, shard.database().sql(),
-                belowId, worlds, limit));
+        Sql sql = shard.database().sql();
+        int hot = shard.database().read(connection -> eventRepository.deleteBatch(connection, sql, belowId, worlds,
+                limit));
+        if (hot >= limit) {
+            return hot;
+        }
+        return hot + shard.database().transaction(connection -> archive.purge(connection, sql, belowId, worlds,
+                PURGE_SEGMENTS));
     }
 
     /**

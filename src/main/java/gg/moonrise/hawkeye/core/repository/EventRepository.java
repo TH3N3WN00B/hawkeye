@@ -1,5 +1,6 @@
 package gg.moonrise.hawkeye.core.repository;
 
+import gg.moonrise.hawkeye.core.sql.Dialect;
 import gg.moonrise.hawkeye.core.sql.Sql;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.sql.Connection;
@@ -143,6 +144,61 @@ public final class EventRepository {
             delete.bind(statement);
             return statement.executeUpdate();
         }
+    }
+
+    /**
+     * The oldest events below an id, locked for the archiving transaction so a concurrent flag update
+     * cannot be lost between reading a row and deleting it (MySQL and PostgreSQL take row locks;
+     * SQLite's single writer refuses the stale transaction instead).
+     *
+     * @param connection a connection inside a transaction
+     * @param sql        the shard's SQL context
+     * @param belowId    the exclusive id bound
+     * @param limit      the most rows
+     * @return the rows, oldest first
+     * @throws SQLException when the query fails
+     */
+    public @NotNull List<EventRow> oldestForArchive(@NotNull Connection connection, @NotNull Sql sql, long belowId,
+            int limit) throws SQLException {
+        String lock = sql.dialect() == Dialect.SQLITE ? "" : " FOR UPDATE";
+        try (PreparedStatement statement = connection.prepareStatement("SELECT " + String.join(", ", EventSql.COLUMNS)
+                + " FROM " + sql.tables().event() + " WHERE id < ? ORDER BY id LIMIT ?" + lock)) {
+            statement.setLong(1, belowId);
+            statement.setInt(2, limit);
+            try (ResultSet rows = statement.executeQuery()) {
+                List<EventRow> out = new ArrayList<>(Math.min(limit, 1 << 16));
+                while (rows.next()) {
+                    out.add(read(rows));
+                }
+                return out;
+            }
+        }
+    }
+
+    /**
+     * Deletes events by id.
+     *
+     * @param connection a connection
+     * @param sql        the shard's SQL context
+     * @param ids        the event ids
+     * @return the number deleted
+     * @throws SQLException when a statement fails
+     */
+    public int deleteIds(@NotNull Connection connection, @NotNull Sql sql, @NotNull Collection<Long> ids)
+            throws SQLException {
+        List<Long> all = List.copyOf(ids);
+        int deleted = 0;
+        for (int from = 0; from < all.size(); from += IDS_PER_STATEMENT) {
+            List<Long> chunk = all.subList(from, Math.min(all.size(), from + IDS_PER_STATEMENT));
+            try (PreparedStatement statement = connection.prepareStatement("DELETE FROM " + sql.tables().event()
+                    + " WHERE id IN (" + Dialect.placeholders(chunk.size()) + ")")) {
+                for (int i = 0; i < chunk.size(); i++) {
+                    statement.setLong(i + 1, chunk.get(i));
+                }
+                deleted += statement.executeUpdate();
+            }
+        }
+        return deleted;
     }
 
     private static int bind(@NotNull PreparedStatement statement, int start, @NotNull EventRow row)

@@ -5,6 +5,9 @@ import com.zaxxer.hikari.HikariDataSource;
 import gg.moonrise.hawkeye.config.file.StorageSettings;
 import gg.moonrise.hawkeye.config.file.StorageType;
 import gg.moonrise.moss.spring.SpringComponent;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -47,6 +50,12 @@ public final class DatabaseFactory {
     }
 
     private static void sqlite(@NotNull HikariConfig config, @NotNull Path file) {
+        try {
+            // SQLite creates the file but not missing folders (sqlite-file: data/hawkeye.db).
+            Files.createDirectories(file.toAbsolutePath().getParent());
+        } catch (IOException e) {
+            throw new UncheckedIOException("cannot create the folder of " + file, e);
+        }
         config.setDriverClassName("org.sqlite.JDBC");
         config.setJdbcUrl("jdbc:sqlite:" + file.toAbsolutePath());
         config.addDataSourceProperty("journal_mode", "WAL");
