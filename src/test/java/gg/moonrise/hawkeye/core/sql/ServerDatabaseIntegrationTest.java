@@ -1,0 +1,171 @@
+package gg.moonrise.hawkeye.core.sql;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
+import gg.moonrise.hawkeye.config.file.StorageSettings;
+import gg.moonrise.hawkeye.config.file.StorageType;
+import gg.moonrise.hawkeye.core.repository.ActorRepository;
+import gg.moonrise.hawkeye.core.repository.DictionaryRepository;
+import gg.moonrise.hawkeye.core.repository.EventRepository;
+import gg.moonrise.hawkeye.core.repository.JobRepository;
+import gg.moonrise.hawkeye.core.repository.SegmentRepository;
+import gg.moonrise.hawkeye.core.repository.ServerRepository;
+import gg.moonrise.hawkeye.core.storage.Archive;
+import gg.moonrise.hawkeye.core.storage.Dictionaries;
+import gg.moonrise.hawkeye.core.storage.EventStore;
+import gg.moonrise.hawkeye.core.storage.QueryResolver;
+import gg.moonrise.hawkeye.core.storage.Shard;
+import gg.moonrise.hawkeye.core.storage.ShardScope;
+import gg.moonrise.hawkeye.entity.action.Action;
+import gg.moonrise.hawkeye.entity.actor.Actor;
+import gg.moonrise.hawkeye.entity.event.PendingEvent;
+import gg.moonrise.hawkeye.entity.event.StoredEvent;
+import gg.moonrise.hawkeye.entity.job.JobKind;
+import gg.moonrise.hawkeye.entity.query.Area;
+import gg.moonrise.hawkeye.entity.query.LookupQuery;
+import gg.moonrise.hawkeye.entity.query.RollbackState;
+import gg.moonrise.hawkeye.entity.server.ServerNode;
+import gg.moonrise.hawkeye.util.BlockPositions;
+import gg.moonrise.hawkeye.util.EventIds;
+import java.net.URI;
+import java.nio.file.Path;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+/**
+ * The SQLite storage scenarios against a real MySQL/MariaDB or PostgreSQL server. Opt-in: set
+ * {@code HAWKEYE_TEST_MYSQL} and/or {@code HAWKEYE_TEST_POSTGRES} to {@code scheme://user:password@host:port/database}
+ * (an empty database the user may create tables in). Without them the tests are skipped. Each run uses
+ * its own table prefix and drops its tables afterwards.
+ */
+public class ServerDatabaseIntegrationTest {
+
+    private static final long T0 = EventIds.EPOCH_MILLIS + 86_400_000L * 400;
+
+    @TempDir
+    private Path folder;
+
+    @ParameterizedTest
+    @ValueSource(strings = {"HAWKEYE_TEST_MYSQL", "HAWKEYE_TEST_POSTGRES"})
+    public void storageWorksOnServerEngines(String variable) throws Exception {
+        String url = System.getenv(variable);
+        assumeTrue(url != null && !url.isBlank(), variable + " is not set");
+        String prefix = "hk" + Long.toHexString(System.nanoTime()).substring(0, 6) + "_";
+        Database database = new DatabaseFactory().open("it", settings(URI.create(url), prefix), folder);
+        try {
+            run(database);
+        } finally {
+            drop(database);
+            database.close();
+        }
+    }
+
+    private static void run(Database database) throws SQLException {
+        assertInstanceOf(MigrationResult.Migrated.class, migrate(database));
+        assertInstanceOf(MigrationResult.UpToDate.class, migrate(database));
+
+        ServerRepository servers = new ServerRepository();
+        ServerNode survival = null;
+        for (int i = 0; i < 5; i++) {
+            survival = database.read(connection -> servers.register(connection, database.sql(), "survival",
+                    "survival", System.currentTimeMillis()));
+        }
+        ServerNode creative = database.read(connection -> servers.register(connection, database.sql(), "creative",
+                "creative", System.currentTimeMillis()));
+        assertEquals(survival.node() + 1, creative.node(), "re-registering must not consume node ids");
+
+        Shard shard = new Shard("it", database, new Dictionaries(new DictionaryRepository(), new ActorRepository(),
+                servers), true);
+        Archive archive = new Archive(new EventRepository(), new SegmentRepository());
+        EventStore store = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
+                new ActorRepository()), archive);
+        List<PendingEvent> events = new ArrayList<>();
+        Actor alex = Actor.player(new UUID(0, 1), "Alex");
+        for (int i = 0; i < 2_000; i++) {
+            events.add(new PendingEvent(EventIds.stamp(T0 + i * 1000L, 0), "world",
+                    BlockPositions.pack(i % 100 - 50, 64 + i % 7, i / 100 - 10), i % 3 == 0 ? Actor.source("tnt") : alex,
+                    i % 2 == 0 ? Action.BLOCK_BREAK : Action.BLOCK_PLACE,
+                    i % 5 == 0 ? "minecraft:oak_log[axis=y]" : "minecraft:stone", "minecraft:air", 0,
+                    i % 50 == 0 ? new byte[] {1, 'h', 'i'} : null));
+        }
+        store.write(shard, survival, "survival", events);
+        // A retried batch must not duplicate rows. (MySQL drivers report matched rather than inserted rows
+        // for ON DUPLICATE KEY UPDATE, so the row count is checked, not the insert's update count.)
+        store.write(shard, survival, "survival", events);
+
+        ShardScope scope = new ShardScope.Scopes(Set.of("survival"));
+        assertEquals(2_000, store.count(shard, LookupQuery.at(new Area.Everywhere()), scope));
+        LookupQuery box = LookupQuery.at(new Area.Box("world", -20, 60, -5, 20, 70, 5));
+        long inBox = events.stream().filter(event -> ((Area.Box) box.area()).contains(
+                BlockPositions.x(event.position()), BlockPositions.y(event.position()),
+                BlockPositions.z(event.position()))).count();
+        assertEquals(inBox, store.count(shard, box, scope));
+        LookupQuery logs = new LookupQuery(box.servers(), new Area.Everywhere(), box.time(), Set.of("alex"),
+                Set.of(), Set.of(), Set.of("minecraft:oak_log"), Set.of(),
+                RollbackState.ANY);
+        long expectedLogs = events.stream().filter(event -> event.actor().equals(alex)
+                && event.subject().startsWith("minecraft:oak_log")).count();
+        assertEquals(expectedLogs, store.count(shard, logs, scope));
+
+        List<Long> before = ids(store.find(shard, box, scope, 0, 10_000, true));
+        while (archive.compact(shard, T0 + 1_500_000, 400) > 0) {
+            // Archive three quarters of the events.
+        }
+        assertEquals(before, ids(store.find(shard, box, scope, 0, 10_000, true)));
+        assertEquals(expectedLogs, store.count(shard, logs, scope));
+        assertEquals(before.size(), store.setRolledBack(shard, before, true));
+        assertEquals(before.size(), store.count(shard, box.withRollbackState(RollbackState.ROLLED_BACK), scope));
+
+        while (store.purgeBatch(shard, T0 + 1_000_000, List.of(), 300) > 0) {
+            // Purge the oldest half.
+        }
+        assertEquals(1_000, store.count(shard, LookupQuery.at(new Area.Everywhere()), scope));
+
+        JobRepository jobs = new JobRepository();
+        long job = database.read(connection -> jobs.insert(connection, database.sql(), "creative", JobKind.ROLLBACK,
+                "survival", "Alex", "v=1", 1));
+        boolean claimed = database.read(connection -> jobs.claim(connection, database.sql(), job, 2));
+        assertTrue(claimed);
+    }
+
+    private static List<Long> ids(List<StoredEvent> events) {
+        return events.stream().map(StoredEvent::id).toList();
+    }
+
+    private static MigrationResult migrate(Database database) throws SQLException {
+        return database.read(connection -> Migrations.apply(connection, database.dialect(), database.tables()));
+    }
+
+    private static StorageSettings settings(URI uri, String prefix) {
+        String scheme = uri.getScheme().toLowerCase(Locale.ROOT);
+        StorageType type = scheme.startsWith("postgres") ? StorageType.POSTGRESQL
+                : scheme.equals("mariadb") ? StorageType.MARIADB : StorageType.MYSQL;
+        String[] user = uri.getUserInfo() == null ? new String[] {"", ""} : uri.getUserInfo().split(":", 2);
+        return StorageSettings.server(type, uri.getHost(), uri.getPort(), uri.getPath().substring(1), user[0],
+                user.length > 1 ? user[1] : "", prefix);
+    }
+
+    private static void drop(Database database) throws SQLException {
+        Tables t = database.tables();
+        database.read(connection -> {
+            try (Statement statement = connection.createStatement()) {
+                for (String table : List.of(t.segmentActor(), t.segment(), t.lease(), t.job(), t.event(), t.type(),
+                        t.actor(), t.world(), t.server(), t.schemaVersion())) {
+                    statement.execute("DROP TABLE IF EXISTS " + table);
+                }
+            }
+            return null;
+        });
+    }
+}

@@ -34,8 +34,17 @@ update them in the same change when you learn something durable or an entry stop
   73 bytes per event, archived about 12, CoreProtect's relational `co_block` layout about 80. Random
   positions and types are the worst case for the archive; real builds compress better.
 - This Linux build host has no JDK 25 and no Docker. `settings.gradle.kts` applies the foojay toolchain
-  resolver, which downloaded Temurin 25 into `~/.gradle/jdks`. MySQL and PostgreSQL are not available
-  for tests here; SQLite runs for real in every storage test.
+  resolver, which downloaded Temurin 25 into `~/.gradle/jdks`. SQLite runs for real in every storage
+  test.
+- `ServerDatabaseIntegrationTest` runs the storage scenarios on real servers when
+  `HAWKEYE_TEST_MYSQL` / `HAWKEYE_TEST_POSTGRES` hold `scheme://user:password@host:port/database`;
+  otherwise it is skipped. Without Docker, real servers come from Maven Central binaries: PostgreSQL
+  from `io.zonky.test.postgres:embedded-postgres-binaries-linux-amd64` (a `.txz` with `initdb` and
+  `pg_ctl`) and MariaDB from `ch.vorburger.mariaDB4j:mariaDB4j-db-linux64` (`scripts/mariadb-install-db`
+  and `bin/mariadbd`), unpacked under `~/.cache` and started on local ports. Verified 2026-11-16 on
+  MariaDB 11.4.5 and PostgreSQL 18.6.
+- MariaDB Connector/J reports matched rows, not inserted rows, for `ON DUPLICATE KEY UPDATE`, so an
+  insert's update count is not "rows inserted" on MySQL; nothing relies on it.
 - Heavy builds on this host go through `rtk proxy t3-build ./gradlew ...` (shared build slots).
 
 ## Owner preferences

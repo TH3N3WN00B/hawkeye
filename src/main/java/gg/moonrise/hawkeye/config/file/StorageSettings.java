@@ -63,6 +63,32 @@ public final class StorageSettings {
     }
 
     /**
+     * Settings for a MySQL, MariaDB or PostgreSQL server (tests and tools; operators use config.yml).
+     *
+     * @param type        the engine
+     * @param host        the host
+     * @param port        the port, 0 for the engine's default
+     * @param database    the database
+     * @param username    the user
+     * @param password    the password
+     * @param tablePrefix the table prefix
+     * @return the settings
+     */
+    public static @NotNull StorageSettings server(@NotNull StorageType type, @NotNull String host, int port,
+            @NotNull String database, @NotNull String username, @NotNull String password,
+            @NotNull String tablePrefix) {
+        StorageSettings settings = new StorageSettings();
+        settings.type = type;
+        settings.host = host;
+        settings.port = port;
+        settings.database = database;
+        settings.username = username;
+        settings.password = password;
+        settings.tablePrefix = tablePrefix;
+        return settings;
+    }
+
+    /**
      * SQLite settings for a file with this table prefix and pool configuration (tests and tools).
      *
      * @param file the file path, relative to the plugin folder
