@@ -6,10 +6,13 @@ import java.util.UUID;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * The optional {@code data} of an event. Item and entity bytes are Paper's own serialization
+ * The optional {@code data} of an event. Item and entity bytes are the NBT of Paper's own serialization
  * ({@code ItemStack#serializeAsBytes}, {@code UnsafeValues#serializeEntity}), which carries the data
- * version and is upgraded by the server's data fixers, so stored items survive Minecraft updates.
- * Encoded by {@code util.codec.PayloadCodec}.
+ * version and is upgraded by the server's data fixers, so stored items survive Minecraft updates. They
+ * are stored uncompressed ({@code util.ItemBytes}, {@code util.EntityBytes}; entity snapshots
+ * normalized by {@code util.EntitySnapshots}) so the archive's compression sees what repeats between
+ * them; rows from earlier builds hold Paper's gzip form, which reads the same. Encoded by
+ * {@code util.codec.PayloadCodec}.
  */
 public sealed interface Payload {
 
@@ -35,7 +38,7 @@ public sealed interface Payload {
      * One item stack with components (a plain stack needs no payload: the material and amount columns
      * describe it).
      *
-     * @param bytes Paper's item bytes
+     * @param bytes the item's NBT
      */
     record Item(byte @NotNull [] bytes) implements Payload {
 
@@ -75,7 +78,7 @@ public sealed interface Payload {
     /**
      * A killed entity, so a rollback can respawn it.
      *
-     * @param bytes Paper's entity bytes
+     * @param bytes the entity's NBT
      */
     record Entity(byte @NotNull [] bytes) implements Payload {
 
@@ -108,7 +111,7 @@ public sealed interface Payload {
      * One inventory slot.
      *
      * @param index the slot index
-     * @param item  Paper's item bytes
+     * @param item  the item's NBT
      */
     record Slot(int index, byte @NotNull [] item) {
 

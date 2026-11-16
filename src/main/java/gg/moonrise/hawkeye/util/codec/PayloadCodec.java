@@ -15,9 +15,10 @@ import org.jetbrains.annotations.NotNull;
 /**
  * Encodes {@link Payload}s for the {@code data} column. The first byte is the tag (the payload type
  * in the low bits, {@link #DEFLATED} when the body is deflated); the body follows. Text and sign
- * bodies of at least {@link #COMPRESS_THRESHOLD} bytes are deflated when that makes them smaller;
- * item and entity bytes are already compressed by Paper and are stored as they are. The format is a
- * data contract: tags are never reused.
+ * bodies of at least {@link #COMPRESS_THRESHOLD} bytes are deflated when that makes them smaller.
+ * Item and entity bytes (raw NBT, or Paper's gzip NBT in rows from earlier builds) are stored as they
+ * are handed over: compressing each one alone would hide the repetition between snapshots from the
+ * archive, which compresses many rows together. The format is a data contract: tags are never reused.
  */
 public final class PayloadCodec {
 

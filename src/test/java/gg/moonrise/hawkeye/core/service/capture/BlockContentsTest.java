@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import gg.moonrise.hawkeye.entity.payload.Payload;
 import gg.moonrise.hawkeye.entity.payload.SignSides;
+import gg.moonrise.hawkeye.util.ItemBytes;
 import java.util.List;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -48,7 +49,7 @@ public class BlockContentsTest {
         Payload.Inventory inventory = (Payload.Inventory) BlockContents.of(block).orElseThrow();
         assertEquals(1, inventory.slots().size());
         assertEquals(3, inventory.slots().getFirst().index());
-        assertArrayEquals(diamonds.serializeAsBytes(), inventory.slots().getFirst().item());
+        assertArrayEquals(ItemBytes.serialize(diamonds), inventory.slots().getFirst().item());
     }
 
     @Test

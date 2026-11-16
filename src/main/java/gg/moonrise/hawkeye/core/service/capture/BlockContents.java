@@ -2,6 +2,7 @@ package gg.moonrise.hawkeye.core.service.capture;
 
 import gg.moonrise.hawkeye.entity.payload.Payload;
 import gg.moonrise.hawkeye.entity.payload.SignSides;
+import gg.moonrise.hawkeye.util.ItemBytes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -52,7 +53,7 @@ public final class BlockContents {
         for (int index = 0; index < contents.length; index++) {
             ItemStack item = contents[index];
             if (item != null && !item.isEmpty()) {
-                slots.add(new Payload.Slot(index, item.serializeAsBytes()));
+                slots.add(new Payload.Slot(index, ItemBytes.serialize(item)));
             }
         }
         return slots.isEmpty() ? Optional.empty() : Optional.of(new Payload.Inventory(slots));

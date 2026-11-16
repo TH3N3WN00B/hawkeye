@@ -1,6 +1,7 @@
 package gg.moonrise.hawkeye.core.service.rollback;
 
 import gg.moonrise.hawkeye.entity.payload.Payload;
+import gg.moonrise.hawkeye.util.ItemBytes;
 import io.papermc.paper.block.TileStateInventoryHolder;
 import java.util.ArrayList;
 import java.util.List;
@@ -105,7 +106,7 @@ public final class BlockInventories {
 
     private static @NotNull ItemStack item(@NotNull Block block, @NotNull Payload.Slot slot) {
         try {
-            return ItemStack.deserializeBytes(slot.item());
+            return ItemBytes.deserialize(slot.item());
         } catch (RuntimeException e) {
             log.debug("Could not restore slot {} at {}", slot.index(), block.getLocation(), e);
             return ItemStack.empty();

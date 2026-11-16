@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import gg.moonrise.hawkeye.entity.payload.Payload;
 import gg.moonrise.hawkeye.support.TestPlugins;
+import gg.moonrise.hawkeye.util.ItemBytes;
 import io.papermc.paper.block.TileStateInventoryHolder;
 import java.util.List;
 import org.bukkit.Material;
@@ -84,6 +85,6 @@ public class BlockInventoriesTest {
     }
 
     private static Payload.Slot slot(int index, Material material) {
-        return new Payload.Slot(index, new ItemStack(material).serializeAsBytes());
+        return new Payload.Slot(index, ItemBytes.serialize(new ItemStack(material)));
     }
 }

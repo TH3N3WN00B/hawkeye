@@ -12,6 +12,7 @@ import gg.moonrise.hawkeye.entity.event.PendingEvent;
 import gg.moonrise.hawkeye.entity.payload.Payload;
 import gg.moonrise.hawkeye.util.BlockPositions;
 import gg.moonrise.hawkeye.util.EntityBytes;
+import gg.moonrise.hawkeye.util.ItemBytes;
 import gg.moonrise.hawkeye.util.codec.PayloadCodec;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.util.concurrent.atomic.LongAdder;
@@ -30,7 +31,7 @@ import org.jetbrains.annotations.Nullable;
 
 /**
  * The one entry point listeners record through. Every method runs on the event's own thread, does
- * only cheap in-memory work (state strings, Paper's item and entity bytes) and hands the event to the
+ * only cheap in-memory work (state strings, item and entity NBT) and hands the event to the
  * lock-free queue; nothing here touches the database or blocks. The {@code enabled} checks let a
  * listener skip building an event that would be thrown away.
  */
@@ -166,17 +167,21 @@ public final class EventRecorder {
 
     /**
      * Records a non-living entity destroyed or taken (painting, item frame, vehicle, a mob caught in a
-     * bucket), serialized so a rollback can put it back.
+     * bucket). With {@code rollback.restore-entities} on, the entity is serialized so a rollback can put
+     * it back.
      *
      * @param actor  who destroyed or took it
      * @param entity the entity, still in the world
      */
     public void entityRemove(@NotNull Actor actor, @NotNull Entity entity) {
         Payload payload = null;
-        try {
-            payload = new Payload.Entity(EntityBytes.serialize(entity));
-        } catch (RuntimeException e) {
-            log.debug("Could not serialize a removed {}; it is logged without rollback data", entity.getType(), e);
+        if (configProvider.get().rollback().restoreEntities()) {
+            try {
+                payload = new Payload.Entity(EntityBytes.serialize(entity));
+            } catch (RuntimeException e) {
+                log.debug("Could not serialize a removed {}; it is logged without rollback data", entity.getType(),
+                        e);
+            }
         }
         entity(Action.ENTITY_REMOVE, actor, entity, payload);
     }
@@ -274,7 +279,7 @@ public final class EventRecorder {
         if (item.isEmpty() || amount <= 0) {
             return;
         }
-        Payload payload = item.hasItemMeta() ? new Payload.Item(item.asOne().serializeAsBytes()) : null;
+        Payload payload = item.hasItemMeta() ? new Payload.Item(ItemBytes.serialize(item.asOne())) : null;
         record(action, actor, location.getWorld(), location.getBlockX(), location.getBlockY(), location.getBlockZ(),
                 item.getType().getKey().toString(), null, amount, payload);
     }

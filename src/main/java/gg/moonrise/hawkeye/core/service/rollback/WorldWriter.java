@@ -1,6 +1,7 @@
 package gg.moonrise.hawkeye.core.service.rollback;
 
 import gg.moonrise.hawkeye.util.EntityBytes;
+import gg.moonrise.hawkeye.util.ItemBytes;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,15 +15,19 @@ import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.block.Block;
 import org.bukkit.block.Sign;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.sign.Side;
 import org.bukkit.block.sign.SignSide;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -164,7 +169,7 @@ public final class WorldWriter {
     private static @NotNull Optional<ItemStack> item(@NotNull PlannedChange.AdjustItems adjust) {
         try {
             if (adjust.item().length > 0) {
-                return Optional.of(ItemStack.deserializeBytes(adjust.item()));
+                return Optional.of(ItemBytes.deserialize(adjust.item()));
             }
             Material material = Material.matchMaterial(adjust.material());
             return material == null || !material.isItem() ? Optional.empty() : Optional.of(new ItemStack(material));
@@ -176,7 +181,25 @@ public final class WorldWriter {
 
     private static boolean spawn(@NotNull World world, @NotNull PlannedChange change, byte @NotNull [] bytes) {
         Entity entity = EntityBytes.deserialize(bytes, world);
-        return entity.spawnAt(RespawnLocations.of(entity, world, change.x(), change.y(), change.z()));
+        if (!entity.spawnAt(RespawnLocations.of(entity, world, change.x(), change.y(), change.z()))) {
+            return false;
+        }
+        settle(entity);
+        return true;
+    }
+
+    /**
+     * Puts a respawned entity at rest: snapshots from earlier builds still carry the moment of the kill
+     * (burning, falling, moving, zero health).
+     */
+    private static void settle(@NotNull Entity entity) {
+        entity.setVelocity(new Vector());
+        entity.setFallDistance(0);
+        entity.setFireTicks(0);
+        if (entity instanceof LivingEntity living && living.getHealth() <= 0) {
+            AttributeInstance maxHealth = living.getAttribute(Attribute.MAX_HEALTH);
+            living.setHealth(maxHealth == null ? 1 : maxHealth.getValue());
+        }
     }
 
     /** Removes an entity owned by the current region; players are never removed. */
