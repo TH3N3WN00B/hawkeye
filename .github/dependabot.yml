@@ -1,0 +1,34 @@
+version: 2
+
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      gradle:
+        patterns:
+          - '*'
+    # The engine's PaperPluginLoader resolves these at server start; the catalog must match the
+    # versions it resolves, so they move only together with the engine (docs/knowledge "Build facts").
+    ignore:
+      - dependency-name: gg.moonrise.moss:moss-paper
+      - dependency-name: org.springframework:spring-context
+      - dependency-name: jakarta.annotation:jakarta.annotation-api
+      - dependency-name: org.incendo:cloud-paper
+      - dependency-name: org.incendo:cloud-annotations
+      - dependency-name: de.exlll:configlib-yaml
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - '*'
+    # gradle/actions v6 moved caching into a closed-source component under Gradle's Terms of Use.
+    # Stay on v5 until the owner decides to accept those terms (docs/knowledge "Build facts").
+    ignore:
+      - dependency-name: gradle/actions
+        versions: ['>= 6']

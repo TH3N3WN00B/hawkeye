@@ -1,0 +1,6 @@
+# Initialized from moonrise-studios/plugin-template; the template-init workflow is a no-op while this
+# file exists.
+name=Hawkeye
+package=gg.moonrise.hawkeye
+id=hawkeye
+group=gg.moonrise.hawkeye

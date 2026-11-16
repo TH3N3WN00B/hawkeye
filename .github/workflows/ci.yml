@@ -1,0 +1,150 @@
+name: CI
+
+# Builds and tests every push and pull request and uploads the plugin jar. For a published release it
+# attaches the jar to the release and, when the NEXUS_USERNAME and NEXUS_PASSWORD repository secrets
+# exist, publishes it to the Moonrise Nexus. This file names no plugin, so a repository created from
+# the template keeps it unchanged.
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      credentials: ${{ steps.credentials.outputs.available }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # gradle.properties `version`, or the release tag without its leading v.
+      - name: Compute version
+        id: version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version=//p' gradle.properties | tr -d '[:space:]')"
+          if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
+            if ! [[ "${RELEASE_TAG}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error title=Invalid release tag::'${RELEASE_TAG}' does not match v?MAJOR.MINOR.PATCH(-qualifier)?"
+              exit 1
+            fi
+            version="${RELEASE_TAG#v}"
+          fi
+          echo "Version ${version}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check Nexus credentials
+        id: credentials
+        shell: bash
+        env:
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        run: |
+          if [ -n "${NEXUS_USERNAME}" ] && [ -n "${NEXUS_PASSWORD}" ]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+            if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
+              echo "::notice title=Nexus publishing skipped::NEXUS_USERNAME and NEXUS_PASSWORD are not set."
+            fi
+          fi
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      # Compile, tests (MockBukkit, ArchUnit) and verifyPluginJar.
+      - name: Build
+        run: ./gradlew build -Pversion="${{ steps.version.outputs.version }}"
+
+      - name: Upload plugin jar
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-jar
+          path: build/libs/*.jar
+          if-no-files-found: error
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: build/reports/tests/
+
+  publish:
+    name: Publish to Nexus
+    needs: build
+    if: github.event_name == 'release' && needs.build.outputs.credentials == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Publish
+        env:
+          ORG_GRADLE_PROJECT_nexusUsername: ${{ secrets.NEXUS_USERNAME }}
+          ORG_GRADLE_PROJECT_nexusPassword: ${{ secrets.NEXUS_PASSWORD }}
+        run: ./gradlew publishAllPublicationsToNexusRepository -Pversion="${{ needs.build.outputs.version }}"
+
+  release:
+    name: Attach the plugin jar to the release
+    needs: [build, publish]
+    # Runs after a successful publication, or without one while the Nexus secrets are missing.
+    if: >-
+      always() && github.event_name == 'release' && needs.build.result == 'success' &&
+      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download plugin jar
+        uses: actions/download-artifact@v8
+        with:
+          name: plugin-jar
+          path: dist
+
+      - name: Upload release asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=()
+          for jar in dist/*.jar; do
+            name="$(basename "${jar}" .jar)"
+            mv "${jar}" "dist/${name}-${VERSION}.jar"
+            assets+=("dist/${name}-${VERSION}.jar")
+          done
+          gh release upload "${TAG}" "${assets[@]}" --clobber --repo "${GITHUB_REPOSITORY}"

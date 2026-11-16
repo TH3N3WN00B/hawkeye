@@ -1,0 +1,13 @@
+name: Hawkeye
+version: '${version}'
+main: gg.moonrise.hawkeye.HawkeyePlugin
+loader: gg.moonrise.hawkeye.loader.HawkeyePluginLoader
+api-version: '26.3'
+load: POSTWORLD
+folia-supported: true
+description: Paper plugin built on the Moonrise plugin-engine
+authors: [Moonrise Studios]
+permissions:
+  hawkeye.admin:
+    description: /hawkeye, /hawkeye reload and /hawkeye greet
+    default: op

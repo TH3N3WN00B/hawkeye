@@ -1,0 +1,3 @@
+# Name resolution of the test JVM (build.gradle.kts, tasks.test): localhost only.
+127.0.0.1 localhost
+::1 localhost
