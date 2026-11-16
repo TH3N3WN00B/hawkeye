@@ -47,4 +47,45 @@ public class EventIdsTest {
         assertThrows(IllegalArgumentException.class, () -> EventIds.compose(T, 1024, 0));
         assertThrows(IllegalArgumentException.class, () -> EventIds.fromStamp(0, -1));
     }
+
+    @Test
+    public void aSlotStampRoundTripsThroughSlotAndRank() {
+        long slot = (T - EventIds.EPOCH_MILLIS) / EventIds.SLOT_MILLIS;
+        for (int rank : new int[] {0, 1, 4095, 4096, 4097, 1_000_000, EventIds.MAX_RANK}) {
+            long id = EventIds.fromStamp(EventIds.slotStamp(slot, rank), 7);
+            assertEquals(slot, EventIds.slot(id));
+            assertEquals(rank, EventIds.rank(id));
+            assertEquals(7, EventIds.node(id));
+            assertEquals(id, EventIds.fromSlot(slot, 7, rank));
+            assertEquals(slot, EventIds.stampSlot(EventIds.slotStamp(slot, rank)));
+        }
+    }
+
+    @Test
+    public void ranksOrderIdsInsideASlotAndNeverLeaveIt() {
+        long slot = 1_000_000;
+        long first = EventIds.fromSlot(slot, 1, 0);
+        long last = EventIds.fromSlot(slot, 1, EventIds.MAX_RANK);
+        assertTrue(first < EventIds.fromSlot(slot, 1, 1));
+        assertTrue(EventIds.fromSlot(slot, 1, 4095) < EventIds.fromSlot(slot, 1, 4096));
+        assertTrue(last < EventIds.fromSlot(slot + 1, 1, 0));
+        assertEquals(EventIds.EPOCH_MILLIS + slot * EventIds.SLOT_MILLIS, EventIds.epochMillis(first));
+        assertEquals(EventIds.EPOCH_MILLIS + slot * EventIds.SLOT_MILLIS + 999, EventIds.epochMillis(last));
+    }
+
+    @Test
+    public void anIdOffTheGridStillHasASlotAndARank() {
+        long id = EventIds.compose(T, 3, 17);
+        long millis = T - EventIds.EPOCH_MILLIS;
+        assertEquals(millis / 1000, EventIds.slot(id));
+        assertEquals((int) ((millis % 1000) << EventIds.SEQUENCE_BITS | 17), EventIds.rank(id));
+        assertEquals(id, EventIds.fromSlot(EventIds.slot(id), 3, EventIds.rank(id)));
+    }
+
+    @Test
+    public void slotStampsRejectWhatDoesNotFit() {
+        assertThrows(IllegalArgumentException.class, () -> EventIds.slotStamp(1, EventIds.MAX_RANK + 1));
+        assertThrows(IllegalArgumentException.class, () -> EventIds.slotStamp(1, -1));
+        assertThrows(IllegalArgumentException.class, () -> EventIds.slotStamp(-1, 0));
+    }
 }
