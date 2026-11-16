@@ -33,6 +33,17 @@ update them in the same change when you learn something durable or an entry stop
 - Storage footprint on SQLite (`StorageFootprintTest`, 60,000 random block events): hot rows about
   73 bytes per event, archived about 12, CoreProtect's relational `co_block` layout about 80. Random
   positions and types are the worst case for the archive; real builds compress better.
+- Full-scale footprint (`StorageBenchmark`, opt-in: `HAWKEYE_BENCH_EVENTS`, `HAWKEYE_BENCH_DIR` on disk,
+  optional `HAWKEYE_BENCH_DAYS`; set `SQLITE_TMPDIR` off `/tmp`). Verified 2026-11-16 at 100M events of
+  every action over 30 days, archived as configured: the SQLite file is 4.30 GB (43.0 B/event, 1.5 MB
+  free pages, the file grows linearly), 4.04 GB with everything archived and compacted, about 10.8 GB
+  if never archived (108 B/event). Killed mobs' entity bytes are 1.74 GB of it (3% of events, 72% of
+  payload bytes); without payloads an event costs about 19 B. The run takes 103 minutes on this host
+  (insert about 24k/s, archive about 48k/s).
+- Paper 26.3's `UnsafeValues#serializeEntity` rejects an entity that is no longer valid unless it is
+  passed `EntitySerializationFlag.FORCE`, and a mob in its `EntityDeathEvent` is no longer valid. Verified
+  with `/kill` on a real server: zombie, villager, cow and skeleton kills were stored without entity
+  bytes, an armour stand with them. `EntityBytes.serialize` does not pass `FORCE` yet.
 - This Linux build host has no JDK 25 and no Docker. `settings.gradle.kts` applies the foojay toolchain
   resolver, which downloaded Temurin 25 into `~/.gradle/jdks`. SQLite runs for real in every storage
   test.
