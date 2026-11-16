@@ -8,6 +8,7 @@ import org.jetbrains.annotations.NotNull;
 public final class ByteReader {
 
     private final byte[] bytes;
+    private final int end;
     private int offset;
 
     /**
@@ -16,7 +17,33 @@ public final class ByteReader {
      * @param bytes the encoded bytes
      */
     public ByteReader(byte @NotNull [] bytes) {
+        this(bytes, 0, bytes.length);
+    }
+
+    /**
+     * A reader over a slice of an array.
+     *
+     * @param bytes  the array
+     * @param offset where the slice starts
+     * @param length how many bytes it holds
+     * @throws CodecException when the slice is outside the array
+     */
+    public ByteReader(byte @NotNull [] bytes, int offset, int length) {
+        if (offset < 0 || length < 0 || offset > bytes.length - length) {
+            throw new CodecException("slice " + offset + "+" + length + " outside " + bytes.length + " byte(s)");
+        }
         this.bytes = bytes;
+        this.offset = offset;
+        this.end = offset + length;
+    }
+
+    /**
+     * How many bytes remain.
+     *
+     * @return the remaining byte count
+     */
+    public int remaining() {
+        return end - offset;
     }
 
     /**
@@ -25,7 +52,7 @@ public final class ByteReader {
      * @return {@code true} when the end has not been reached
      */
     public boolean hasRemaining() {
-        return offset < bytes.length;
+        return offset < end;
     }
 
     /**
@@ -133,15 +160,15 @@ public final class ByteReader {
      * @return the bytes
      */
     public byte @NotNull [] readRemaining() {
-        byte[] out = Arrays.copyOfRange(bytes, offset, bytes.length);
-        offset = bytes.length;
+        byte[] out = Arrays.copyOfRange(bytes, offset, end);
+        offset = end;
         return out;
     }
 
     private void require(int count) {
-        if (count < 0 || offset + count > bytes.length) {
+        if (count < 0 || count > end - offset) {
             throw new CodecException("truncated input: need " + count + " byte(s) at " + offset + " of "
-                    + bytes.length);
+                    + end);
         }
     }
 }
