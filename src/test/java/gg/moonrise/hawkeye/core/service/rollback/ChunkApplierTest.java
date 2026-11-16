@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.Jukebox;
 import org.bukkit.entity.Zombie;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -104,6 +105,24 @@ public class ChunkApplierTest {
 
         assertEquals(new ChunkApplier.Result(0, 0, 1, 1), result.get(1, TimeUnit.SECONDS));
         assertFalse(zombie.isValid());
+    }
+
+    @Test
+    public void itemsInBlocksThatAreNotContainersCountAsItemChanges() throws Exception {
+        world.getBlockAt(2, 64, 0).setType(Material.CHISELED_BOOKSHELF);
+        world.getBlockAt(3, 64, 0).setType(Material.JUKEBOX);
+        RollbackPlan plan = plan(new ChunkPlan("world", 0, 0, List.of(
+                new PlannedChange.AdjustItems(BlockPositions.pack(2, 64, 0), "minecraft:book", new byte[0], 1),
+                new PlannedChange.AdjustItems(BlockPositions.pack(3, 64, 0), "minecraft:music_disc_cat", new byte[0],
+                        1),
+                new PlannedChange.AdjustItems(BlockPositions.pack(4, 64, 0), "minecraft:book", new byte[0], 1))));
+
+        CompletableFuture<ChunkApplier.Result> result = applier.apply(plan, 10, 1, (done, total) -> {
+        });
+        server.getScheduler().performOneTick();
+
+        assertEquals(new ChunkApplier.Result(0, 2, 0, 1), result.get(1, TimeUnit.SECONDS));
+        assertEquals(Material.MUSIC_DISC_CAT, ((Jukebox) world.getBlockAt(3, 64, 0).getState()).getRecord().getType());
     }
 
     @Test

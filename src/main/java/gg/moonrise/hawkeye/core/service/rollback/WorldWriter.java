@@ -1,9 +1,7 @@
 package gg.moonrise.hawkeye.core.service.rollback;
 
-import gg.moonrise.hawkeye.entity.payload.Payload;
 import gg.moonrise.hawkeye.util.EntityBytes;
 import gg.moonrise.moss.spring.SpringComponent;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,15 +15,12 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
-import org.bukkit.block.Chest;
-import org.bukkit.block.Container;
 import org.bukkit.block.Sign;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.sign.Side;
 import org.bukkit.block.sign.SignSide;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
@@ -33,8 +28,9 @@ import org.jetbrains.annotations.NotNull;
 /**
  * Makes one planned change in the world. Call only on the thread that owns the change's chunk.
  * Blocks are set without physics, so nothing drops, flows or updates its neighbours mid-rollback.
- * Container items at a block without a container go to the item frames and armour stands there
- * ({@link HeldItems}).
+ * Container items go into the block's inventory when it holds items ({@link BlockInventories}: containers,
+ * lecterns, chiseled bookshelves, decorated pots, shelves, jukeboxes), else to the item frames and
+ * armour stands there ({@link HeldItems}).
  */
 @Slf4j
 @SpringComponent
@@ -49,7 +45,7 @@ public final class WorldWriter {
     public enum Effect {
         /** A block state or sign text was written. */
         BLOCK,
-        /** Items were put into or taken out of a container, item frame or armour stand. */
+        /** Items were put into or taken out of a block's inventory, an item frame or an armour stand. */
         ITEMS,
         /** An entity was spawned or removed. */
         ENTITY,
@@ -119,7 +115,7 @@ public final class WorldWriter {
             writeSign(block, set.sign());
         }
         if (!set.contents().isEmpty()) {
-            fill(block, set.contents());
+            BlockInventories.fill(block, set.contents());
         }
         return Effect.BLOCK;
     }
@@ -152,25 +148,6 @@ public final class WorldWriter {
         }
     }
 
-    private static void fill(@NotNull Block block, @NotNull List<Payload.Slot> contents) {
-        if (!(block.getState() instanceof Container container)) {
-            return;
-        }
-        // One half of a double chest holds its own 27 slots, which is what was recorded.
-        Inventory inventory = container instanceof Chest chest ? chest.getBlockInventory() : container.getInventory();
-        inventory.clear();
-        for (Payload.Slot slot : contents) {
-            if (slot.index() < 0 || slot.index() >= inventory.getSize()) {
-                continue;
-            }
-            try {
-                inventory.setItem(slot.index(), ItemStack.deserializeBytes(slot.item()));
-            } catch (RuntimeException e) {
-                log.debug("Could not restore slot {} at {}", slot.index(), block.getLocation(), e);
-            }
-        }
-    }
-
     private static boolean adjustItems(@NotNull Block block, @NotNull PlannedChange.AdjustItems adjust) {
         if (adjust.delta() == 0) {
             return false;
@@ -179,20 +156,9 @@ public final class WorldWriter {
         if (template.isEmpty()) {
             return false;
         }
-        if (!(block.getState() instanceof Container container)) {
-            return HeldItems.adjust(block, template.get(), adjust.delta()) > 0;
-        }
-        int requested = Math.abs(adjust.delta());
-        int perStack = Math.max(1, template.get().getMaxStackSize());
-        List<ItemStack> stacks = new ArrayList<>();
-        for (int left = requested; left > 0; left -= perStack) {
-            stacks.add(template.get().asQuantity(Math.min(perStack, left)));
-        }
-        Inventory inventory = container.getInventory();
-        ItemStack[] moved = stacks.toArray(ItemStack[]::new);
-        Map<Integer, ItemStack> missed = adjust.delta() > 0 ? inventory.addItem(moved) : inventory.removeItem(moved);
-        int missing = missed.values().stream().mapToInt(ItemStack::getAmount).sum();
-        return missing < requested;
+        int moved = BlockInventories.adjust(block, template.get(), adjust.delta())
+                .orElseGet(() -> HeldItems.adjust(block, template.get(), adjust.delta()));
+        return moved > 0;
     }
 
     private static @NotNull Optional<ItemStack> item(@NotNull PlannedChange.AdjustItems adjust) {

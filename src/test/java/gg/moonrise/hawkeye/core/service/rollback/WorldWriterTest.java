@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import gg.moonrise.hawkeye.entity.payload.SignSides;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import gg.moonrise.hawkeye.util.BlockPositions;
+import io.papermc.paper.block.TileStateInventoryHolder;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -17,6 +18,7 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.Container;
+import org.bukkit.block.Jukebox;
 import org.bukkit.block.Sign;
 import org.bukkit.block.sign.Side;
 import org.bukkit.entity.ArmorStand;
@@ -113,6 +115,42 @@ public class WorldWriterTest {
     }
 
     @Test
+    public void blocksThatHoldItemsWithoutBeingContainersTakeThemBackAndGiveThemUp() {
+        Block bookshelf = block(11, Material.CHISELED_BOOKSHELF);
+        Block shelf = block(12, Material.OAK_SHELF);
+        Block lectern = block(13, Material.LECTERN);
+        Block pot = block(14, Material.DECORATED_POT);
+
+        assertEquals(WorldWriter.Effect.ITEMS, adjust(11, 64, 0, "minecraft:enchanted_book", 2));
+        assertEquals(WorldWriter.Effect.ITEMS, adjust(12, 64, 0, "minecraft:diamond", 3));
+        assertEquals(WorldWriter.Effect.ITEMS, adjust(13, 64, 0, "minecraft:writable_book", 1));
+        assertEquals(WorldWriter.Effect.ITEMS, adjust(14, 64, 0, "minecraft:emerald", 5));
+        assertEquals(2, held(bookshelf, Material.ENCHANTED_BOOK));
+        assertEquals(3, held(shelf, Material.DIAMOND));
+        assertEquals(1, held(lectern, Material.WRITABLE_BOOK));
+        assertEquals(5, held(pot, Material.EMERALD));
+
+        assertEquals(WorldWriter.Effect.ITEMS, adjust(11, 64, 0, "minecraft:enchanted_book", -1));
+        assertEquals(WorldWriter.Effect.ITEMS, adjust(12, 64, 0, "minecraft:diamond", -3));
+        assertEquals(1, held(bookshelf, Material.ENCHANTED_BOOK));
+        assertEquals(0, held(shelf, Material.DIAMOND));
+        assertEquals(WorldWriter.Effect.NONE, adjust(12, 64, 0, "minecraft:diamond", -1));
+    }
+
+    @Test
+    public void aJukeboxGetsItsRecordBackAndGivesUpTheSameOne() {
+        Block block = block(15, Material.JUKEBOX);
+
+        assertEquals(WorldWriter.Effect.ITEMS, adjust(15, 64, 0, "minecraft:music_disc_cat", 1));
+        assertEquals(Material.MUSIC_DISC_CAT, ((Jukebox) block.getState()).getRecord().getType());
+        assertEquals(WorldWriter.Effect.NONE, adjust(15, 64, 0, "minecraft:music_disc_13", 1));
+        assertEquals(WorldWriter.Effect.NONE, adjust(15, 64, 0, "minecraft:music_disc_13", -1));
+
+        assertEquals(WorldWriter.Effect.ITEMS, adjust(15, 64, 0, "minecraft:music_disc_cat", -1));
+        assertTrue(((Jukebox) block.getState()).getRecord().isEmpty());
+    }
+
+    @Test
     public void aSpawnedEntityIsRemovedByItsUuid() {
         Zombie zombie = world.spawn(new Location(world, 30.5, 64, 30.5), Zombie.class);
 
@@ -193,6 +231,22 @@ public class WorldWriterTest {
 
         assertEquals(1, count(block, Material.DIAMOND));
         assertTrue(frame.getItem().isEmpty());
+    }
+
+    private Block block(int x, Material material) {
+        Block block = world.getBlockAt(x, 64, 0);
+        block.setType(material);
+        return block;
+    }
+
+    private static int held(Block block, Material material) {
+        int total = 0;
+        for (ItemStack stack : ((TileStateInventoryHolder) block.getState()).getInventory().getContents()) {
+            if (stack != null && stack.getType() == material) {
+                total += stack.getAmount();
+            }
+        }
+        return total;
     }
 
     private WorldWriter.Effect adjust(int x, int y, int z, String material, int delta) {
