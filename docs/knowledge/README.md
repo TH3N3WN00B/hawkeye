@@ -49,51 +49,59 @@ update them in the same change when you learn something durable or an entry stop
   host at load 6, before the place index: a player's newest 10 events 18 ms, radius 5 at a busy block
   133 ms, the last hour 106 ms, a block with little history 270-320 ms, a block never touched in the
   busiest chunk 3.9 s (14 s cold: one unit per segment).
-- Place index on that database (verified 2026-11-17; `lookupsOnAKeptDatabase` catches it up first and
-  reports `placeTables` and `placeProfile`): catch-up 607-627 s for 5,337 segments; 29,353 region rows
-  and 14,699 busy-chunk rows, 22.3 MB of bodies, 29.8 MB of pages (SQLite rowid tables; `WITHOUT ROWID`
-  took 37.9 MB, since an index b-tree row keeps only about 1 KB of a 4 KB page before overflowing).
-  Warm, load 6 / load 9.5: a block never touched in the busiest chunk 2.0 / 1.1 ms (was 3.9 s), newest
-  10 at the busy block 31 / 36 (was 686), little history 24-48 / 46-173 (was 270-320), radius 5 59 /
-  108 (was 133), player 10 / 7, last hour 100 / 98. A plan costs at most 1 ms; the rest is 1-2.5 ms per
-  segment read (unit plus shared frames, separate statements). Timings on this host vary up to 3x
-  between runs at load 6-10. The reference copy at `~/.cache/hawkeye-bench/replay-index` is migrated
-  to version 4 and indexed.
-- The two entries above and below were measured with schema version 4 (bucket-only busy rows, no actor
-  index). Version 5 renames every index table (`region_segment`, `block_segment`, `actor_segment`,
-  `segment_index`) and drops the version-4 ones, so a migrated copy is indexed again by the
-  archiver's catch-up. An index format change takes new table names on purpose: an older build then
-  fails on its first index statement instead of misreading rows, and the migration needs no "empty
-  and reset" step.
-- `ReplayBenchmark.lookupsOnAKeptDatabase` with schema version 5: `placeIndexCatchUp` catches places
-  and actors up in one pass, `placeTables` reports rows, body bytes and `dbstat` bytes of all four
-  index tables by table name, and `placeProfile` (plan time, candidate count, body reads per find)
-  also covers the three players of the "open the lookup of player ..." entries (the fewest, the
-  median and the most segments, counted from the headers).
+- Segment index on that database (schema version 5, verified 2026-11-17; `lookupsOnAKeptDatabase`
+  catches the index up first): catch-up 583 s for 5,337 segments. 29,353 region rows (5.0 MB of
+  bodies, 7.2 MB of pages), 14,699 busy-chunk rows (29.6 MB, 37.0 MB of pages; 2.0 KB on average, 128 KB
+  at most) and 7,573 actor rows (0.19 MB, 0.5 MB of pages): 44.7 MB of pages, 2.9% of the file, which
+  is 1,563,283,456 bytes with it (1.12 B/event; the reference is 3,397,459,968). SQLite rowid tables:
+  as `WITHOUT ROWID` tables the version-4 rows took 37.9 MB against 29.8, since an index b-tree row
+  keeps only about 1 KB of a 4 KB page before overflowing.
+- Lookups on that database, version 5 against version 4 (buckets only, no actor index), each build three
+  times in alternating runs at load 1.4-1.8, warm, median of 15 repeats per run, in ms as page of 10 /
+  open (page then the 16-segment count) / exact count. A block never touched in the busiest chunk
+  0.5 / 1.0 / 0.4 (unchanged; 3.9 s without any index). The busy block (6,101,539 events) 8.4 / 36 /
+  2,394 (was 14.7 / 44 / 2,602). A block with 328 events in a chunk of 488 segments 11.6 / 31 / 92 (was
+  22.2 / 40 / 179; 3 body reads a page instead of 20). A block with 195 events in the busiest chunk
+  18.3 / 38 / 557 (was 44.4 / 65 / 879; 9 body reads instead of 40; it is in 165 segments, the plan
+  names 784 where buckets named 1,196, so its exact count still reads bucket candidates for the 101
+  segments older than its newest 64). Radius 5 at the busy block (16,111,922 events) 18.6 / 64 / 5,860
+  (was 32.6 / 82 / 6,666). A player in 1 segment 3.3 / 4.6 / 1.0 (was 225 / 475 / 213: every header was
+  tested); a player in 2 segments, the median of the 7,452 players, 3.2 / 4.6 / 1.3 (was 147 / 350 /
+  201); a player in 3,324 segments (31,629,010 events) 5.9 / 29 / 7,313 (was 6.4 / 35 / 7,097). A plan
+  costs 0.2-0.4 ms for a place and under 0.1 ms for an actor. In the plugin the page and the count run
+  side by side on the query pool, so a reply waits for the slower of the two, not their sum.
+- Timing on this shared host: one run's median of three repeats moved by 2-3x between runs (a lookup of
+  a few milliseconds is drowned by one collector pause after the multi-second exact counts), which
+  once looked like a 40 ms regression that was not there. `ReplayBenchmark` now takes the median of 15
+  repeats for lookups under 300 ms; compare two builds by alternating them (a `git worktree` of the
+  old commit with the same benchmark code) and taking the median of three runs each.
+- Benchmark copies: `~/.cache/hawkeye-bench/replay-v5` is migrated to version 5 and indexed;
+  `~/.cache/hawkeye-bench/replay-index` stays at version 4 (indexed, buckets only) for comparisons with
+  commit `282c7fd`; `~/.cache/hawkeye-bench/replay-full` is the version-3 file without an index.
+- An index format change takes new table names on purpose (version 5 renamed all four and dropped the
+  version-4 ones): an older build then fails on its first index statement instead of misreading rows,
+  and the migration needs no "empty and reset" step. The archiver's catch-up indexes a migrated
+  archive again; lookups stay correct meanwhile.
 - `PlaceChunk.EXACT_SEGMENTS` (64) trades bytes for read precision: per busy-chunk position, the newest
-  64 segment ids are exact and older ones are buckets of 16. On the full replay database's rows
-  (study, zstd 9) buckets alone were 18.1 MB and named 3.34 times the segments holding a block; 64
-  exact ids are 29.8 MB and name 1.75 times; every id exact would be 50.9 MB (largest row 769 KB).
-  The raw size is about the same for every choice, so decoding costs the same.
-- Opening a lookup on that database (verified 2026-11-17, `lookupsOnAKeptDatabase`, "open ..." entries:
-  page of 10 then the count with `LookupPager.COUNT_SEGMENTS` = 16, one after the other; warm, host at
-  load 6). Open / exact count (cold exact count) in ms, with the exact total and what open showed:
-  busy block 81 / 3,155 (17,053), 6,101,539 events, open "92,844+"; a block touched once in a quiet
-  chunk 51 / 200, 328, "7+" (the pager now raises a lower bound to at least page 1's rows, "11+"); the
-  same in the busiest chunk 133 / 1,038, 195, "6+" (now "11+"); a block never touched there 1.4 / 0.6,
-  0, exact; radius 5 at the busy block 181 / 7,811 (13,943), 16,111,922, "10+" (now "11+"). The page
-  alone took 45, 33, 146, 1.2 and 81 ms in the same run, so the bounded count costs 20-100 ms
-  (16 segment reads); in the plugin the page and the count run side by side on the query pool, so a
-  reply waits for the slower of the two, not their sum. Before, `open` waited for the exact count.
-- With the covering index `(last_id, id, first_id)` on `segment` (a scattered set of candidates reads
-  every segment's id range from it in one statement instead of thousands of primary-key seeks), the
-  same run on 2026-11-17 at load 3, warm, page alone / open: a block never touched in the busiest chunk
-  1.7 / 1.6 ms, the busy block 34 / 76, a block with little history in a quiet chunk 40 / 38, the same
-  in the busiest chunk 101 / 108, radius 5 at the busy block 64 / 79 (181 before the index change), a
-  player's newest 10 15, the last hour 92. Exact counts, which only `#count` and the API ask for: the
-  busy block 2.5 s (6,101,539 events), radius 5 6.4 s (16,111,922), the block with 195 events in the
-  busiest chunk 0.87 s (it reads every segment of the position's 16-segment buckets). The copy at
-  `~/.cache/hawkeye-bench/replay-index` had its `segment_last` index rebuilt by hand to match.
+  64 segment ids are exact and older ones are buckets of 16. Measured on the full replay database's
+  27,082,679 busy-chunk positions (126,965,244 position-segment pairs; study with zstd 9, later
+  confirmed by the real index: 29.6 MB): buckets alone 18.1 MB and 3.34 times the segments holding a
+  block; newest 16 exact 27.0 MB and 1.94; 64 exact 29.8 MB and 1.75; 256 exact 34.7 MB and 1.57;
+  every id exact 50.9 MB (largest row 769 KB). The raw size is about the same for every choice, so
+  decoding costs the same. 21.0 million of the positions are in one segment and 99.5% in at most 64.
+  Coding positions by their rank among the chunk's own segments, or as bucket runs plus bit masks,
+  saved nothing over exact runs (46-49 MB for every id): the cost is the flicker of a few positions
+  touched in thousands of segments.
+- Reading 5,337 rows of three longs through sqlite-jdbc costs about 3 ms (every column is a JNI call),
+  as much as the rest of a short lookup: a read that names many segments therefore walks the covering
+  index in reading order page by page (`Archive.WalkedPages`, 64 ranges first) instead of reading every
+  segment's id range up front. The first statements of a lookup by an active player cost 0.5 ms either
+  way (state row 0.07, actor row 0.09, 64 ranges 0.16, 4 headers 0.2; the keyset page of 32 headers
+  0.5 plus 1.6 to parse them when they are not cached).
+- `ReplayBenchmark.lookupsOnAKeptDatabase` reports: `placeIndexCatchUp`, `placeTables` (rows, body bytes
+  and `dbstat` bytes of the four index tables), `lookups` (per "open ..." entry also `page`, `bounded
+  count` and `exact count` apart; three players chosen from the headers: the fewest, the median and the
+  most segments) and `placeProfile` (plan time, candidate count, body reads of one page).
 - Embedded servers for `ServerDatabaseIntegrationTest` live in `~/.cache/hawkeye-ref/dbs`: MariaDB
   (`mariadb/bin/mariadbd --no-defaults --datadir=$PWD/mdata --basedir=$PWD/mariadb --port=33069`,
   `HAWKEYE_TEST_MYSQL=mariadb://root:@127.0.0.1:33069/hawkeye`) and PostgreSQL (`pg/bin/pg_ctl -D pgdata`

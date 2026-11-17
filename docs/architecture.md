@@ -202,8 +202,10 @@ At full scale (`ReplayBenchmark`, 2026-11-16): every packed row of a real CorePr
 |---|---|---|---|
 | CoreProtect fork | 1,398,675,414 packed + 181,684 waiting | 3,397,459,968 | 2.43 |
 | Hawkeye | 1,398,675,414 | 1,517,871,104 | 1.09 |
+| Hawkeye with the segment index | 1,398,675,414 | 1,563,283,456 | 1.12 |
 
-Hawkeye's file is 5,337 segments (1.49 GB of bodies, 19 MB of headers) and 3 MB of dictionaries. By
+Hawkeye's file is 5,337 segments (1.49 GB of bodies, 19 MB of headers) and 3 MB of dictionaries; the
+segment index (below) adds 44.7 MB. By
 period, against the fork's packed segments alone (its entity tables, 0.58 GB, come on top): days 1-16
 0.93 against 1.76 bytes per event, days 17-27 0.87 against 1.74, days 28-60 (many kills) 1.39 against
 1.92. A kill's entity is a stand-in in the replay (the fork's own stored entity, about 15 bytes
@@ -212,7 +214,8 @@ A running server adds the hot table on top: the events not yet packed and, as fr
 high-water mark (about 22 MB at the default segment size).
 
 Lookups on that database are measured under "Segment index" below: with the index a block that was never
-touched inside a chunk active in every segment takes about 1-2 ms instead of 3.9 s.
+touched inside a chunk active in every segment takes under a millisecond instead of 3.9 s, and a
+player who is in one or two segments 3 ms instead of 150-225.
 
 ### Segment index
 
@@ -311,28 +314,41 @@ rows).
   16, then 32 ids), with the same early stop as the keyset path. Larger areas and filters the index
   does not narrow keep the keyset path over `last_id`/`first_id`.
 
-Measured with the version-4 place index (buckets only, no actor index) on the 1.40 billion event
-replay database (5,337 segments, 2026-11-17, SQLite, 4 KB pages):
-catching the whole database up takes 607-627 s (about 8.5 segments a second, positions only). The
-index is 29,353 region rows (5.0 MB of bodies, 7.2 MB of pages) and 14,699 busy-chunk rows (17.3 MB,
-22.6 MB of pages): 29.8 MB, 2.0% of the 1.52 GB file. As `WITHOUT ROWID` tables the same rows took
-37.9 MB, because such a row keeps only about a quarter page on its b-tree page and most busy rows
-(1.2 KB on average, 48 KB at most) spilled to an overflow page.
+Measured on the 1.40 billion event replay database (5,337 segments, 2026-11-17, SQLite, 4 KB pages):
+catching the whole database up takes 583 s (about 9 segments a second; only positions are decoded).
+The index is 29,353 region rows (5.0 MB of bodies, 7.2 MB of pages), 14,699 busy-chunk rows (29.6 MB,
+37.0 MB of pages; 2.0 KB on average, 128 KB at most) and 7,573 actor rows (0.19 MB, 0.5 MB of pages):
+44.7 MB, 2.9% of the 1.56 GB file. With buckets alone the busy-chunk rows were 17.3 MB of bodies and
+the index 29.8 MB; as `WITHOUT ROWID` tables those rows took 37.9 MB, because such a row keeps only
+about a quarter page on its b-tree page and most busy rows spill to an overflow page.
 
-| Lookup (whole history, warm "againMillis") | Before | After (load 6) | After (load 9.5) |
-|---|---|---|---|
-| A block never touched in the busiest chunk | 3,900 (14,000 cold) | 2.0 | 1.1 |
-| Newest 10 at a block busy a month before the end | 686 | 31 | 36 |
-| Newest 10 at a block with little history, quiet chunk | 270-320 | 24 | 46 |
-| The same in the busiest chunk | 270-320 | 48 | 54-173 |
-| Radius 5 around the busy block, newest 10 | 133 | 59 | 108-115 |
-| A player's newest 10 / everything in the last hour | 18 / 106 | 10 / 100 | 7 / 98 |
+Lookups over the whole history, warm, in ms: the page of 10, opening the lookup (the page, then the
+count of at most 16 segments, one after the other; the plugin runs them side by side) and the exact
+count that only `#count` and the API ask for. "Before" is the build without the index for places
+(page only, measured at a higher load) and without the actor index for players (measured in
+alternating runs with the indexed build).
 
-The plan itself (region and busy rows read and decoded) costs 0.4-1 ms for each of these. What is
-left is reading the segments it names: the busy block reads 2 segments (4 body reads), the
-little-history blocks 10-20 (241 and 1,196 candidate segments: those blocks were touched again later),
-radius 5 about 10 (3,606 candidates), at roughly 1-2.5 ms per segment on a loaded host (one statement
-for the unit, one for the shared frames when a row matched).
+| Lookup | Before | Page / open / exact count |
+|---|---|---|
+| A block never touched in the busiest chunk | 3,900 (14,000 cold) | 0.5 / 1.0 / 0.4 |
+| A block busy until a month before the end (6,101,539 events) | 686 | 8.4 / 36 / 2,394 |
+| A block with 328 events in a chunk active in 488 segments | 270-320 | 11.6 / 31 / 92 |
+| A block with 195 events in the busiest chunk (3,668 segments) | 270-320 | 18.3 / 38 / 557 |
+| Radius 5 around the busy block (16,111,922 events) | 133 | 18.6 / 64 / 5,860 |
+| A player in 1 segment (10 events) | 225 / 475 / 213 | 3.3 / 4.6 / 1.0 |
+| A player in 2 segments, the median player (50 events) | 147 / 350 / 201 | 3.2 / 4.6 / 1.3 |
+| A player in 3,324 segments (31,629,010 events) | 6.4 / 35 / 7,097 | 5.9 / 29 / 7,313 |
+
+Exact ids against buckets alone, measured the same way: the 195-event block 18 ms a page instead of
+44 and 557 ms an exact count instead of 879 (9 body reads a page instead of 40; the block is in 165
+segments, the plan names 784 where buckets named 1,196, since its 101 segments older than the newest
+64 are still buckets); the 328-event block 12 instead of 22 and 92 instead of 179 (3 body reads
+instead of 20); radius 5 19 instead of 33; the busy block 8 instead of 15.
+
+A plan costs 0.2-0.4 ms for a place and under 0.1 ms for an actor. What is left is reading the
+segments it names, about 1-2 ms each (one statement for the units, one for the shared frames when a
+row matched and they are not cached), and for a lookup by actor matching the actor column of every
+unit the header selects.
 
 ### Indexes and query shapes
 

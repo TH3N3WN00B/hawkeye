@@ -18,7 +18,9 @@ import gg.moonrise.hawkeye.core.repository.JobRepository;
 import gg.moonrise.hawkeye.core.repository.LeaseRepository;
 import gg.moonrise.hawkeye.core.repository.PlaceIndexRepository;
 import gg.moonrise.hawkeye.core.repository.SegmentIndexRepository;
+import gg.moonrise.hawkeye.core.repository.SegmentRange;
 import gg.moonrise.hawkeye.core.repository.SegmentRepository;
+import gg.moonrise.hawkeye.core.repository.SegmentRow;
 import gg.moonrise.hawkeye.core.repository.SegmentTotals;
 import gg.moonrise.hawkeye.core.repository.ServerRepository;
 import gg.moonrise.hawkeye.core.repository.segment.ByteRange;
@@ -155,6 +157,7 @@ public class ServerDatabaseIntegrationTest {
         assertEquals(before, pages(store, shard, box, scope));
         assertEquals(expectedLogs, store.count(shard, logs, scope));
         assertPlaceIndex(database, shard, store, archive, scope, events);
+        assertRangeWalk(database);
         assertEquals(before.size(), store.setRolledBack(shard, before, true));
         assertEquals(before.size(), store.count(shard, box.withRollbackState(RollbackState.ROLLED_BACK), scope));
 
@@ -232,6 +235,31 @@ public class ServerDatabaseIntegrationTest {
         Map<String, byte[]> caughtUp = placeRows(database);
         assertEquals(packed.keySet(), caughtUp.keySet());
         packed.forEach((key, body) -> assertArrayEquals(body, caughtUp.get(key), key));
+    }
+
+    /**
+     * The walk of id ranges a read naming many segments uses, on a server engine: page after page it
+     * gives the segments in the candidates' newest-first order.
+     */
+    private static void assertRangeWalk(Database database) throws SQLException {
+        SegmentRepository repository = new SegmentRepository();
+        EventFilter everything = EventFilter.everything(0, Long.MAX_VALUE);
+        List<Long> newestFirst = database.read(connection -> repository.candidates(connection, database.sql(),
+                everything, 0, null, 32, true)).stream().map(SegmentRow::id).toList();
+        List<Long> walked = new ArrayList<>();
+        SegmentRange after = null;
+        while (true) {
+            SegmentRange from = after;
+            List<SegmentRange> page = database.read(connection -> repository.newestRanges(connection, database.sql(),
+                    everything, 0, from, 3));
+            page.forEach(range -> walked.add(range.id()));
+            if (page.size() < 3) {
+                break;
+            }
+            after = page.getLast();
+        }
+        assertEquals(4, walked.size(), "two pages of three name the four segments");
+        assertEquals(newestFirst, walked);
     }
 
     /** Every segment index row's body, by table, key and newest segment. */
