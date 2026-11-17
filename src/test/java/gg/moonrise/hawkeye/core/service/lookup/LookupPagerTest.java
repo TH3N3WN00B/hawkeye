@@ -170,6 +170,17 @@ public class LookupPagerTest {
     }
 
     @Test
+    public void aLowerBoundIsNeverBelowWhatPageOneShows() {
+        List<StoredEvent> ten = shownEvents(10);
+        LookupOutcome.Page more = new LookupOutcome.Page(ten, true, List.of());
+        assertEquals(new LookupTotal.AtLeast(11), LookupPager.firstTotal(new LookupTotal.AtLeast(7), more));
+        assertEquals(new LookupTotal.AtLeast(500), LookupPager.firstTotal(new LookupTotal.AtLeast(500), more));
+        assertEquals(new LookupTotal.Exact(10), LookupPager.firstTotal(new LookupTotal.AtLeast(7),
+                new LookupOutcome.Page(ten, false, List.of())));
+        assertEquals(new LookupTotal.Unknown(), LookupPager.firstTotal(new LookupTotal.Unknown(), more));
+    }
+
+    @Test
     public void pagingWithoutALookupHasNoSession() throws Exception {
         assertInstanceOf(PageResult.NoSession.class, pager.page(console, 2).get(20, TimeUnit.SECONDS));
     }
@@ -194,6 +205,13 @@ public class LookupPagerTest {
         }
         assertEquals(count, packed);
         assertEquals(count / 5, archive.totals(home).segments());
+    }
+
+    private List<StoredEvent> shownEvents(int count) {
+        LookupFixtures.breaks(Actors.NATURE, world, count);
+        TestPlugins.flush();
+        return TestPlugins.bean(LookupService.class).page(EVERYWHERE, 0, count).thenApply(outcome ->
+                ((LookupOutcome.Page) outcome).events()).join();
     }
 
     private static PageView shown(CompletableFuture<PageResult> result) throws Exception {

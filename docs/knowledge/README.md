@@ -59,6 +59,16 @@ update them in the same change when you learn something durable or an entry stop
   segment read (unit plus shared frames, separate statements). Timings on this host vary up to 3x
   between runs at load 6-10. The reference copy at `~/.cache/hawkeye-bench/replay-index` is migrated
   to version 4 and indexed.
+- Opening a lookup on that database (verified 2026-11-17, `lookupsOnAKeptDatabase`, "open ..." entries:
+  page of 10 then the count with `LookupPager.COUNT_SEGMENTS` = 16, one after the other; warm, host at
+  load 6). Open / exact count (cold exact count) in ms, with the exact total and what open showed:
+  busy block 81 / 3,155 (17,053), 6,101,539 events, open "92,844+"; a block touched once in a quiet
+  chunk 51 / 200, 328, "7+" (the pager now raises a lower bound to at least page 1's rows, "11+"); the
+  same in the busiest chunk 133 / 1,038, 195, "6+" (now "11+"); a block never touched there 1.4 / 0.6,
+  0, exact; radius 5 at the busy block 181 / 7,811 (13,943), 16,111,922, "10+" (now "11+"). The page
+  alone took 45, 33, 146, 1.2 and 81 ms in the same run, so the bounded count costs 20-100 ms
+  (16 segment reads); in the plugin the page and the count run side by side on the query pool, so a
+  reply waits for the slower of the two, not their sum. Before, `open` waited for the exact count.
 - Embedded servers for `ServerDatabaseIntegrationTest` live in `~/.cache/hawkeye-ref/dbs`: MariaDB
   (`mariadb/bin/mariadbd --no-defaults --datadir=$PWD/mdata --basedir=$PWD/mariadb --port=33069`,
   `HAWKEYE_TEST_MYSQL=mariadb://root:@127.0.0.1:33069/hawkeye`) and PostgreSQL (`pg/bin/pg_ctl -D pgdata`

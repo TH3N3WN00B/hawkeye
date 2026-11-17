@@ -168,6 +168,10 @@ by `core.storage.Archive` under the `archive` lease (one server per shard).
   lower bounds (`lookup.at-least`, "160+"). A session with a lower bound has no page count:
   `/hawkeye page n` walks forward until the rows end (reporting "out of range" only there), and once
   they have ended the session's total is exact. `#count` and `HawkeyeApi#count` count every segment.
+  On the 1.40 billion event replay database (2026-11-17, warm, load 6) opening the busy block takes
+  81 ms against 3.2 s for its exact count (6.1 million events), radius 5 around it 181 ms against
+  7.8 s (16.1 million), a block with little history 51-133 ms against 0.2-1.0 s, a block never
+  touched 1.4 ms (exact either way); page 1 is never below what it shows.
 - **Flags.** A rollback of archived events maps their ids to ordinals (from the shared frames) and
   rewrites the segment's `segment_flag` row under a lock on the segment row; a body is never rewritten
   for a flag.

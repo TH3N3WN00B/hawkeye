@@ -11,10 +11,12 @@ import gg.moonrise.hawkeye.core.repository.EventFilter;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
 import gg.moonrise.hawkeye.core.repository.PlaceIndexRepository;
 import gg.moonrise.hawkeye.core.repository.place.IdRuns;
+import gg.moonrise.hawkeye.core.service.lookup.LookupPager;
 import gg.moonrise.hawkeye.core.sql.Database;
 import gg.moonrise.hawkeye.core.sql.SqliteHarness;
 import gg.moonrise.hawkeye.core.storage.Archive;
 import gg.moonrise.hawkeye.core.storage.Archives;
+import gg.moonrise.hawkeye.core.storage.EventCount;
 import gg.moonrise.hawkeye.core.storage.EventStore;
 import gg.moonrise.hawkeye.core.storage.CountingSegmentRepository;
 import gg.moonrise.hawkeye.core.storage.PlaceIndex;
@@ -424,6 +426,39 @@ public class ReplayBenchmark {
                 0, 10, true).size()));
         result.put("count the busy block's last day", timed(() -> (int) Math.min(Integer.MAX_VALUE,
                 store.count(harness.shard(), lastDayAtBlock, all))));
+        result.put("open the busy block", opening(store, harness, busyBlock));
+        result.put("open a block touched once in a quiet chunk", opening(store, harness,
+                LookupQuery.at(block(targets.quiet()))));
+        result.put("open a block touched once in the busiest chunk", opening(store, harness,
+                LookupQuery.at(block(targets.quietInBusyChunk()))));
+        result.put("open a block never touched in the busiest chunk", opening(store, harness,
+                LookupQuery.at(untouched)));
+        result.put("open radius 5 around the busy block", opening(store, harness, radius));
+        return result;
+    }
+
+    /**
+     * What opening a lookup costs ({@code LookupPager.open}): the first page of 10 and the count with
+     * the pager's segment budget, one after the other; and, for the record, the exact count.
+     */
+    private static @NotNull Map<String, Object> opening(@NotNull EventStore store, @NotNull SqliteHarness harness,
+            @NotNull LookupQuery query) throws SQLException {
+        ShardScope all = new ShardScope.All();
+        Map<String, Object> result = new LinkedHashMap<>();
+        EventCount[] bounded = new EventCount[1];
+        result.put("open", timed(() -> {
+            int rows = store.find(harness.shard(), query, all, 0, 10, true).size();
+            bounded[0] = store.count(harness.shard(), query, all, LookupPager.COUNT_SEGMENTS);
+            return rows;
+        }));
+        result.put("openTotal", bounded[0].total());
+        result.put("openExact", bounded[0].exact());
+        long[] exact = new long[1];
+        result.put("exact count", timed(() -> {
+            exact[0] = store.count(harness.shard(), query, all);
+            return (int) Math.min(Integer.MAX_VALUE, exact[0]);
+        }));
+        result.put("exactTotal", exact[0]);
         return result;
     }
 

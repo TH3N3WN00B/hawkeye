@@ -83,7 +83,7 @@ public final class LookupPager {
             @NotNull LookupOutcome page, @NotNull LookupOutcome count) {
         return switch (page) {
             case LookupOutcome.Page first -> {
-                LookupTotal total = ended(LookupTotal.of(count), first.hasMore(), first.events().size());
+                LookupTotal total = firstTotal(LookupTotal.of(count), first);
                 List<Long> starts = new ArrayList<>();
                 starts.add(first.events().isEmpty() ? 0 : first.events().getFirst().id() + 1);
                 if (first.hasMore()) {
@@ -149,6 +149,21 @@ public final class LookupPager {
         }
         int next = from + events.size() / pageSize;
         return walk(sender, updated, next, target);
+    }
+
+    /**
+     * The total shown with page 1: a lower bound is never below the rows page 1 found (the page and the
+     * count may have read different segments), and it is exact when page 1 is the last.
+     *
+     * @param counted what the bounded count gave
+     * @param first   page 1
+     * @return the total
+     */
+    static @NotNull LookupTotal firstTotal(@NotNull LookupTotal counted, @NotNull LookupOutcome.Page first) {
+        long seen = first.events().size() + (first.hasMore() ? 1 : 0);
+        LookupTotal total = counted instanceof LookupTotal.AtLeast atLeast && atLeast.events() < seen
+                ? new LookupTotal.AtLeast(seen) : counted;
+        return ended(total, first.hasMore(), first.events().size());
     }
 
     /**
