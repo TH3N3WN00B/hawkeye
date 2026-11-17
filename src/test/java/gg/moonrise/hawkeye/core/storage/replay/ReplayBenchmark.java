@@ -11,6 +11,7 @@ import gg.moonrise.hawkeye.core.repository.EventFilter;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
 import gg.moonrise.hawkeye.core.repository.PlaceIndexRepository;
 import gg.moonrise.hawkeye.core.repository.place.IdRuns;
+import gg.moonrise.hawkeye.core.repository.segment.SegmentHeader;
 import gg.moonrise.hawkeye.core.service.lookup.LookupPager;
 import gg.moonrise.hawkeye.core.sql.Database;
 import gg.moonrise.hawkeye.core.sql.SqliteHarness;
@@ -434,7 +435,50 @@ public class ReplayBenchmark {
         result.put("open a block never touched in the busiest chunk", opening(store, harness,
                 LookupQuery.at(untouched)));
         result.put("open radius 5 around the busy block", opening(store, harness, radius));
+        for (Map.Entry<String, Integer> rare : playersBySegments(harness.database()).entrySet()) {
+            LookupQuery query = new LookupQuery(new ServerScope.Local(), new Area.Everywhere(), TimeWindow.ALL,
+                    Set.of(rare.getKey()), Set.of(), Set.of(), Set.of(), Set.of(), RollbackState.ANY);
+            result.put("open the lookup of player " + rare.getKey() + " (in " + rare.getValue() + " segments)",
+                    opening(store, harness, query));
+        }
         return result;
+    }
+
+    /**
+     * Three players to time lookups without a place on: the ones in the fewest, the median and the most
+     * segments, by name with that number. Counted from every segment's header, so the choice does not
+     * depend on any index.
+     */
+    private static @NotNull Map<String, Integer> playersBySegments(@NotNull Database database) throws SQLException {
+        Map<Integer, Integer> segments = new HashMap<>();
+        Map<Integer, String> names = new HashMap<>();
+        database.read(connection -> {
+            try (Statement statement = connection.createStatement()) {
+                try (ResultSet rows = statement.executeQuery("SELECT header FROM " + database.tables().segment())) {
+                    while (rows.next()) {
+                        for (int actor : SegmentHeader.parse(rows.getBytes(1)).actorIds()) {
+                            segments.merge(actor, 1, Integer::sum);
+                        }
+                    }
+                }
+                try (ResultSet rows = statement.executeQuery("SELECT id, name FROM " + database.tables().actor()
+                        + " WHERE kind = " + ActorKind.PLAYER.code())) {
+                    while (rows.next()) {
+                        names.put(rows.getInt(1), rows.getString(2));
+                    }
+                }
+            }
+            return null;
+        });
+        List<Integer> players = segments.keySet().stream().filter(names::containsKey)
+                .sorted(Comparator.comparing((Integer id) -> segments.get(id)).thenComparing(names::get)).toList();
+        Map<String, Integer> chosen = new LinkedHashMap<>();
+        if (!players.isEmpty()) {
+            for (int id : List.of(players.getFirst(), players.get(players.size() / 2), players.getLast())) {
+                chosen.put(names.get(id), segments.get(id));
+            }
+        }
+        return chosen;
     }
 
     /**
