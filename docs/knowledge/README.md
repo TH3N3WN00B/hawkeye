@@ -69,6 +69,15 @@ update them in the same change when you learn something durable or an entry stop
   alone took 45, 33, 146, 1.2 and 81 ms in the same run, so the bounded count costs 20-100 ms
   (16 segment reads); in the plugin the page and the count run side by side on the query pool, so a
   reply waits for the slower of the two, not their sum. Before, `open` waited for the exact count.
+- With the covering index `(last_id, id, first_id)` on `segment` (a scattered set of candidates reads
+  every segment's id range from it in one statement instead of thousands of primary-key seeks), the
+  same run on 2026-11-17 at load 3, warm, page alone / open: a block never touched in the busiest chunk
+  1.7 / 1.6 ms, the busy block 34 / 76, a block with little history in a quiet chunk 40 / 38, the same
+  in the busiest chunk 101 / 108, radius 5 at the busy block 64 / 79 (181 before the index change), a
+  player's newest 10 15, the last hour 92. Exact counts, which only `#count` and the API ask for: the
+  busy block 2.5 s (6,101,539 events), radius 5 6.4 s (16,111,922), the block with 195 events in the
+  busiest chunk 0.87 s (it reads every segment of the position's 16-segment buckets). The copy at
+  `~/.cache/hawkeye-bench/replay-index` had its `segment_last` index rebuilt by hand to match.
 - Embedded servers for `ServerDatabaseIntegrationTest` live in `~/.cache/hawkeye-ref/dbs`: MariaDB
   (`mariadb/bin/mariadbd --no-defaults --datadir=$PWD/mdata --basedir=$PWD/mariadb --port=33069`,
   `HAWKEYE_TEST_MYSQL=mariadb://root:@127.0.0.1:33069/hawkeye`) and PostgreSQL (`pg/bin/pg_ctl -D pgdata`

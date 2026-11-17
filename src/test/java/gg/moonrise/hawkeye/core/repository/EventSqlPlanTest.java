@@ -1,5 +1,6 @@
 package gg.moonrise.hawkeye.core.repository;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import gg.moonrise.hawkeye.core.repository.place.IdRuns;
@@ -11,6 +12,7 @@ import java.nio.file.Path;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -117,6 +119,62 @@ public class EventSqlPlanTest {
         String rows = explain(SegmentRepository.rowsQuery(harness.database().sql(), List.of(4L, 2L, 9L)));
         assertTrue(rows.contains("USING INTEGER PRIMARY KEY (rowid=?)"), rows);
         assertTrue(!rows.contains("SCAN"), rows);
+    }
+
+    @Test
+    public void theIdRangesOfEverySegmentComeFromTheIndexAlone() throws SQLException {
+        String plan = explain(SegmentRepository.everyRangeQuery(harness.database().sql()));
+        assertTrue(plan.contains("USING COVERING INDEX hawkeye_segment_last (last_id>?)"), plan);
+    }
+
+    @Test
+    public void aScatteredSetOfSegmentsReadsTheSameRangesAsAFewRuns() throws SQLException {
+        Sql sql = harness.database().sql();
+        SegmentRepository repository = new SegmentRepository();
+        List<Long> stored = new ArrayList<>();
+        harness.database().transaction(connection -> {
+            for (int segment = 0; segment < 80; segment++) {
+                try (PreparedStatement statement = connection.prepareStatement("INSERT INTO " + sql.tables().segment()
+                        + " (first_id, last_id, events, header, body) VALUES (?, ?, 1, ?, ?)",
+                        Statement.RETURN_GENERATED_KEYS)) {
+                    statement.setLong(1, 1_000L * segment);
+                    statement.setLong(2, 1_000L * segment + 999);
+                    statement.setBytes(3, new byte[] {1});
+                    statement.setBytes(4, new byte[] {2});
+                    statement.executeUpdate();
+                    try (ResultSet keys = statement.getGeneratedKeys()) {
+                        keys.next();
+                        stored.add(keys.getLong(1));
+                    }
+                }
+            }
+            return null;
+        });
+        IdRuns scattered = new IdRuns();
+        IdRuns few = new IdRuns();
+        for (int index = 0; index < stored.size(); index++) {
+            if (index % 2 == 0) {
+                scattered.add(stored.get(index));
+            }
+            if (index < 6) {
+                few.add(stored.get(index));
+            }
+        }
+        scattered.add(stored.getLast() + 500);
+        assertTrue(scattered.runCount() > SegmentRepository.SCATTERED_RUNS);
+        assertTrue(few.runCount() <= SegmentRepository.SCATTERED_RUNS);
+
+        List<SegmentRange> wide = harness.database().read(connection -> repository.ranges(connection, sql, scattered));
+        List<SegmentRange> narrow = harness.database().read(connection -> repository.ranges(connection, sql, few));
+
+        assertEquals(40, wide.size(), "an id that is not stored is left out");
+        for (int index = 0; index < wide.size(); index++) {
+            assertEquals(new SegmentRange(stored.get(2 * index), 2_000L * index, 2_000L * index + 999), wide.get(index));
+        }
+        assertEquals(6, narrow.size());
+        for (int index = 0; index < narrow.size(); index++) {
+            assertEquals(new SegmentRange(stored.get(index), 1_000L * index, 1_000L * index + 999), narrow.get(index));
+        }
     }
 
     private static EventFilter filter(Set<Integer> worlds, List<EventFilter.WorldRange> ranges,

@@ -77,7 +77,7 @@ All tables carry the configured prefix (default `hawkeye_`).
 | `event` | `id BIGINT`, `world INT`, `pos BIGINT`, `actor INT`, `action SMALLINT`, `subject INT`, `secondary INT NULL`, `amount INT NULL`, `flags SMALLINT`, `data BLOB NULL` | PK `id`, index `(world, pos)`, index `(actor)` |
 | `job` | network jobs (see below) | PK `id`, index `(target, status)` |
 | `lease` | `name`, `holder`, `expires` | PK `name` |
-| `segment` | `id` (auto-increment, never reused), `first_id BIGINT`, `last_id BIGINT`, `events INT`, `header` (small blob), `body` (SQLite `BLOB`, MySQL `LONGBLOB`, PostgreSQL `BYTEA` stored `EXTERNAL`) | PK `id`, indexes `(last_id)` and `(first_id)` |
+| `segment` | `id` (auto-increment, never reused), `first_id BIGINT`, `last_id BIGINT`, `events INT`, `header` (small blob), `body` (SQLite `BLOB`, MySQL `LONGBLOB`, PostgreSQL `BYTEA` stored `EXTERNAL`) | PK `id`, indexes `(last_id, id, first_id)` (reading order, and covering for every segment's id range) and `(first_id)` |
 | `segment_flag` | `segment`, `ordinals` (blob: ascending ordinals of the rolled-back rows, delta varints) | PK `segment` |
 | `place_region` | `world INT`, `region BIGINT`, `newest BIGINT`, `body` (a compressed frame) | PK `(world, region)`, index `(newest)` |
 | `place_chunk` | `world INT`, `chunk BIGINT`, `newest BIGINT`, `body` (a compressed frame) | PK `(world, chunk)`, index `(newest)` |
@@ -261,7 +261,9 @@ segments that can hold the block. Schema version 4.
   covers only partly, their `place_chunk` rows (`IN` lists on the primary keys). A chunk without a
   busy row contributes all its segment ids, a busy one only its ids in the buckets of the positions
   the filter accepts (`EventFilter.inPositions`); no accepted position, no segment. Every segment
-  below `indexed_from` is added. The id ranges of the candidates are read by primary-key ranges, put
+  below `indexed_from` is added. The id ranges of the candidates are read by primary-key ranges (for a
+  set of more than 16 runs, a place active for a long time, from one scan of the covering index
+  instead: about 20 bytes a segment where the seeks were thousands), put
   in reading order and filtered by id range and cursor; headers and flags are then fetched page by page
   (4, 8, 16, then 32 ids), with the same early stop as the keyset path. Larger areas and filters
   without an area keep the keyset path over `last_id`/`first_id`.
@@ -297,7 +299,7 @@ for the unit, one for the shared frames when a row matched).
 | User | `actor IN (...)` on `(actor)` plus the id range |
 | Time only | primary key range |
 | Purge | primary key range delete, in batches; archive segments by `first_id`, deleted or rewritten whole |
-| Place index | `world = ? AND region IN (...)` / `world = ? AND chunk IN (...)` on the primary keys; trimming `newest < ?` on `(newest)`; candidates `id = ? OR id BETWEEN ? AND ? ...` and `id IN (...)` on the segment primary key |
+| Place index | `world = ? AND region IN (...)` / `world = ? AND chunk IN (...)` on the primary keys; trimming `newest < ?` on `(newest)`; candidates `id = ? OR id BETWEEN ? AND ? ...` on the segment primary key, or `last_id >= ?` answered by the covering index alone for a scattered set, then `id IN (...)` on the primary key |
 | Archive candidates | `last_id >= ? AND first_id <= ?` on `(last_id)` (newest first) or `(first_id)` (oldest first); a later page adds `last_id <= ?` so it seeks to where the previous one ended; the flag row by its primary key; the body by `substr` byte ranges |
 
 InnoDB and SQLite append the primary key to secondary indexes, so `(world, pos)` and `(actor)` are

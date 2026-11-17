@@ -184,7 +184,9 @@ public final class Schema {
                 "CREATE TABLE IF NOT EXISTS " + t.segment() + " (id INTEGER PRIMARY KEY AUTOINCREMENT, "
                         + "first_id INTEGER NOT NULL, last_id INTEGER NOT NULL, events INTEGER NOT NULL, "
                         + "header BLOB NOT NULL, body BLOB NOT NULL)",
-                "CREATE INDEX IF NOT EXISTS " + t.segment() + "_last ON " + t.segment() + " (last_id)",
+                // In reading order (last_id, id) and covering for the id range of every segment, which a
+                // read of a long-lived place filters.
+                "CREATE INDEX IF NOT EXISTS " + t.segment() + "_last ON " + t.segment() + " (last_id, id, first_id)",
                 "CREATE INDEX IF NOT EXISTS " + t.segment() + "_first ON " + t.segment() + " (first_id)",
                 "CREATE TABLE IF NOT EXISTS " + t.segmentFlag() + " (segment INTEGER PRIMARY KEY, "
                         + "ordinals BLOB NOT NULL)");
@@ -198,7 +200,7 @@ public final class Schema {
                 "CREATE TABLE IF NOT EXISTS " + t.segment() + " (id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, "
                         + "first_id BIGINT NOT NULL, last_id BIGINT NOT NULL, events INT NOT NULL, "
                         + "header MEDIUMBLOB NOT NULL, body LONGBLOB NOT NULL, "
-                        + "KEY " + t.segment() + "_last (last_id), "
+                        + "KEY " + t.segment() + "_last (last_id, id, first_id), "
                         + "KEY " + t.segment() + "_first (first_id))" + options,
                 "CREATE TABLE IF NOT EXISTS " + t.segmentFlag() + " (segment BIGINT NOT NULL PRIMARY KEY, "
                         + "ordinals MEDIUMBLOB NOT NULL)" + options);
@@ -214,7 +216,7 @@ public final class Schema {
                 // The frames are compressed already; stored out of line uncompressed, substr reads only the
                 // TOAST chunks of the requested range.
                 "ALTER TABLE " + t.segment() + " ALTER COLUMN body SET STORAGE EXTERNAL",
-                "CREATE INDEX IF NOT EXISTS " + t.segment() + "_last ON " + t.segment() + " (last_id)",
+                "CREATE INDEX IF NOT EXISTS " + t.segment() + "_last ON " + t.segment() + " (last_id, id, first_id)",
                 "CREATE INDEX IF NOT EXISTS " + t.segment() + "_first ON " + t.segment() + " (first_id)",
                 "CREATE TABLE IF NOT EXISTS " + t.segmentFlag() + " (segment BIGINT PRIMARY KEY, "
                         + "ordinals BYTEA NOT NULL)");

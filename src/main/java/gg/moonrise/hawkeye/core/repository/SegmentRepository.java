@@ -36,6 +36,9 @@ public class SegmentRepository {
     /** Id runs or ids per statement of {@link #ranges} and {@link #rows}. */
     public static final int RANGE_BATCH = 200;
 
+    /** A set of more runs than this is filtered from one index scan instead of sought run by run. */
+    public static final int SCATTERED_RUNS = 16;
+
     private static final String CANDIDATE_COLUMNS = "s.id, s.first_id, s.last_id, s.events, s.header, f.ordinals";
 
     /**
@@ -138,8 +141,11 @@ public class SegmentRepository {
     }
 
     /**
-     * The id ranges of the segments whose ids a set holds (those that still exist), in id order. One
-     * statement per {@link #RANGE_BATCH} runs of the set, each run a primary-key range.
+     * The id ranges of the segments whose ids a set holds (those that still exist), in id order. A set
+     * of a few runs is read by primary-key ranges, one statement per {@link #RANGE_BATCH} runs. A set of
+     * more than {@link #SCATTERED_RUNS} runs (a place that has been active for a long time) would be
+     * thousands of seeks, so the id ranges of every segment are read once from the covering index on
+     * {@code (last_id, id, first_id)}, about 20 bytes a segment, and the set filters them.
      *
      * @param connection a connection
      * @param sql        the shard's SQL context
@@ -150,6 +156,22 @@ public class SegmentRepository {
     public @NotNull List<SegmentRange> ranges(@NotNull Connection connection, @NotNull Sql sql, @NotNull IdRuns ids)
             throws SQLException {
         List<SegmentRange> out = new ArrayList<>();
+        if (ids.runCount() > SCATTERED_RUNS) {
+            BoundSql query = everyRangeQuery(sql);
+            try (PreparedStatement statement = connection.prepareStatement(query.sql())) {
+                query.bind(statement);
+                try (ResultSet rows = statement.executeQuery()) {
+                    while (rows.next()) {
+                        long id = rows.getLong(1);
+                        if (ids.contains(id)) {
+                            out.add(new SegmentRange(id, rows.getLong(2), rows.getLong(3)));
+                        }
+                    }
+                }
+            }
+            out.sort(Comparator.comparingLong(SegmentRange::id));
+            return out;
+        }
         for (int from = 0; from < ids.runCount(); from += RANGE_BATCH) {
             BoundSql query = rangeQuery(sql, ids, from, Math.min(ids.runCount(), from + RANGE_BATCH));
             try (PreparedStatement statement = connection.prepareStatement(query.sql())) {
@@ -163,6 +185,18 @@ public class SegmentRepository {
         }
         out.sort(Comparator.comparingLong(SegmentRange::id));
         return out;
+    }
+
+    /**
+     * The statement that reads the id range of every segment (also read by the query-plan tests): the
+     * condition names the index's first column so each engine answers it from the index alone.
+     *
+     * @param sql the shard's SQL context
+     * @return the statement
+     */
+    public static @NotNull BoundSql everyRangeQuery(@NotNull Sql sql) {
+        return new BoundSql("SELECT id, first_id, last_id FROM " + sql.tables().segment() + " WHERE last_id >= ?",
+                List.of(0L));
     }
 
     /**
