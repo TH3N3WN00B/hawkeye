@@ -504,6 +504,9 @@ public class ReplayBenchmark {
         }));
         result.put("openTotal", bounded[0].total());
         result.put("openExact", bounded[0].exact());
+        result.put("page", timed(() -> store.find(harness.shard(), query, all, 0, 10, true).size()));
+        result.put("bounded count", timed(() -> (int) Math.min(Integer.MAX_VALUE,
+                store.count(harness.shard(), query, all, LookupPager.COUNT_SEGMENTS).total())));
         long[] exact = new long[1];
         result.put("exact count", timed(() -> {
             exact[0] = store.count(harness.shard(), query, all);

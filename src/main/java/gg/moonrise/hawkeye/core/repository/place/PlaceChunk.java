@@ -278,12 +278,14 @@ public final class PlaceChunk {
      * @throws CodecException when the body is corrupt
      */
     public static @NotNull Touches segmentsWhere(byte @NotNull [] body, @NotNull IntPredicate accepts, int maxLocal) {
-        Touches out = Touches.empty();
+        // An area accepts many positions whose segments mostly repeat: see IdUnion.
+        IdUnion exactIds = new IdUnion();
+        IdUnion olderBuckets = new IdUnion();
         read(body, accepts, maxLocal, (local, exact, older) -> {
-            out.exact().addAll(exact);
-            out.older().addAll(older);
+            exactIds.addAll(exact);
+            olderBuckets.addAll(older);
         });
-        return out;
+        return new Touches(exactIds.toRuns(), olderBuckets.toRuns());
     }
 
     private static void read(byte @NotNull [] body, @NotNull IntPredicate accepts, int maxLocal, @NotNull Sink sink) {
