@@ -22,12 +22,15 @@ All notable changes to this project are documented in this file. The format is b
   lookup's place, actor, action, type and rollback conditions on a unit's columns before it decodes
   ids or builds rows, and block and area lookups skip the chat and command rows of segments whose
   players were elsewhere.
-- A place index (schema version 4: `place_region`, `place_chunk`, `place_state`): per chunk, the
-  archive segments holding rows there, and for chunks active in more than 16 segments, which buckets
-  of 16 segments touched each position. It is kept up to date in the transaction that packs, rewrites
-  or purges a segment, and the archiver adds segments written before it existed (newest first, up to
-  20 s per run). A block or area lookup reads only the segments that can hold the place, so a block
-  never touched inside a chunk that is active all the time no longer reads every segment.
+- A segment index (schema version 5: `region_segment`, `block_segment`, `actor_segment`,
+  `segment_index`; it replaces version 4's `place_region`, `place_chunk` and `place_state`, and every
+  archive is indexed again): per chunk, the archive segments holding rows there, and for chunks active
+  in more than 16 segments, per position its newest 64 segments exactly and only older ones in buckets
+  of 16 segments. It is kept up to date in the transaction that packs, rewrites or purges a segment,
+  and the archiver adds segments written before it existed (newest first, up to 20 s per run). A
+  block or area lookup reads only the segments that can hold the place, so a block never touched
+  inside a chunk that is active all the time no longer reads every segment, and a block with little
+  history inside it reads only the segments that hold it.
 - CoreProtect-compatible parameters (`u: t: r: a: i: e: s: #preview #count`) for lookups, rollbacks,
   restores and purges.
 - Multi-server operation: shared databases, shards read in parallel for network lookups, network

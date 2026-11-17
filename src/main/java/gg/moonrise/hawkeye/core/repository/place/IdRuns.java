@@ -116,6 +116,19 @@ public final class IdRuns {
     }
 
     /**
+     * The smallest value.
+     *
+     * @return the value
+     * @throws IllegalStateException when the set is empty
+     */
+    public long min() {
+        if (size == 0) {
+            throw new IllegalStateException("empty set");
+        }
+        return runs[0];
+    }
+
+    /**
      * Whether the set holds a value.
      *
      * @param value the value
@@ -270,6 +283,31 @@ public final class IdRuns {
     }
 
     /**
+     * The values both sets hold.
+     *
+     * @param other the other set
+     * @return a new set
+     */
+    public @NotNull IdRuns intersect(@NotNull IdRuns other) {
+        IdRuns out = new IdRuns();
+        int a = 0;
+        int b = 0;
+        while (a < runCount() && b < other.runCount()) {
+            long first = Math.max(start(a), other.start(b));
+            long last = Math.min(end(a), other.end(b));
+            if (first <= last) {
+                out.append(first, last);
+            }
+            if (end(a) < other.end(b)) {
+                a++;
+            } else {
+                b++;
+            }
+        }
+        return out;
+    }
+
+    /**
      * Calls a consumer with every value, ascending.
      *
      * @param consumer the consumer
@@ -310,6 +348,33 @@ public final class IdRuns {
             }
             out.writeVarLong(runs[i + 1] - runs[i]);
         }
+    }
+
+    /**
+     * The set on its own: {@link #write} against 0, uncompressed.
+     *
+     * @return the bytes
+     */
+    public byte @NotNull [] toBytes() {
+        ByteWriter out = new ByteWriter(4 + size * 3);
+        write(out, 0);
+        return out.toByteArray();
+    }
+
+    /**
+     * Reads a set written by {@link #toBytes}.
+     *
+     * @param bytes the bytes
+     * @return the set
+     * @throws CodecException when the bytes are corrupt or not all read
+     */
+    public static @NotNull IdRuns fromBytes(byte @NotNull [] bytes) {
+        ByteReader in = new ByteReader(bytes);
+        IdRuns out = read(in, 0);
+        if (in.hasRemaining()) {
+            throw new CodecException("unread bytes after the runs");
+        }
+        return out;
     }
 
     /**

@@ -2,10 +2,13 @@ package gg.moonrise.hawkeye.core.repository.place;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import gg.moonrise.hawkeye.util.codec.ByteReader;
 import gg.moonrise.hawkeye.util.codec.ByteWriter;
+import gg.moonrise.hawkeye.util.codec.CodecException;
+import java.util.Arrays;
 import java.util.Random;
 import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
@@ -60,5 +63,49 @@ public class IdRunsTest {
         IdRuns buckets = IdRuns.of(1, 3);
         assertEquals("[16..31, 48..63]", ids.inBuckets(buckets, 4).toString());
         assertFalse(IdRuns.of(5).inBuckets(IdRuns.of(1), 4).contains(5));
+    }
+
+    @Test
+    public void intersectsRunByRun() {
+        assertEquals(new IdRuns(), new IdRuns().intersect(IdRuns.range(1, 9)), "empty");
+        assertEquals(new IdRuns(), IdRuns.range(1, 9).intersect(new IdRuns()), "empty other");
+        assertEquals(new IdRuns(), IdRuns.range(1, 4).intersect(IdRuns.range(6, 9)), "disjoint");
+        assertEquals(new IdRuns(), IdRuns.of(1, 3, 5).intersect(IdRuns.of(2, 4, 6)), "interleaved, disjoint");
+        assertEquals(IdRuns.range(3, 5), IdRuns.range(1, 9).intersect(IdRuns.range(3, 5)), "nested");
+        assertEquals(IdRuns.range(3, 5), IdRuns.range(3, 5).intersect(IdRuns.range(1, 9)), "nested, other way");
+        assertEquals(IdRuns.of(4), IdRuns.range(1, 4).intersect(IdRuns.range(4, 9)), "runs that touch in one id");
+        assertEquals(new IdRuns(), IdRuns.range(1, 4).intersect(IdRuns.range(5, 9)), "adjacent runs share nothing");
+        assertEquals("[2..3, 7, 9..10, 40]", IdRuns.of(1, 2, 3, 7, 8, 9, 10, 40)
+                .intersect(IdRuns.of(2, 3, 4, 5, 6, 7, 9, 10, 11, 40, 41)).toString(), "several runs");
+
+        Random random = new Random(19);
+        for (int round = 0; round < 200; round++) {
+            IdRuns a = new IdRuns();
+            IdRuns b = new IdRuns();
+            TreeSet<Long> expected = new TreeSet<>();
+            TreeSet<Long> inB = new TreeSet<>();
+            for (int i = 0; i < 60; i++) {
+                long x = random.nextInt(120);
+                long y = random.nextInt(120);
+                a.add(x);
+                b.add(y);
+                expected.add(x);
+                inB.add(y);
+            }
+            expected.retainAll(inB);
+            TreeSet<Long> actual = new TreeSet<>();
+            a.intersect(b).forEach(actual::add);
+            assertEquals(expected, actual);
+        }
+    }
+
+    @Test
+    public void standsAloneAsBytes() {
+        IdRuns runs = IdRuns.of(2, 3, 4, 70, 5_000);
+        assertEquals(runs, IdRuns.fromBytes(runs.toBytes()));
+        assertEquals(new IdRuns(), IdRuns.fromBytes(new IdRuns().toBytes()));
+        assertEquals(2, runs.min());
+        byte[] longer = Arrays.copyOf(runs.toBytes(), runs.toBytes().length + 1);
+        assertThrows(CodecException.class, () -> IdRuns.fromBytes(longer));
     }
 }

@@ -12,15 +12,14 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * The place index tables ({@code core.repository.place} holds the row codecs): {@code place_region}
- * keyed by {@code (world, region)}, {@code place_chunk} keyed by {@code (world, chunk)}, both with the
- * largest segment id they mention ({@code newest}, indexed for trimming) and a compressed body, and
- * {@code place_state}, one row whose {@code indexed_from} says from which segment id on every segment
- * is indexed. Rows are read and written in batches: one statement for many keys.
+ * The place tables of the segment index ({@code core.repository.place} holds the row codecs):
+ * {@code region_segment} keyed by {@code (world, region)} and {@code block_segment} keyed by
+ * {@code (world, chunk)}, both with the largest segment id they mention ({@code newest}, indexed for
+ * trimming) and a compressed body. The state row is {@link SegmentIndexRepository}'s. Rows are read and
+ * written in batches: one statement for many keys.
  */
 @SpringComponent
 public final class PlaceIndexRepository {
@@ -33,9 +32,9 @@ public final class PlaceIndexRepository {
 
     /** Which of the two keyed tables. */
     public enum Kind {
-        /** {@code place_region}, keyed by region. */
+        /** {@code region_segment}, keyed by region. */
         REGION("region"),
-        /** {@code place_chunk}, keyed by chunk. */
+        /** {@code block_segment}, keyed by chunk. */
         CHUNK("chunk");
 
         private final String keyColumn;
@@ -60,7 +59,7 @@ public final class PlaceIndexRepository {
          * @return the table name
          */
         public @NotNull String table(@NotNull Sql sql) {
-            return this == REGION ? sql.tables().placeRegion() : sql.tables().placeChunk();
+            return this == REGION ? sql.tables().regionSegment() : sql.tables().blockSegment();
         }
     }
 
@@ -72,50 +71,6 @@ public final class PlaceIndexRepository {
      * @param body   the encoded body
      */
     public record Row(long key, long newest, byte @NotNull [] body) {
-    }
-
-    /**
-     * The segment id from which on every segment is indexed, without locking.
-     *
-     * @param connection a connection
-     * @param sql        the shard's SQL context
-     * @return the value; empty when the state row is missing
-     * @throws SQLException when the query fails
-     */
-    public @NotNull Optional<Long> indexedFrom(@NotNull Connection connection, @NotNull Sql sql) throws SQLException {
-        return readState(connection, sql, "");
-    }
-
-    /**
-     * The segment id from which on every segment is indexed, locking the state row until the transaction
-     * ends (MySQL and PostgreSQL; SQLite has a single writer): every change to the index takes this lock
-     * first, so two writers never rewrite the same row from the same old version.
-     *
-     * @param connection a connection inside a transaction
-     * @param sql        the shard's SQL context
-     * @return the value
-     * @throws SQLException when the query fails or the state row is missing
-     */
-    public long lockIndexedFrom(@NotNull Connection connection, @NotNull Sql sql) throws SQLException {
-        String lock = sql.dialect() == Dialect.SQLITE ? "" : " FOR UPDATE";
-        return readState(connection, sql, lock)
-                .orElseThrow(() -> new SQLException("the place index has no state row"));
-    }
-
-    /**
-     * Sets {@code indexed_from}.
-     *
-     * @param connection a connection inside the transaction that holds the state lock
-     * @param sql        the shard's SQL context
-     * @param value      the new value
-     * @throws SQLException when the statement fails
-     */
-    public void setIndexedFrom(@NotNull Connection connection, @NotNull Sql sql, long value) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("UPDATE " + sql.tables().placeState()
-                + " SET indexed_from = ? WHERE id = 1")) {
-            statement.setLong(1, value);
-            statement.executeUpdate();
-        }
     }
 
     /**
@@ -168,7 +123,7 @@ public final class PlaceIndexRepository {
     /**
      * Inserts or replaces rows of one world.
      *
-     * @param connection a connection inside the transaction that holds the state lock
+     * @param connection a connection inside the transaction that holds the index lock
      * @param sql        the shard's SQL context
      * @param kind       the table
      * @param world      the world id
@@ -197,7 +152,7 @@ public final class PlaceIndexRepository {
     /**
      * Deletes rows of one world.
      *
-     * @param connection a connection inside the transaction that holds the state lock
+     * @param connection a connection inside the transaction that holds the index lock
      * @param sql        the shard's SQL context
      * @param kind       the table
      * @param world      the world id
@@ -223,7 +178,7 @@ public final class PlaceIndexRepository {
     /**
      * Deletes the rows that mention no segment at or above a bound (an index range on {@code newest}).
      *
-     * @param connection a connection inside the transaction that holds the state lock
+     * @param connection a connection inside the transaction that holds the index lock
      * @param sql        the shard's SQL context
      * @param oldest     the oldest stored segment id
      * @return the number of rows deleted from both tables
@@ -250,35 +205,5 @@ public final class PlaceIndexRepository {
      */
     public static @NotNull BoundSql deleteOlderQuery(@NotNull Sql sql, @NotNull Kind kind, long oldest) {
         return new BoundSql("DELETE FROM " + kind.table(sql) + " WHERE newest < ?", List.of(oldest));
-    }
-
-    /**
-     * Empties the index and marks every stored segment as not indexed, so catching up rebuilds it.
-     *
-     * @param connection a connection inside a transaction
-     * @param sql        the shard's SQL context
-     * @throws SQLException when a statement fails
-     */
-    public void reset(@NotNull Connection connection, @NotNull Sql sql) throws SQLException {
-        lockIndexedFrom(connection, sql);
-        for (Kind kind : Kind.values()) {
-            try (PreparedStatement statement = connection.prepareStatement("DELETE FROM " + kind.table(sql))) {
-                statement.executeUpdate();
-            }
-        }
-        try (PreparedStatement statement = connection.prepareStatement("UPDATE " + sql.tables().placeState()
-                + " SET indexed_from = (SELECT COALESCE(MAX(id), 0) + 1 FROM " + sql.tables().segment()
-                + ") WHERE id = 1")) {
-            statement.executeUpdate();
-        }
-    }
-
-    private static @NotNull Optional<Long> readState(@NotNull Connection connection, @NotNull Sql sql,
-            @NotNull String lock) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("SELECT indexed_from FROM "
-                + sql.tables().placeState() + " WHERE id = 1" + lock);
-                ResultSet rows = statement.executeQuery()) {
-            return rows.next() ? Optional.of(rows.getLong(1)) : Optional.empty();
-        }
     }
 }

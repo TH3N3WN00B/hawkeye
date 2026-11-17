@@ -59,6 +59,17 @@ update them in the same change when you learn something durable or an entry stop
   segment read (unit plus shared frames, separate statements). Timings on this host vary up to 3x
   between runs at load 6-10. The reference copy at `~/.cache/hawkeye-bench/replay-index` is migrated
   to version 4 and indexed.
+- The two entries above and below were measured with schema version 4 (bucket-only busy rows, no actor
+  index). Version 5 renames every index table (`region_segment`, `block_segment`, `actor_segment`,
+  `segment_index`) and drops the version-4 ones, so a migrated copy is indexed again by the
+  archiver's catch-up. An index format change takes new table names on purpose: an older build then
+  fails on its first index statement instead of misreading rows, and the migration needs no "empty
+  and reset" step.
+- `PlaceChunk.EXACT_SEGMENTS` (64) trades bytes for read precision: per busy-chunk position, the newest
+  64 segment ids are exact and older ones are buckets of 16. On the full replay database's rows
+  (study, zstd 9) buckets alone were 18.1 MB and named 3.34 times the segments holding a block; 64
+  exact ids are 29.8 MB and name 1.75 times; every id exact would be 50.9 MB (largest row 769 KB).
+  The raw size is about the same for every choice, so decoding costs the same.
 - Opening a lookup on that database (verified 2026-11-17, `lookupsOnAKeptDatabase`, "open ..." entries:
   page of 10 then the count with `LookupPager.COUNT_SEGMENTS` = 16, one after the other; warm, host at
   load 6). Open / exact count (cold exact count) in ms, with the exact total and what open showed:

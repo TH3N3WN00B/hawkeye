@@ -63,27 +63,4 @@ public class PlaceRegionTest {
         assertTrue(decoded.isEmpty());
         assertFalse(decoded.busy(0));
     }
-
-    @Test
-    public void aBusyChunkRoundTripsAndTrimsItsBuckets() {
-        PlaceChunk chunk = new PlaceChunk(1, PlaceKeys.chunk(BlockPositions.pack(100, 64, 100)));
-        for (int segment = 1; segment < 200; segment++) {
-            chunk.add(PlaceKeys.local(BlockPositions.pack(100 + segment % 3, 64, 100)), segment);
-        }
-        chunk.add(PlaceKeys.local(BlockPositions.pack(111, -60, 103)), 3);
-        chunk.add(PlaceKeys.local(BlockPositions.pack(111, -60, 103)), 150);
-        PlaceChunk decoded = PlaceChunk.fromBody(1, chunk.chunk(), chunk.toBody(9));
-        assertEquals(chunk, decoded);
-        int lonely = PlaceKeys.local(BlockPositions.pack(111, -60, 103));
-        assertEquals(IdRuns.of(0, 9), decoded.positions().get(lonely));
-        assertEquals(IdRuns.of(0, 9), PlaceChunk.bucketsWhere(chunk.toBody(19), local -> local == lonely, lonely));
-        assertEquals(new IdRuns(), PlaceChunk.bucketsWhere(chunk.toBody(9), local -> local == lonely, lonely - 1),
-                "the read stops at the largest key asked for");
-
-        decoded.trim(16);
-        assertEquals(IdRuns.of(9), decoded.positions().get(lonely));
-        assertEquals(IdRuns.range(1, 12), decoded.positions().firstEntry().getValue());
-        decoded.trim(16 * 13);
-        assertTrue(decoded.isEmpty(), "every bucket below the oldest segment's is gone");
-    }
 }

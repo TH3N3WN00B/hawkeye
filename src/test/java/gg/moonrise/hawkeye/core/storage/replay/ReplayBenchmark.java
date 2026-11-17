@@ -9,8 +9,8 @@ import gg.moonrise.hawkeye.core.repository.ActorRepository;
 import gg.moonrise.hawkeye.core.repository.DictionaryRepository;
 import gg.moonrise.hawkeye.core.repository.EventFilter;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
-import gg.moonrise.hawkeye.core.repository.PlaceIndexRepository;
 import gg.moonrise.hawkeye.core.repository.place.IdRuns;
+import gg.moonrise.hawkeye.core.repository.place.PlaceChunk;
 import gg.moonrise.hawkeye.core.repository.segment.SegmentHeader;
 import gg.moonrise.hawkeye.core.service.lookup.LookupPager;
 import gg.moonrise.hawkeye.core.sql.Database;
@@ -21,6 +21,7 @@ import gg.moonrise.hawkeye.core.storage.EventCount;
 import gg.moonrise.hawkeye.core.storage.EventStore;
 import gg.moonrise.hawkeye.core.storage.CountingSegmentRepository;
 import gg.moonrise.hawkeye.core.storage.PlaceIndex;
+import gg.moonrise.hawkeye.core.storage.SegmentIndex;
 import gg.moonrise.hawkeye.core.storage.SegmentCache;
 import gg.moonrise.hawkeye.core.storage.QueryResolver;
 import gg.moonrise.hawkeye.core.storage.ShardScope;
@@ -249,7 +250,7 @@ public class ReplayBenchmark {
             @NotNull Targets targets) throws SQLException {
         CountingSegmentRepository counting = new CountingSegmentRepository();
         SegmentCache cache = new SegmentCache();
-        PlaceIndex index = new PlaceIndex(new PlaceIndexRepository(), counting, cache);
+        SegmentIndex index = Archives.index(counting, cache, PlaceIndex.BUSY_SEGMENTS, PlaceChunk.EXACT_SEGMENTS);
         EventStore store = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
                 new ActorRepository()), new Archive(new EventRepository(), counting, cache, index));
         QueryResolver resolver = new QueryResolver(new DictionaryRepository(), new ActorRepository());
@@ -293,7 +294,7 @@ public class ReplayBenchmark {
         long start = System.nanoTime();
         int indexed = 0;
         while (true) {
-            PlaceIndex.CatchUp step = archive.indexPlaces(harness.shard(), 256);
+            SegmentIndex.CatchUp step = archive.catchUpIndex(harness.shard(), 256);
             indexed += step.indexed();
             progress("place index: " + indexed + " segments indexed in "
                     + TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start) + " s, more: " + step.more());
@@ -307,15 +308,15 @@ public class ReplayBenchmark {
         return result;
     }
 
-    /** Rows, body bytes and pages (from {@code dbstat}, the table and its index) of the place index tables. */
+    /** Rows, body bytes and pages (from {@code dbstat}, the table and its index) of the segment index tables. */
     private static @NotNull Map<String, Object> placeTables(@NotNull Database database) throws SQLException {
         Map<String, Object> result = new LinkedHashMap<>();
         long pages = 0;
-        for (String table : List.of(database.tables().placeRegion(), database.tables().placeChunk(),
-                database.tables().placeState())) {
+        for (String table : List.of(database.tables().regionSegment(), database.tables().blockSegment(),
+                database.tables().actorSegment(), database.tables().segmentIndex())) {
             Map<String, Object> one = new LinkedHashMap<>();
             one.put("rows", count(database, "SELECT COUNT(*) FROM " + table));
-            if (!table.equals(database.tables().placeState())) {
+            if (!table.equals(database.tables().segmentIndex())) {
                 one.put("bodyBytes", count(database, "SELECT COALESCE(SUM(LENGTH(body)), 0) FROM " + table));
             }
             long bytes = count(database, "SELECT COALESCE(SUM(pgsize), 0) FROM dbstat WHERE name IN ('" + table + "', '"

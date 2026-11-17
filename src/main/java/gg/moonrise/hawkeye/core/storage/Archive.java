@@ -57,9 +57,9 @@ import org.jetbrains.annotations.Nullable;
  * only. Both steps use the SQL's predicate ({@link EventFilter#matchesColumns},
  * {@link EventFilter#matchesId}). Rolled-back flags
  * live beside the segments ({@code segment_flag}); a purge deletes or rewrites whole segments. The
- * {@link PlaceIndex} is changed in every transaction that writes or rewrites a segment, and a read with
- * an area asks only the segments it names. Every method but {@link #compact}, {@link #totals} and
- * {@link #indexPlaces} runs on the caller's connection and transaction.
+ * {@link SegmentIndex} is changed in every transaction that writes or rewrites a segment, and a read it
+ * narrows asks only the segments it names. Every method but {@link #compact}, {@link #totals} and
+ * {@link #catchUpIndex} runs on the caller's connection and transaction.
  */
 @SpringComponent
 @RequiredArgsConstructor
@@ -77,7 +77,7 @@ public final class Archive {
     private final @NotNull EventRepository eventRepository;
     private final @NotNull SegmentRepository segmentRepository;
     private final @NotNull SegmentCache cache;
-    private final @NotNull PlaceIndex placeIndex;
+    private final @NotNull SegmentIndex segmentIndex;
 
     /**
      * One packing pass, in one transaction: takes the {@code segment-events} oldest hot events that are
@@ -134,21 +134,21 @@ public final class Archive {
         Sql sql = shard.database().sql();
         PackedSegment segment = Segments.encode(rows, worldOrder(connection, shard, rows), executor);
         long id = segmentRepository.insert(connection, sql, segment);
-        placeIndex.added(connection, shard, places(id, rows));
+        segmentIndex.added(connection, shard, places(id, rows));
         return id;
     }
 
     /**
-     * Indexes some of the segments written before the place index existed (or after it was emptied),
-     * newest first, in transactions of {@link PlaceIndex#CATCH_UP_BATCH}.
+     * Indexes some of the segments written before the segment index existed (or after it was emptied),
+     * newest first, in transactions of {@link SegmentIndex#CATCH_UP_BATCH}.
      *
      * @param shard       the shard
      * @param maxSegments the most segments to index
      * @return how many were indexed and whether more are missing
      * @throws SQLException when reading or writing fails
      */
-    public @NotNull PlaceIndex.CatchUp indexPlaces(@NotNull Shard shard, int maxSegments) throws SQLException {
-        return placeIndex.catchUp(shard, maxSegments);
+    public @NotNull SegmentIndex.CatchUp catchUpIndex(@NotNull Shard shard, int maxSegments) throws SQLException {
+        return segmentIndex.catchUp(shard, maxSegments);
     }
 
     /**
@@ -361,7 +361,7 @@ public final class Archive {
         segmentRepository.delete(connection, sql, whole);
         whole.forEach(id -> cache.forget(shard.database(), id));
         if (deleted > 0) {
-            placeIndex.trim(connection, shard);
+            segmentIndex.trim(connection, shard);
         }
         return deleted;
     }
@@ -419,7 +419,7 @@ public final class Archive {
         }
         segmentRepository.delete(connection, sql, List.of(segment.id()));
         cache.forget(shard.database(), segment.id());
-        placeIndex.replaced(connection, shard, segment.id(), header, replacement);
+        segmentIndex.replaced(connection, shard, new RemovedSegment(segment.id(), header), replacement);
         return removed;
     }
 
@@ -525,7 +525,7 @@ public final class Archive {
         return cache.header(shard.database(), segment.id(), segment.header());
     }
 
-    /** The places of a new segment's rows, for the place index. */
+    /** The places of a new segment's rows, for the segment index. */
     private static @NotNull SegmentPlaces places(long segment, @NotNull List<EventRow> rows) {
         SegmentPlaces.Builder builder = SegmentPlaces.builder(segment);
         rows.forEach(row -> builder.add(row.world(), row.position()));
@@ -533,14 +533,14 @@ public final class Archive {
     }
 
     /**
-     * The candidate segments of a read, page by page in reading order: those the place index names when
-     * the filter has an area it covers (their id ranges fetched first and ordered, then header and
-     * flags page by page), else every segment whose id range overlaps the filter's, keyset-paged.
+     * The candidate segments of a read, page by page in reading order: those the segment index names when
+     * it narrows the filter (their id ranges fetched first and ordered, then header and flags page by
+     * page), else every segment whose id range overlaps the filter's, keyset-paged.
      */
     private @NotNull SegmentPages pages(@NotNull Connection connection, @NotNull Shard shard,
             @NotNull EventFilter filter, long cursor, boolean newestFirst) throws SQLException {
         Sql sql = shard.database().sql();
-        Optional<IdRuns> planned = placeIndex.plan(connection, shard, filter);
+        Optional<IdRuns> planned = segmentIndex.plan(connection, shard, filter);
         if (planned.isEmpty()) {
             return new KeysetPages(connection, sql, filter, cursor, newestFirst);
         }
@@ -587,7 +587,7 @@ public final class Archive {
     }
 
     /**
-     * The segments the place index named, in reading order: small first pages, so a lookup that stops
+     * The segments the segment index named, in reading order: small first pages, so a lookup that stops
      * after a segment or two fetches few headers.
      */
     @RequiredArgsConstructor

@@ -17,6 +17,7 @@ import gg.moonrise.hawkeye.core.repository.EventRepository;
 import gg.moonrise.hawkeye.core.repository.JobRepository;
 import gg.moonrise.hawkeye.core.repository.LeaseRepository;
 import gg.moonrise.hawkeye.core.repository.PlaceIndexRepository;
+import gg.moonrise.hawkeye.core.repository.SegmentIndexRepository;
 import gg.moonrise.hawkeye.core.repository.SegmentRepository;
 import gg.moonrise.hawkeye.core.repository.SegmentTotals;
 import gg.moonrise.hawkeye.core.repository.ServerRepository;
@@ -25,7 +26,7 @@ import gg.moonrise.hawkeye.core.storage.Archive;
 import gg.moonrise.hawkeye.core.storage.Archives;
 import gg.moonrise.hawkeye.core.storage.Dictionaries;
 import gg.moonrise.hawkeye.core.storage.EventStore;
-import gg.moonrise.hawkeye.core.storage.PlaceIndex;
+import gg.moonrise.hawkeye.core.storage.SegmentIndex;
 import gg.moonrise.hawkeye.core.storage.QueryResolver;
 import gg.moonrise.hawkeye.core.storage.Shard;
 import gg.moonrise.hawkeye.core.storage.ShardScope;
@@ -201,9 +202,9 @@ public class ServerDatabaseIntegrationTest {
     private static void assertPlaceIndex(Database database, Shard shard, EventStore store, Archive archive,
             ShardScope scope, List<PendingEvent> events) throws SQLException {
         Map<String, byte[]> packed = placeRows(database);
-        assertTrue(packed.keySet().stream().anyMatch(key -> key.startsWith(database.tables().placeChunk())),
+        assertTrue(packed.keySet().stream().anyMatch(key -> key.startsWith(database.tables().blockSegment())),
                 "busy chunks have rows: " + packed.keySet());
-        assertTrue(packed.keySet().stream().filter(key -> key.startsWith(database.tables().placeRegion())).count() > 0);
+        assertTrue(packed.keySet().stream().filter(key -> key.startsWith(database.tables().regionSegment())).count() > 0);
         assertEquals(0, store.count(shard, LookupQuery.at(new Area.Block("world", 0, 0, 0)), scope));
         for (int i : new int[] {3, 517, 1_210, 1_599}) {
             long position = events.get(i).position();
@@ -213,11 +214,11 @@ public class ServerDatabaseIntegrationTest {
             assertEquals(expected, store.count(shard, block, scope), "block of event " + i);
         }
         database.transaction(connection -> {
-            new PlaceIndexRepository().reset(connection, database.sql());
+            new SegmentIndexRepository().reset(connection, database.sql());
             return null;
         });
         assertEquals(Map.of(), placeRows(database));
-        assertEquals(new PlaceIndex.CatchUp(4, false), archive.indexPlaces(shard, 10));
+        assertEquals(new SegmentIndex.CatchUp(4, false), archive.catchUpIndex(shard, 10));
         Map<String, byte[]> caughtUp = placeRows(database);
         assertEquals(packed.keySet(), caughtUp.keySet());
         packed.forEach((key, body) -> assertArrayEquals(body, caughtUp.get(key), key));
@@ -277,7 +278,7 @@ public class ServerDatabaseIntegrationTest {
         Tables t = database.tables();
         database.read(connection -> {
             try (Statement statement = connection.createStatement()) {
-                for (String table : List.of(t.placeRegion(), t.placeChunk(), t.placeState(), t.segmentFlag(), t.segment(), t.lease(), t.job(), t.event(), t.type(),
+                for (String table : List.of(t.regionSegment(), t.blockSegment(), t.actorSegment(), t.segmentIndex(), t.legacyPlaceRegion(), t.legacyPlaceChunk(), t.legacyPlaceState(), t.segmentFlag(), t.segment(), t.lease(), t.job(), t.event(), t.type(),
                         t.actor(), t.world(), t.server(), t.schemaVersion())) {
                     statement.execute("DROP TABLE IF EXISTS " + table);
                 }

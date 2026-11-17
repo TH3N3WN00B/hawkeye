@@ -26,7 +26,7 @@ import org.jetbrains.annotations.NotNull;
  * packs one segment of {@code archive.segment-events} settled events (or fewer, once they are older
  * than {@code archive.after-hours}) in one transaction on the query pool; passes follow each other until
  * one packs nothing, so the maintenance thread (heartbeats, network jobs) is never held. After packing, a
- * run spends up to {@link #CATCH_UP_TIME} adding segments that are missing from the {@link PlaceIndex}
+ * run spends up to {@link #CATCH_UP_TIME} adding segments that are missing from the {@link SegmentIndex}
  * (written before it existed), newest first, a batch per transaction.
  */
 @Slf4j
@@ -40,7 +40,7 @@ public final class Archiver implements Enableable, Disableable {
     /** The first run waits this long after enable. */
     public static final Duration FIRST_RUN = Duration.ofMinutes(2);
 
-    /** How long one run may spend catching the place index up. */
+    /** How long one run may spend catching the segment index up. */
     public static final Duration CATCH_UP_TIME = Duration.ofSeconds(20);
 
     private final @NotNull HawkeyeConfigProvider configProvider;
@@ -143,9 +143,9 @@ public final class Archiver implements Enableable, Disableable {
         if (stopped || clock.millis() >= untilMillis) {
             return CompletableFuture.completedFuture(null);
         }
-        CompletableFuture<PlaceIndex.CatchUp> batch;
+        CompletableFuture<SegmentIndex.CatchUp> batch;
         try {
-            batch = CompletableFuture.supplyAsync(() -> indexPlaces(home, settings), executors.query());
+            batch = CompletableFuture.supplyAsync(() -> catchUpIndex(home, settings), executors.query());
         } catch (RejectedExecutionException e) {
             return CompletableFuture.completedFuture(null);
         }
@@ -153,19 +153,19 @@ public final class Archiver implements Enableable, Disableable {
                 ? catchUp(home, settings, untilMillis) : CompletableFuture.completedFuture(null));
     }
 
-    private @NotNull PlaceIndex.CatchUp indexPlaces(@NotNull Shard home, @NotNull ArchiveSettings settings) {
+    private @NotNull SegmentIndex.CatchUp catchUpIndex(@NotNull Shard home, @NotNull ArchiveSettings settings) {
         try {
             if (!leases.tryAcquire(home.database(), LEASE, holder(), clock.millis(), leaseMillis(settings))) {
                 held = false;
-                return new PlaceIndex.CatchUp(0, false);
+                return new SegmentIndex.CatchUp(0, false);
             }
-            PlaceIndex.CatchUp result = archive.indexPlaces(home, PlaceIndex.CATCH_UP_BATCH);
+            SegmentIndex.CatchUp result = archive.catchUpIndex(home, SegmentIndex.CATCH_UP_BATCH);
             if (result.indexed() > 0) {
-                log.debug("Added {} segment(s) to the place index; more missing: {}", result.indexed(), result.more());
+                log.debug("Added {} segment(s) to the segment index; more missing: {}", result.indexed(), result.more());
             }
             return result;
         } catch (SQLException e) {
-            throw new IllegalStateException("place index catch-up failed: " + e.getMessage(), e);
+            throw new IllegalStateException("segment index catch-up failed: " + e.getMessage(), e);
         }
     }
 

@@ -100,29 +100,66 @@ public record Tables(@NotNull String prefix) {
     }
 
     /**
-     * The place index: per region of 32 x 32 chunks, which segments hold rows in which chunk.
+     * The segment index of places: per region of 32 x 32 chunks, which segments hold rows in which chunk.
      *
      * @return the name
      */
-    public @NotNull String placeRegion() {
+    public @NotNull String regionSegment() {
+        return prefix + "region_segment";
+    }
+
+    /**
+     * The segment index of the blocks of busy chunks: per position, its newest segment ids exactly and
+     * the older ones in buckets.
+     *
+     * @return the name
+     */
+    public @NotNull String blockSegment() {
+        return prefix + "block_segment";
+    }
+
+    /**
+     * The segment index of actors: per actor id, the segments that hold rows of that actor.
+     *
+     * @return the name
+     */
+    public @NotNull String actorSegment() {
+        return prefix + "actor_segment";
+    }
+
+    /**
+     * The segment index's one-row state ({@code indexed_from}).
+     *
+     * @return the name
+     */
+    public @NotNull String segmentIndex() {
+        return prefix + "segment_index";
+    }
+
+    /**
+     * The place index's region table of schema version 4, dropped by version 5.
+     *
+     * @return the name
+     */
+    public @NotNull String legacyPlaceRegion() {
         return prefix + "place_region";
     }
 
     /**
-     * The place index of busy chunks: per position, the buckets of segments that touched it.
+     * The place index's busy-chunk table of schema version 4, dropped by version 5.
      *
      * @return the name
      */
-    public @NotNull String placeChunk() {
+    public @NotNull String legacyPlaceChunk() {
         return prefix + "place_chunk";
     }
 
     /**
-     * The place index's one-row state ({@code indexed_from}).
+     * The place index's state table of schema version 4, dropped by version 5.
      *
      * @return the name
      */
-    public @NotNull String placeState() {
+    public @NotNull String legacyPlaceState() {
         return prefix + "place_state";
     }
 

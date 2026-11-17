@@ -13,35 +13,86 @@ import java.util.function.IntPredicate;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * One {@code place_chunk} row: every position of a busy chunk that archived rows touched, each with the
- * buckets ({@code segment id >> }{@link #BUCKET_SHIFT}) it was touched in. The body is one
- * {@link Compression} frame of:
+ * One {@code block_segment} row: every position of a busy chunk that archived rows touched, each with
+ * its newest {@link #EXACT_SEGMENTS} segment ids exactly and only what is older than those as buckets
+ * ({@code segment id >> }{@link #BUCKET_SHIFT}). Nearly every position is in few segments, so a lookup
+ * of a block reads exactly the segments that hold it; a block touched all the time stays bounded. The
+ * body is one {@link Compression} frame of:
  * <pre>
- *   varint position count, then per position in position order:
- *     varint in-chunk key ({@link PlaceKeys#local}) as the delta from the previous one
- *     varint bucket run count, then the runs ({@link IdRuns#writeRuns}, coded against the previous
- *     position's first bucket)
+ *   varint position count, then per position in ascending in-chunk key ({@link PlaceKeys#local}):
+ *     varint key delta from the previous position (the key itself for the first)
+ *     varint (exact run count &lt;&lt; 1) | hasOlder
+ *     exact runs: {@link IdRuns#writeRuns} coded against the previous position's first exact id (0 for the first)
+ *     if hasOlder: varint bucket run count (at least 1), then {@link IdRuns#writeRuns} coded against the
+ *                  first bucket of the previous position that had older buckets (0 for the first such one)
  * </pre>
- * Not thread-safe.
+ * A position has at least one exact run, except after a rewrite removed every exact id of a position
+ * that still has older buckets. Not thread-safe.
  */
 public final class PlaceChunk {
 
     /** A bucket is 16 consecutive segment ids. */
     public static final int BUCKET_SHIFT = 4;
 
+    /** How many of a position's newest segment ids are kept exactly. */
+    public static final int EXACT_SEGMENTS = 64;
+
     private final int world;
     private final long chunk;
-    private final TreeMap<Integer, IdRuns> positions = new TreeMap<>();
+    private final int exactLimit;
+    private final TreeMap<Integer, Touches> positions = new TreeMap<>();
 
     /**
-     * An empty row.
+     * The segments that touched some positions: exact ids, and buckets of the older ones.
+     *
+     * @param exact the exact segment ids
+     * @param older the buckets of older segment ids
+     */
+    public record Touches(@NotNull IdRuns exact, @NotNull IdRuns older) {
+
+        /**
+         * Nothing.
+         *
+         * @return an empty value with its own sets
+         */
+        public static @NotNull Touches empty() {
+            return new Touches(new IdRuns(), new IdRuns());
+        }
+
+        /**
+         * Whether neither set holds anything.
+         *
+         * @return {@code true} when empty
+         */
+        public boolean isEmpty() {
+            return exact.isEmpty() && older.isEmpty();
+        }
+    }
+
+    /**
+     * An empty row with the production exact limit.
      *
      * @param world the world id
      * @param chunk the chunk key
      */
     public PlaceChunk(int world, long chunk) {
+        this(world, chunk, EXACT_SEGMENTS);
+    }
+
+    /**
+     * An empty row with another exact limit, so tests demote ids with a handful of segments.
+     *
+     * @param world      the world id
+     * @param chunk      the chunk key
+     * @param exactLimit how many of a position's newest segment ids are kept exactly, at least 1
+     */
+    public PlaceChunk(int world, long chunk, int exactLimit) {
+        if (exactLimit < 1) {
+            throw new IllegalArgumentException("exact limit " + exactLimit);
+        }
         this.world = world;
         this.chunk = chunk;
+        this.exactLimit = exactLimit;
     }
 
     /**
@@ -73,36 +124,69 @@ public final class PlaceChunk {
     }
 
     /**
-     * Records that a segment touched a position.
+     * Records that a segment touched a position. The result depends only on the set of ids added, not
+     * on their order: a position keeps its largest ids exactly and the buckets of the rest.
      *
      * @param local   the in-chunk key
      * @param segment the segment id
      */
     public void add(int local, long segment) {
-        positions.computeIfAbsent(local, ignored -> new IdRuns()).add(bucket(segment));
+        Touches touches = positions.computeIfAbsent(local, ignored -> Touches.empty());
+        IdRuns exact = touches.exact();
+        if (exact.contains(segment)) {
+            return;
+        }
+        if (exact.count() < exactLimit || segment > exact.min()) {
+            exact.add(segment);
+            while (exact.count() > exactLimit) {
+                long smallest = exact.min();
+                exact.remove(smallest);
+                touches.older().add(bucket(smallest));
+            }
+        } else {
+            touches.older().add(bucket(segment));
+        }
     }
 
     /**
-     * Every position with its buckets.
+     * Drops a segment id from every position's exact ids (a rewritten segment). Buckets cannot drop one
+     * id and keep it; the region row no longer lists it, which keeps it out of lookups.
+     *
+     * @param segment the segment id
+     */
+    public void remove(long segment) {
+        Iterator<Map.Entry<Integer, Touches>> entries = positions.entrySet().iterator();
+        while (entries.hasNext()) {
+            Touches touches = entries.next().getValue();
+            if (touches.exact().remove(segment) && touches.isEmpty()) {
+                entries.remove();
+            }
+        }
+    }
+
+    /**
+     * Every position with its segments.
      *
      * @return a read-only view
      */
-    public @NotNull NavigableMap<Integer, IdRuns> positions() {
+    public @NotNull NavigableMap<Integer, Touches> positions() {
         return Collections.unmodifiableNavigableMap(positions);
     }
 
     /**
-     * Drops the buckets below the oldest stored segment's bucket, and the positions left with none.
+     * Drops the exact ids below the oldest stored segment and the buckets below its bucket, and the
+     * positions left with nothing.
      *
      * @param oldest the oldest stored segment id
      */
     public void trim(long oldest) {
         long bound = bucket(oldest);
-        Iterator<Map.Entry<Integer, IdRuns>> entries = positions.entrySet().iterator();
+        Iterator<Map.Entry<Integer, Touches>> entries = positions.entrySet().iterator();
         while (entries.hasNext()) {
-            IdRuns buckets = entries.next().getValue();
-            buckets.dropBelow(bound);
-            if (buckets.isEmpty()) {
+            Touches touches = entries.next().getValue();
+            touches.exact().dropBelow(oldest);
+            touches.older().dropBelow(bound);
+            if (touches.isEmpty()) {
                 entries.remove();
             }
         }
@@ -124,23 +208,32 @@ public final class PlaceChunk {
      * @return one compressed frame
      */
     public byte @NotNull [] toBody(int level) {
-        ByteWriter out = new ByteWriter(16 + positions.size() * 5);
+        ByteWriter out = new ByteWriter(16 + positions.size() * 6);
         out.writeVarLong(positions.size());
         int previous = 0;
-        long previousFirst = 0;
-        for (Map.Entry<Integer, IdRuns> entry : positions.entrySet()) {
-            IdRuns buckets = entry.getValue();
+        long previousExact = 0;
+        long previousOlder = 0;
+        for (Map.Entry<Integer, Touches> entry : positions.entrySet()) {
+            IdRuns exact = entry.getValue().exact();
+            IdRuns older = entry.getValue().older();
             out.writeVarLong(entry.getKey() - previous);
-            out.writeVarLong(buckets.runCount());
-            buckets.writeRuns(out, previousFirst);
+            out.writeVarLong(((long) exact.runCount() << 1) | (older.isEmpty() ? 0 : 1));
+            exact.writeRuns(out, previousExact);
+            if (!exact.isEmpty()) {
+                previousExact = exact.start(0);
+            }
+            if (!older.isEmpty()) {
+                out.writeVarLong(older.runCount());
+                older.writeRuns(out, previousOlder);
+                previousOlder = older.start(0);
+            }
             previous = entry.getKey();
-            previousFirst = buckets.start(0);
         }
         return Compression.compressAt(out.toByteArray(), level);
     }
 
     /**
-     * Decodes a row.
+     * Decodes a row with the production exact limit.
      *
      * @param world the world id
      * @param chunk the chunk key
@@ -149,24 +242,47 @@ public final class PlaceChunk {
      * @throws CodecException when the body is corrupt
      */
     public static @NotNull PlaceChunk fromBody(int world, long chunk, byte @NotNull [] body) {
-        PlaceChunk out = new PlaceChunk(world, chunk);
-        read(body, local -> true, Integer.MAX_VALUE, (local, buckets) -> out.positions.put(local, buckets));
+        return fromBody(world, chunk, body, EXACT_SEGMENTS);
+    }
+
+    /**
+     * Decodes a row.
+     *
+     * @param world      the world id
+     * @param chunk      the chunk key
+     * @param body       the body
+     * @param exactLimit the exact limit the row was written with
+     * @return the row
+     * @throws CodecException when the body is corrupt or a position holds more exact ids than the limit
+     */
+    public static @NotNull PlaceChunk fromBody(int world, long chunk, byte @NotNull [] body, int exactLimit) {
+        PlaceChunk out = new PlaceChunk(world, chunk, exactLimit);
+        read(body, local -> true, Integer.MAX_VALUE, (local, exact, older) -> {
+            if (exact.count() > exactLimit) {
+                throw new CodecException("position " + local + " lists " + exact.count() + " exact ids, more than "
+                        + exactLimit);
+            }
+            out.positions.put(local, new Touches(exact, older));
+        });
         return out;
     }
 
     /**
-     * The buckets of the positions a predicate accepts, read straight from a body without building the
+     * The segments of the positions a predicate accepts, read straight from a body without building the
      * row (the read path of a lookup).
      *
      * @param body     the body
      * @param accepts  which in-chunk keys count
      * @param maxLocal no key above this is accepted: the read stops there (positions are sorted)
-     * @return the union of their buckets
+     * @return the union of their exact ids and the union of their older buckets
      * @throws CodecException when the body is corrupt
      */
-    public static @NotNull IdRuns bucketsWhere(byte @NotNull [] body, @NotNull IntPredicate accepts, int maxLocal) {
-        IdRuns out = new IdRuns();
-        read(body, accepts, maxLocal, (local, buckets) -> out.addAll(buckets));
+    public static @NotNull Touches segmentsWhere(byte @NotNull [] body, @NotNull IntPredicate accepts, int maxLocal) {
+        Touches out = Touches.empty();
+        read(body, accepts, maxLocal, (local, exact, older) -> {
+            out.exact().addAll(exact);
+            out.older().addAll(older);
+        });
         return out;
     }
 
@@ -178,7 +294,8 @@ public final class PlaceChunk {
             throw new CodecException("chunk row lists " + count + " positions in " + raw.length + " bytes");
         }
         int local = 0;
-        long previousFirst = 0;
+        long previousExact = 0;
+        long previousOlder = 0;
         for (int i = 0; i < count; i++) {
             int delta = in.readVarInt();
             if (delta < 0 || i > 0 && delta == 0) {
@@ -191,16 +308,40 @@ public final class PlaceChunk {
             if (local > maxLocal) {
                 return;
             }
-            int runs = in.readVarInt();
-            if (runs == 0) {
-                throw new CodecException("position " + local + " lists no bucket");
+            int flags = in.readVarInt();
+            if (flags < 0) {
+                throw new CodecException("position " + local + " has a negative run count");
             }
-            if (accepts.test(local)) {
-                IdRuns buckets = IdRuns.readRuns(in, runs, previousFirst);
-                sink.accept(local, buckets);
-                previousFirst = buckets.start(0);
-            } else {
-                previousFirst = IdRuns.skipRuns(in, runs, previousFirst);
+            int exactRuns = flags >>> 1;
+            boolean hasOlder = (flags & 1) != 0;
+            if (exactRuns == 0 && !hasOlder) {
+                throw new CodecException("position " + local + " lists no segment");
+            }
+            boolean wanted = accepts.test(local);
+            IdRuns exact = new IdRuns();
+            if (wanted) {
+                exact = IdRuns.readRuns(in, exactRuns, previousExact);
+                if (exactRuns > 0) {
+                    previousExact = exact.start(0);
+                }
+            } else if (exactRuns > 0) {
+                previousExact = IdRuns.skipRuns(in, exactRuns, previousExact);
+            }
+            IdRuns older = new IdRuns();
+            if (hasOlder) {
+                int olderRuns = in.readVarInt();
+                if (olderRuns < 1) {
+                    throw new CodecException("position " + local + " flags older buckets but lists " + olderRuns);
+                }
+                if (wanted) {
+                    older = IdRuns.readRuns(in, olderRuns, previousOlder);
+                    previousOlder = older.start(0);
+                } else {
+                    previousOlder = IdRuns.skipRuns(in, olderRuns, previousOlder);
+                }
+            }
+            if (wanted) {
+                sink.accept(local, exact, older);
             }
         }
         if (in.hasRemaining()) {
@@ -211,7 +352,7 @@ public final class PlaceChunk {
     /** Receives a decoded position. */
     @FunctionalInterface
     private interface Sink {
-        void accept(int local, @NotNull IdRuns buckets);
+        void accept(int local, @NotNull IdRuns exact, @NotNull IdRuns older);
     }
 
     @Override

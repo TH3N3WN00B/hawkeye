@@ -17,7 +17,6 @@ import gg.moonrise.hawkeye.core.repository.segment.ByteRange;
 import gg.moonrise.hawkeye.core.repository.segment.Regions;
 import gg.moonrise.hawkeye.core.repository.segment.SegmentHeader;
 import gg.moonrise.hawkeye.core.repository.segment.UnitScan;
-import gg.moonrise.hawkeye.core.sql.Database;
 import gg.moonrise.hawkeye.core.sql.Sql;
 import gg.moonrise.hawkeye.entity.query.RollbackState;
 import gg.moonrise.moss.spring.SpringComponent;
@@ -29,6 +28,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
@@ -37,17 +37,17 @@ import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
- * The place index (docs/architecture.md, "Place index"): which segments hold rows in which chunk
- * ({@code place_region}), and for a chunk in more than {@link #BUSY_SEGMENTS} segments which buckets of
- * 16 segments touched which position ({@code place_chunk}). It is changed in the transaction that
- * writes or rewrites a segment, trimmed after a purge, and caught up for segments written before it
- * existed ({@code indexed_from}). A lookup about a place reads only the segments it names, plus every
- * segment below {@code indexed_from}.
+ * The place part of the {@link SegmentIndex} (docs/architecture.md, "Segment index"): which segments
+ * hold rows in which chunk ({@code region_segment}), and for a chunk in more than {@link #BUSY_SEGMENTS}
+ * segments which segments touched which position ({@code block_segment}: the newest
+ * {@link PlaceChunk#EXACT_SEGMENTS} exactly, older ones in buckets of 16). {@link SegmentIndex} holds the
+ * state lock and calls it in the transaction that writes, rewrites or purges segments; a lookup about a
+ * place reads only the segments it names.
  */
 @SpringComponent
 public final class PlaceIndex {
 
-    /** A chunk in more segments than this gets a {@code place_chunk} row. */
+    /** A chunk in more segments than this gets a {@code block_segment} row. */
     public static final int BUSY_SEGMENTS = 16;
 
     /**
@@ -57,9 +57,6 @@ public final class PlaceIndex {
      */
     public static final int MAX_AREA_CHUNKS = 1_024;
 
-    /** Segments indexed per catch-up transaction. */
-    public static final int CATCH_UP_BATCH = 64;
-
     /** The zstd level of index rows: rewritten on every pack, so cheaper than the segments' 19. */
     public static final int LEVEL = 9;
 
@@ -67,6 +64,7 @@ public final class PlaceIndex {
     private final @NotNull SegmentRepository segments;
     private final @NotNull SegmentCache cache;
     private final int busySegments;
+    private final int exactSegments;
 
     /**
      * The index with the production threshold.
@@ -78,117 +76,67 @@ public final class PlaceIndex {
     @Autowired
     public PlaceIndex(@NotNull PlaceIndexRepository places, @NotNull SegmentRepository segments,
             @NotNull SegmentCache cache) {
-        this(places, segments, cache, BUSY_SEGMENTS);
+        this(places, segments, cache, BUSY_SEGMENTS, PlaceChunk.EXACT_SEGMENTS);
     }
 
     /**
-     * The index with another busy threshold, so tests make chunks cross it with a few segments.
+     * The index with other limits, so tests make chunks cross them with a few segments.
      *
-     * @param places       the index tables
-     * @param segments     the segment table
-     * @param cache        the parsed-header cache
-     * @param busySegments a chunk in more segments than this gets a {@code place_chunk} row
+     * @param places        the index tables
+     * @param segments      the segment table
+     * @param cache         the parsed-header cache
+     * @param busySegments  a chunk in more segments than this gets a {@code block_segment} row
+     * @param exactSegments how many of a position's newest segment ids are kept exactly
      */
     PlaceIndex(@NotNull PlaceIndexRepository places, @NotNull SegmentRepository segments, @NotNull SegmentCache cache,
-            int busySegments) {
+            int busySegments, int exactSegments) {
         this.places = places;
         this.segments = segments;
         this.cache = cache;
         this.busySegments = busySegments;
+        this.exactSegments = exactSegments;
     }
 
     /**
-     * What one catch-up call did.
+     * Records segments just written and a segment rewritten, in the writing transaction: reads the
+     * touched rows, applies the removal and the additions, trims what no longer exists, builds the rows
+     * of chunks that became busy and writes everything back. The caller holds the state lock.
      *
-     * @param indexed how many segments it indexed
-     * @param more    whether segments are still missing from the index
-     */
-    public record CatchUp(int indexed, boolean more) {
-    }
-
-    /**
-     * Records a segment just written, in the writing transaction.
-     *
-     * @param connection a connection inside the transaction that inserted the segment
+     * @param connection a connection inside the writing transaction
      * @param shard      the shard
-     * @param placed     the places of the segment's rows
+     * @param added      the places of the new segments
+     * @param removal    the rewritten segment, already deleted, if any
+     * @param oldest     the oldest stored segment id (0 when none is stored)
      * @throws SQLException when reading or writing fails
      */
-    public void added(@NotNull Connection connection, @NotNull Shard shard, @NotNull SegmentPlaces placed)
-            throws SQLException {
-        places.lockIndexedFrom(connection, shard.database().sql());
-        apply(connection, shard, List.of(placed), Optional.empty());
+    public void apply(@NotNull Connection connection, @NotNull Shard shard, @NotNull List<SegmentPlaces> added,
+            @NotNull Optional<RemovedSegment> removal, long oldest) throws SQLException {
+        write(connection, shard, added, removal.map(gone -> new Removal(gone.segment(), regionsOf(gone.header()))),
+                oldest);
     }
 
     /**
-     * Records that a segment was rewritten: its id leaves the rows of the regions its header lists, and
-     * its replacement (when anything was kept) is added.
-     *
-     * @param connection  a connection inside the rewriting transaction, after the old segment is deleted
-     * @param shard       the shard
-     * @param old         the old segment id
-     * @param oldHeader   its header
-     * @param replacement the places of the new segment, when one was written
-     * @throws SQLException when reading or writing fails
-     */
-    public void replaced(@NotNull Connection connection, @NotNull Shard shard, long old,
-            @NotNull SegmentHeader oldHeader, @NotNull Optional<SegmentPlaces> replacement) throws SQLException {
-        places.lockIndexedFrom(connection, shard.database().sql());
-        apply(connection, shard, replacement.stream().toList(), Optional.of(new Removal(old, regionsOf(oldHeader))));
-    }
-
-    /**
-     * Deletes the rows that name no stored segment any more (after a purge).
+     * Deletes the rows that name no stored segment any more (after a purge). The caller holds the state
+     * lock.
      *
      * @param connection a connection inside the purging transaction
-     * @param shard      the shard
+     * @param sql        the shard's SQL context
+     * @param oldest     the oldest stored segment id, or {@link Long#MAX_VALUE} when none is stored
      * @return the number of rows deleted
-     * @throws SQLException when reading or writing fails
+     * @throws SQLException when writing fails
      */
-    public int trim(@NotNull Connection connection, @NotNull Shard shard) throws SQLException {
-        Sql sql = shard.database().sql();
-        places.lockIndexedFrom(connection, sql);
-        long oldest = segments.oldestSegmentId(connection, sql);
-        return places.deleteOlderThan(connection, sql, oldest == 0 ? Long.MAX_VALUE : oldest);
+    public int trim(@NotNull Connection connection, @NotNull Sql sql, long oldest) throws SQLException {
+        return places.deleteOlderThan(connection, sql, oldest);
     }
 
     /**
-     * Indexes up to some of the segments below {@code indexed_from}, newest first, a batch per
-     * transaction, lowering {@code indexed_from} with each batch.
+     * The chunks of a filter's area, each with whether the area takes all of it. Empty when the filter
+     * has no area, or one larger than {@link #MAX_AREA_CHUNKS}: then the place index does not narrow it.
      *
-     * @param shard       the shard
-     * @param maxSegments the most segments to index
-     * @return how many were indexed and whether more are missing
-     * @throws SQLException when reading or writing fails
+     * @param filter the filter
+     * @return the chunks, or empty
      */
-    public @NotNull CatchUp catchUp(@NotNull Shard shard, int maxSegments) throws SQLException {
-        Database database = shard.database();
-        int done = 0;
-        while (done < maxSegments) {
-            int batch = Math.min(CATCH_UP_BATCH, maxSegments - done);
-            int indexed = database.transaction(connection -> catchUpBatch(connection, shard, batch));
-            if (indexed == 0) {
-                break;
-            }
-            done += indexed;
-        }
-        boolean more = database.read(connection -> missing(connection, database.sql()));
-        return new CatchUp(done, more);
-    }
-
-    /**
-     * The segments a lookup has to read: those the index names for the filter's area, plus every
-     * segment below {@code indexed_from}. Empty when the filter has no area, or one larger than
-     * {@link #MAX_AREA_CHUNKS}: then every candidate's header decides, as before the index.
-     *
-     * @param connection a connection
-     * @param shard      the shard
-     * @param filter     the filter
-     * @return the segment ids (some may no longer exist)
-     * @throws SQLException when reading fails
-     */
-    public @NotNull Optional<IdRuns> plan(@NotNull Connection connection, @NotNull Shard shard,
-            @NotNull EventFilter filter) throws SQLException {
+    public @NotNull Optional<NavigableMap<ChunkRef, Boolean>> chunks(@NotNull EventFilter filter) {
         if (!filter.hasArea()) {
             return Optional.empty();
         }
@@ -208,11 +156,24 @@ public final class PlaceIndex {
                 chunks.merge(new ChunkRef(range.world(), chunk), wholeChunk(filter, range, chunk), Boolean::logicalOr);
             }
         }
+        return Optional.of(chunks);
+    }
+
+    /**
+     * The indexed segments that may hold rows in a filter's area: for chunks the area takes whole, or
+     * that are not busy, every segment the region row lists; for the others, the listed segments the
+     * block row names for the positions inside the area, exactly or by bucket.
+     *
+     * @param connection a connection
+     * @param shard      the shard
+     * @param filter     the filter
+     * @param chunks     the filter's chunks ({@link #chunks})
+     * @return the segment ids (some may no longer exist)
+     * @throws SQLException when reading fails
+     */
+    public @NotNull IdRuns plan(@NotNull Connection connection, @NotNull Shard shard, @NotNull EventFilter filter,
+            @NotNull NavigableMap<ChunkRef, Boolean> chunks) throws SQLException {
         Sql sql = shard.database().sql();
-        Optional<Long> indexedFrom = places.indexedFrom(connection, sql);
-        if (indexedFrom.isEmpty()) {
-            return Optional.empty();
-        }
         Set<RegionRef> regionRefs = new TreeSet<>();
         chunks.keySet().forEach(chunk -> regionRefs.add(chunk.region()));
         Map<RegionRef, PlaceRegion> regions = readRegions(connection, sql, regionRefs);
@@ -233,87 +194,29 @@ public final class PlaceIndex {
         Map<ChunkRef, byte[]> bodies = readBodies(connection, sql, Kind.CHUNK, partial.keySet());
         for (Map.Entry<ChunkRef, IdRuns> entry : partial.entrySet()) {
             byte[] body = bodies.get(entry.getKey());
+            IdRuns chunkIds = entry.getValue();
             if (body == null) {
-                out.addAll(entry.getValue());
+                out.addAll(chunkIds);
                 continue;
             }
             int world = entry.getKey().world();
             long base = PlaceKeys.base(entry.getKey().chunk());
-            IdRuns buckets = PlaceChunk.bucketsWhere(body, local -> filter.inPositions(world, base | local),
-                    maxLocal(filter, world, base));
-            out.addAll(entry.getValue().inBuckets(buckets, PlaceChunk.BUCKET_SHIFT));
+            PlaceChunk.Touches touches = PlaceChunk.segmentsWhere(body,
+                    local -> filter.inPositions(world, base | local), maxLocal(filter, world, base));
+            out.addAll(chunkIds.intersect(touches.exact()));
+            out.addAll(chunkIds.inBuckets(touches.older(), PlaceChunk.BUCKET_SHIFT));
         }
-        if (indexedFrom.get() > 1) {
-            out.addAll(IdRuns.range(0, indexedFrom.get() - 1));
-        }
-        return Optional.of(out);
-    }
-
-    /**
-     * The places of a stored segment's rows, from its units' positions (nothing else is decoded).
-     *
-     * @param connection a connection
-     * @param shard      the shard
-     * @param segment    the segment
-     * @return the places
-     * @throws SQLException when reading fails
-     */
-    public @NotNull SegmentPlaces placesOf(@NotNull Connection connection, @NotNull Shard shard,
-            @NotNull SegmentRow segment) throws SQLException {
-        SegmentHeader header = cache.header(shard.database(), segment.id(), segment.header());
-        List<ByteRange> ranges = new ArrayList<>(header.unitCount());
-        for (int unit = 0; unit < header.unitCount(); unit++) {
-            ranges.add(header.unit(unit));
-        }
-        List<byte[]> frames = segments.readRanges(connection, shard.database().sql(), segment.id(), ranges);
-        int[] worldIds = header.worldIds();
-        SegmentPlaces.Builder builder = SegmentPlaces.builder(segment.id());
-        for (int unit = 0; unit < header.unitCount(); unit++) {
-            byte[] bytes = frames.get(unit);
-            UnitScan scan = new UnitScan(header, unit, bytes, 0, bytes.length);
-            int[] worlds = scan.worldIndexes();
-            long[] positions = scan.positions();
-            for (int row = 0; row < positions.length; row++) {
-                builder.add(worldIds[worlds[row]], positions[row]);
-            }
-        }
-        return builder.build();
-    }
-
-    private int catchUpBatch(@NotNull Connection connection, @NotNull Shard shard, int batch) throws SQLException {
-        Sql sql = shard.database().sql();
-        long indexedFrom = places.lockIndexedFrom(connection, sql);
-        List<Long> ids = segments.idsBelow(connection, sql, indexedFrom, batch);
-        if (ids.isEmpty()) {
-            return 0;
-        }
-        List<SegmentPlaces> added = new ArrayList<>(ids.size());
-        for (SegmentRow segment : segments.rows(connection, sql, ids)) {
-            added.add(placesOf(connection, shard, segment));
-        }
-        apply(connection, shard, added, Optional.empty());
-        places.setIndexedFrom(connection, sql, ids.getLast());
-        return ids.size();
-    }
-
-    private boolean missing(@NotNull Connection connection, @NotNull Sql sql) throws SQLException {
-        Optional<Long> indexedFrom = places.indexedFrom(connection, sql);
-        return indexedFrom.isPresent() && !segments.idsBelow(connection, sql, indexedFrom.get(), 1).isEmpty();
+        return out;
     }
 
     /** A segment id leaving the rows of some regions. */
     private record Removal(long segment, @NotNull Set<RegionRef> regions) {
     }
 
-    /**
-     * The one write path: reads the touched rows, applies additions and a removal, trims what no longer
-     * exists, builds the rows of chunks that became busy and writes everything back. The caller holds
-     * the state lock.
-     */
-    private void apply(@NotNull Connection connection, @NotNull Shard shard, @NotNull List<SegmentPlaces> added,
-            @NotNull Optional<Removal> removal) throws SQLException {
+    /** The one write path ({@link #apply}). */
+    private void write(@NotNull Connection connection, @NotNull Shard shard, @NotNull List<SegmentPlaces> added,
+            @NotNull Optional<Removal> removal, long oldest) throws SQLException {
         Sql sql = shard.database().sql();
-        long oldest = segments.oldestSegmentId(connection, sql);
         Set<RegionRef> touched = new TreeSet<>();
         Set<ChunkRef> addedChunks = new TreeSet<>();
         Set<Long> inMemory = new HashSet<>();
@@ -345,6 +248,7 @@ public final class PlaceIndex {
                     from + PlaceIndexRepository.READ_BATCH));
             Map<ChunkRef, PlaceChunk> rows = busyRows(connection, shard, regions, batch, inMemory);
             for (Map.Entry<ChunkRef, PlaceChunk> entry : rows.entrySet()) {
+                removal.ifPresent(gone -> entry.getValue().remove(gone.segment()));
                 for (SegmentPlaces placed : added) {
                     int[] locals = placed.chunks().get(entry.getKey());
                     if (locals != null) {
@@ -361,7 +265,7 @@ public final class PlaceIndex {
     }
 
     /**
-     * The {@code place_chunk} rows of the added chunks that are busy: existing rows read, and rows built
+     * The {@code block_segment} rows of the added chunks that are busy: existing rows read, and rows built
      * for chunks that crossed {@link #busySegments} (or whose row is missing) from every segment the
      * region row lists for them; segments being added in this call are left to the caller.
      */
@@ -391,13 +295,13 @@ public final class PlaceIndex {
             if (body == null) {
                 crossing.add(chunk);
             } else {
-                rows.put(chunk, PlaceChunk.fromBody(chunk.world(), chunk.chunk(), body));
+                rows.put(chunk, PlaceChunk.fromBody(chunk.world(), chunk.chunk(), body, exactSegments));
             }
         }
         Map<ChunkRef, PlaceChunk> built = new TreeMap<>();
         Map<Long, List<ChunkRef>> bySegment = new TreeMap<>();
         for (ChunkRef chunk : crossing) {
-            built.put(chunk, new PlaceChunk(chunk.world(), chunk.chunk()));
+            built.put(chunk, new PlaceChunk(chunk.world(), chunk.chunk(), exactSegments));
             regions.get(chunk.region()).find(chunk.indexInRegion()).orElseThrow().forEach(segment -> {
                 if (!inMemory.contains(segment)) {
                     bySegment.computeIfAbsent(segment, ignored -> new ArrayList<>()).add(chunk);
@@ -563,6 +467,6 @@ public final class PlaceIndex {
 
     @Override
     public @NotNull String toString() {
-        return "PlaceIndex[busySegments=" + busySegments + "]";
+        return "PlaceIndex[busySegments=" + busySegments + ", exactSegments=" + exactSegments + "]";
     }
 }

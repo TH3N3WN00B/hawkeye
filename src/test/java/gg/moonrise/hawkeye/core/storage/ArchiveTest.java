@@ -12,6 +12,7 @@ import gg.moonrise.hawkeye.core.repository.EventFilter;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
 import gg.moonrise.hawkeye.core.repository.SegmentRepository;
 import gg.moonrise.hawkeye.core.repository.PlaceIndexRepository;
+import gg.moonrise.hawkeye.core.repository.SegmentIndexRepository;
 import gg.moonrise.hawkeye.core.repository.SegmentRow;
 import gg.moonrise.hawkeye.core.repository.place.PlaceChunk;
 import gg.moonrise.hawkeye.core.repository.place.PlaceKeys;
@@ -56,8 +57,9 @@ import org.junit.jupiter.api.io.TempDir;
  * Packing moves events into segments without changing what any read returns. The archived harness
  * holds events in the hot table and in segments whose id ranges overlap (late events packed after
  * their neighbours); a reference harness holds the same events in the hot table only. The archived
- * harness's place index calls a chunk busy after {@link #BUSY} segments, so the events around the
- * origin are in busy chunks and the scattered ones far from it in chunks of one segment.
+ * harness's place index calls a chunk busy after {@link #BUSY} segments and keeps {@link #EXACT} segment
+ * ids per position exactly, so the events around the origin are in busy chunks, blocks touched in many
+ * segments have older buckets, and the scattered events far from the origin are in chunks of one segment.
  */
 public class ArchiveTest {
 
@@ -69,6 +71,7 @@ public class ArchiveTest {
     private static final ArchiveSettings SEGMENTS_OF_500 = new ArchiveSettings().withPacking(500, 60, 1);
     private static final ArchiveSettings SEGMENTS_OF_50 = new ArchiveSettings().withPacking(50, 60, 1);
     private static final int BUSY = 2;
+    private static final int EXACT = 4;
 
     @TempDir
     private Path folder;
@@ -89,7 +92,7 @@ public class ArchiveTest {
         harness = SqliteHarness.open(folder.resolve("archived"));
         reference = SqliteHarness.open(folder.resolve("reference"));
         segments = new CountingSegmentRepository();
-        archive = Archives.create(segments, BUSY);
+        archive = Archives.create(segments, BUSY, EXACT);
         store = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
                 new ActorRepository()), archive);
         referenceStore = new EventStore(new EventRepository(), new QueryResolver(new DictionaryRepository(),
@@ -345,32 +348,10 @@ public class ArchiveTest {
     }
 
     @Test
-    public void aBlockTouchedOnceInABusyChunkReadsOneBucketAndChatIsFoundWhereItWasSaid() throws SQLException {
-        events.clear();
-        Random random = new Random(41);
+    public void aBlockTouchedOnceInABusyChunkReadsOneSegmentAndChatIsFoundWhereItWasSaid() throws SQLException {
         long chatAt = BlockPositions.pack(3, 64, 4);
         long onceAt = BlockPositions.pack(5, 71, 6);
-        for (int i = 0; i < EVENTS; i++) {
-            PendingEvent event = event(random, T0 + i * STEP);
-            if (i == 1_700) {
-                event = new PendingEvent(event.stamp(), "world", chatAt, event.actor(), Action.CHAT, "", null, 0,
-                        new byte[] {1, 'h', 'e', 'r', 'e'});
-            } else if (i == 2_100) {
-                event = new PendingEvent(event.stamp(), "world", onceAt, event.actor(), Action.BLOCK_BREAK,
-                        "minecraft:stone", "minecraft:air", 0, null);
-            } else if (event.world().equals("world") && (event.position() == chatAt || event.position() == onceAt)) {
-                continue;
-            }
-            events.add(event);
-        }
-        referenceStore.write(reference.shard(), referenceNode, "survival", events);
-        store.write(harness.shard(), node, "survival", events);
-        int packed = 0;
-        int pass;
-        while ((pass = archive.compact(harness.shard(), SEGMENTS_OF_50, END + 120_000)) > 0) {
-            packed += pass;
-        }
-        assertEquals(events.size(), packed);
+        archiveInSegmentsOf50(41, Map.of(1_700, chatAt, 2_100, onceAt), Set.of());
         assertTrue(archive.totals(harness.shard()).segments() > 64, "more than four buckets of segments");
         assertTrue(busy(worldId("world"), onceAt) && busy(worldId("world"), chatAt));
         segments.takeBodyReads();
@@ -379,10 +360,7 @@ public class ArchiveTest {
         List<Long> expected = pages(referenceStore, reference, once, true);
         assertEquals(1, expected.size());
         assertEquals(expected, pages(store, harness, once, true));
-        List<Long> read = segments.takeBodyReads();
-        assertTrue(!read.isEmpty() && read.stream().map(PlaceChunk::bucket).distinct().count() == 1,
-                "only segments of one bucket are read: " + read);
-        assertTrue(new HashSet<>(read).size() <= 1 << PlaceChunk.BUCKET_SHIFT, read.toString());
+        assertEquals(1, new HashSet<>(segments.takeBodyReads()).size(), "only the segment holding it is read");
 
         LookupQuery chat = LookupQuery.at(new Area.Block("world", 3, 64, 4));
         List<StoredEvent> said = store.find(harness.shard(), chat, ALL, 0, 10, true);
@@ -390,6 +368,74 @@ public class ArchiveTest {
         assertEquals(Action.CHAT, said.getFirst().action());
         assertEquals(pages(referenceStore, reference, chat, true), List.of(said.getFirst().id()));
         assertLookupsMatchReference("segments of 50 events");
+    }
+
+    @Test
+    public void aBlockTouchedInTwoDistantSegmentsOfABusyChunkReadsExactlyThoseTwo() throws SQLException {
+        long twiceAt = BlockPositions.pack(-7, 66, 12);
+        archiveInSegmentsOf50(43, Map.of(600, twiceAt, 3_300, twiceAt), Set.of());
+        assertTrue(busy(worldId("world"), twiceAt));
+        segments.takeBodyReads();
+
+        LookupQuery twice = LookupQuery.at(new Area.Block("world", -7, 66, 12));
+        List<Long> expected = pages(referenceStore, reference, twice, true);
+        assertEquals(2, expected.size());
+        assertEquals(expected, pages(store, harness, twice, true));
+        assertEquals(expected.reversed(), pages(store, harness, twice, false));
+        assertEquals(2, store.count(harness.shard(), twice, ALL));
+        List<Long> read = new HashSet<>(segments.takeBodyReads()).stream().sorted().toList();
+        assertEquals(2, read.size(), "only the two segments holding it are read: " + read);
+        assertTrue(read.get(1) - read.get(0) > 1 << PlaceChunk.BUCKET_SHIFT, "far apart: " + read);
+    }
+
+    @Test
+    public void aBlockInMoreSegmentsThanTheExactLimitPagesLikeTheReferenceThroughRewritesAndPurges()
+            throws SQLException {
+        long oftenAt = BlockPositions.pack(9, 63, -9);
+        Map<Integer, Long> often = new LinkedHashMap<>();
+        for (int i = 100; i < EVENTS; i += 150) {
+            often.put(i, oftenAt);
+        }
+        archiveInSegmentsOf50(47, often, Set.of(250, 1_000, 2_200));
+        int world = worldId("world");
+        PlaceChunk row = blockRow(world, oftenAt);
+        PlaceChunk.Touches touches = row.positions().get(PlaceKeys.local(oftenAt));
+        assertEquals(EXACT, touches.exact().count(), "the newest ids stay exact");
+        assertTrue(!touches.older().isEmpty(), "the older ones are in buckets");
+
+        LookupQuery block = LookupQuery.at(new Area.Block("world", 9, 63, -9));
+        List<Long> expected = pages(referenceStore, reference, block, true);
+        assertEquals(often.size(), expected.size());
+        assertEquals(expected, pages(store, harness, block, true));
+        assertEquals(expected.reversed(), pages(store, harness, block, false));
+        assertEquals(expected.size(), store.count(harness.shard(), block, ALL));
+
+        // A world purge rewrites the segments that also hold the nether, and drops the exact ids it rewrote.
+        long netherBound = T0 + 12_000_000;
+        int nether = worldId("nether");
+        while (store.purgeBatch(harness.shard(), netherBound, List.of(nether), 400) > 0) {
+            // Purge until nothing older is left.
+        }
+        int referenceNether = worldId(referenceStore, "nether");
+        while (referenceStore.purgeBatch(reference.shard(), netherBound, List.of(referenceNether), 400) > 0) {
+            // The same on the hot-only copy.
+        }
+        assertEquals(expected, pages(store, harness, block, true), "after a world purge");
+        assertEquals(expected.reversed(), pages(store, harness, block, false), "after a world purge");
+        assertLookupsMatchReference("after a world purge");
+
+        long bound = T0 + 15_000_000;
+        while (store.purgeBatch(harness.shard(), bound, List.of(), 400) > 0) {
+            // Purge until nothing older is left.
+        }
+        while (referenceStore.purgeBatch(reference.shard(), bound, List.of(), 400) > 0) {
+            // The same on the hot-only copy.
+        }
+        List<Long> kept = pages(referenceStore, reference, block, true);
+        assertTrue(!kept.isEmpty() && kept.size() < expected.size());
+        assertEquals(kept, pages(store, harness, block, true), "after a purge");
+        assertEquals(kept.size(), store.count(harness.shard(), block, ALL));
+        assertLookupsMatchReference("after a purge");
     }
 
     @Test
@@ -432,21 +478,21 @@ public class ArchiveTest {
                 .anyMatch(region -> region.chunks().keySet().stream().anyMatch(index -> !region.busy(index))),
                 "some chunks are not");
         harness.database().transaction(connection -> {
-            new PlaceIndexRepository().reset(connection, harness.database().sql());
+            new SegmentIndexRepository().reset(connection, harness.database().sql());
             return null;
         });
         assertEquals(Map.of(), indexContent());
         assertLookupsMatchReference("nothing indexed");
 
-        PlaceIndex.CatchUp first = archive.indexPlaces(harness.shard(), 2);
-        assertEquals(new PlaceIndex.CatchUp(2, true), first);
+        SegmentIndex.CatchUp first = archive.catchUpIndex(harness.shard(), 2);
+        assertEquals(new SegmentIndex.CatchUp(2, true), first);
         assertLookupsMatchReference("half indexed");
 
-        PlaceIndex.CatchUp rest = archive.indexPlaces(harness.shard(), 100);
-        assertEquals(new PlaceIndex.CatchUp(4, false), rest);
+        SegmentIndex.CatchUp rest = archive.catchUpIndex(harness.shard(), 100);
+        assertEquals(new SegmentIndex.CatchUp(4, false), rest);
         assertEquals(packed, indexContent(), "catching up gives the rows packing gave");
         assertLookupsMatchReference("caught up");
-        assertEquals(new PlaceIndex.CatchUp(0, false), archive.indexPlaces(harness.shard(), 100));
+        assertEquals(new SegmentIndex.CatchUp(0, false), archive.catchUpIndex(harness.shard(), 100));
     }
 
     /**
@@ -489,7 +535,56 @@ public class ArchiveTest {
         }
     }
 
-    /** Whether a chunk has a {@code place_chunk} row. */
+    /**
+     * Writes {@link #events} with some events moved to blocks of the world (by index; those with
+     * {@code index % 7 == 6} become chat said there, the others block breaks), and every other event at
+     * those blocks dropped, to both copies, and packs the archived copy in segments of 50. The late
+     * events are written and packed after all others, so their segment overlaps the rest.
+     */
+    private void archiveInSegmentsOf50(int seed, Map<Integer, Long> moved, Set<Integer> late) throws SQLException {
+        events.clear();
+        Random random = new Random(seed);
+        Set<Long> special = new HashSet<>(moved.values());
+        List<PendingEvent> lateEvents = new ArrayList<>();
+        for (int i = 0; i < EVENTS; i++) {
+            PendingEvent event = event(random, T0 + i * STEP);
+            Long position = moved.get(i);
+            if (position != null) {
+                event = i % 7 == 6
+                        ? new PendingEvent(event.stamp(), "world", position, event.actor(), Action.CHAT, "", null, 0,
+                                new byte[] {1, 'h', 'e', 'r', 'e'})
+                        : new PendingEvent(event.stamp(), "world", position, event.actor(), Action.BLOCK_BREAK,
+                                "minecraft:stone", "minecraft:air", 0, null);
+            } else if (event.world().equals("world") && special.contains(event.position())) {
+                continue;
+            }
+            (late.contains(i) ? lateEvents : events).add(event);
+        }
+        events.addAll(lateEvents);
+        referenceStore.write(reference.shard(), referenceNode, "survival", events);
+        store.write(harness.shard(), node, "survival", events.subList(0, events.size() - lateEvents.size()));
+        int packed = 0;
+        int pass;
+        while ((pass = archive.compact(harness.shard(), SEGMENTS_OF_50, END + 120_000)) > 0) {
+            packed += pass;
+        }
+        store.write(harness.shard(), node, "survival", lateEvents);
+        // Hours later, so a short last segment is packed too.
+        while ((pass = archive.compact(harness.shard(), SEGMENTS_OF_50, END + 3 * 3_600_000L)) > 0) {
+            packed += pass;
+        }
+        assertEquals(events.size(), packed);
+    }
+
+    /** The decoded block row of a chunk. */
+    private PlaceChunk blockRow(int world, long position) throws SQLException {
+        long chunk = PlaceKeys.chunk(position);
+        byte[] body = harness.database().read(connection -> new PlaceIndexRepository().read(connection,
+                harness.database().sql(), PlaceIndexRepository.Kind.CHUNK, world, List.of(chunk)).get(chunk));
+        return PlaceChunk.fromBody(world, chunk, body, EXACT);
+    }
+
+    /** Whether a chunk has a {@code block_segment} row. */
     private boolean busy(int world, long position) throws SQLException {
         long chunk = PlaceKeys.chunk(position);
         return harness.database().read(connection -> !new PlaceIndexRepository().read(connection,
@@ -502,17 +597,17 @@ public class ArchiveTest {
             Map<String, Object> out = new LinkedHashMap<>();
             try (Statement statement = connection.createStatement()) {
                 try (ResultSet rows = statement.executeQuery("SELECT world, region, newest, body FROM "
-                        + harness.database().tables().placeRegion() + " ORDER BY world, region")) {
+                        + harness.database().tables().regionSegment() + " ORDER BY world, region")) {
                     while (rows.next()) {
                         out.put("region " + rows.getInt(1) + " " + rows.getLong(2) + " " + rows.getLong(3),
                                 PlaceRegion.fromBody(rows.getInt(1), rows.getLong(2), rows.getBytes(4)));
                     }
                 }
                 try (ResultSet rows = statement.executeQuery("SELECT world, chunk, newest, body FROM "
-                        + harness.database().tables().placeChunk() + " ORDER BY world, chunk")) {
+                        + harness.database().tables().blockSegment() + " ORDER BY world, chunk")) {
                     while (rows.next()) {
                         out.put("chunk " + rows.getInt(1) + " " + rows.getLong(2) + " " + rows.getLong(3),
-                                PlaceChunk.fromBody(rows.getInt(1), rows.getLong(2), rows.getBytes(4)));
+                                PlaceChunk.fromBody(rows.getInt(1), rows.getLong(2), rows.getBytes(4), EXACT));
                     }
                 }
             }
@@ -525,8 +620,8 @@ public class ArchiveTest {
         return harness.database().read(connection -> {
             try (Statement statement = connection.createStatement();
                     ResultSet rows = statement.executeQuery("SELECT (SELECT COALESCE(SUM(LENGTH(body)), 0) FROM "
-                            + harness.database().tables().placeRegion() + ") + (SELECT COALESCE(SUM(LENGTH(body)), 0) "
-                            + "FROM " + harness.database().tables().placeChunk() + ")")) {
+                            + harness.database().tables().regionSegment() + ") + (SELECT COALESCE(SUM(LENGTH(body)), 0) "
+                            + "FROM " + harness.database().tables().blockSegment() + ")")) {
                 rows.next();
                 return rows.getLong(1);
             }
