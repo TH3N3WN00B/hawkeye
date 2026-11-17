@@ -24,7 +24,8 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * The segment index (docs/architecture.md, "Segment index"): which segments a lookup has to read. Its
- * place part is the {@link PlaceIndex}. It is changed in the transaction that writes or rewrites a
+ * place part is the {@link PlaceIndex}, its actor part the {@link ActorIndex}; both are changed in the
+ * same transactions, under the same lock, and one {@code indexed_from} covers both. It is changed in the transaction that writes or rewrites a
  * segment, trimmed after a purge, and caught up for segments written before it existed or after it was
  * emptied ({@code indexed_from}); every change takes the state lock first. A lookup reads only the
  * segments the index names, plus every segment below {@code indexed_from}.
@@ -38,6 +39,7 @@ public final class SegmentIndex {
 
     private final @NotNull SegmentIndexRepository state;
     private final @NotNull PlaceIndex places;
+    private final @NotNull ActorIndex actors;
     private final @NotNull SegmentRepository segments;
     private final @NotNull SegmentCache cache;
 
@@ -55,14 +57,14 @@ public final class SegmentIndex {
      *
      * @param connection a connection inside the transaction that inserted the segment
      * @param shard      the shard
-     * @param placed     the places of the segment's rows
+     * @param content    the places and actors of the segment's rows
      * @throws SQLException when reading or writing fails
      */
-    public void added(@NotNull Connection connection, @NotNull Shard shard, @NotNull SegmentPlaces placed)
+    public void added(@NotNull Connection connection, @NotNull Shard shard, @NotNull SegmentContent content)
             throws SQLException {
         Sql sql = shard.database().sql();
         state.lockIndexedFrom(connection, sql);
-        places.apply(connection, shard, List.of(placed), Optional.empty(), segments.oldestSegmentId(connection, sql));
+        apply(connection, shard, List.of(content), Optional.empty());
     }
 
     /**
@@ -72,15 +74,14 @@ public final class SegmentIndex {
      * @param connection  a connection inside the rewriting transaction, after the old segment is deleted
      * @param shard       the shard
      * @param removed     the old segment
-     * @param replacement the places of the new segment, when one was written
+     * @param replacement the places and actors of the new segment, when one was written
      * @throws SQLException when reading or writing fails
      */
     public void replaced(@NotNull Connection connection, @NotNull Shard shard, @NotNull RemovedSegment removed,
-            @NotNull Optional<SegmentPlaces> replacement) throws SQLException {
+            @NotNull Optional<SegmentContent> replacement) throws SQLException {
         Sql sql = shard.database().sql();
         state.lockIndexedFrom(connection, sql);
-        places.apply(connection, shard, replacement.stream().toList(), Optional.of(removed),
-                segments.oldestSegmentId(connection, sql));
+        apply(connection, shard, replacement.stream().toList(), Optional.of(removed));
     }
 
     /**
@@ -95,7 +96,8 @@ public final class SegmentIndex {
         Sql sql = shard.database().sql();
         state.lockIndexedFrom(connection, sql);
         long oldest = segments.oldestSegmentId(connection, sql);
-        return places.trim(connection, sql, oldest == 0 ? Long.MAX_VALUE : oldest);
+        long bound = oldest == 0 ? Long.MAX_VALUE : oldest;
+        return places.trim(connection, sql, bound) + actors.trim(connection, sql, bound);
     }
 
     /**
@@ -124,8 +126,10 @@ public final class SegmentIndex {
 
     /**
      * The segments a lookup has to read: those the index names for the filter, plus every segment below
-     * {@code indexed_from}. Empty when the index does not narrow the filter (no area, or one larger than
-     * {@link PlaceIndex#MAX_AREA_CHUNKS}): then every candidate's header decides.
+     * {@code indexed_from}. The place part narrows a filter with an area of at most
+     * {@link PlaceIndex#MAX_AREA_CHUNKS} chunks, the actor part one listing 1 to
+     * {@link ActorIndex#MAX_ACTORS} actors; when both do, the plan is what both name. Empty when neither
+     * does: then every candidate's header decides.
      *
      * @param connection a connection
      * @param shard      the shard
@@ -136,15 +140,26 @@ public final class SegmentIndex {
     public @NotNull Optional<IdRuns> plan(@NotNull Connection connection, @NotNull Shard shard,
             @NotNull EventFilter filter) throws SQLException {
         Optional<NavigableMap<ChunkRef, Boolean>> chunks = places.chunks(filter);
-        if (chunks.isEmpty()) {
+        boolean byActor = actors.applies(filter);
+        if (chunks.isEmpty() && !byActor) {
             return Optional.empty();
         }
+        Sql sql = shard.database().sql();
         // Read before the rows: catching up only adds rows for segments below this value.
-        Optional<Long> indexedFrom = state.indexedFrom(connection, shard.database().sql());
+        Optional<Long> indexedFrom = state.indexedFrom(connection, sql);
         if (indexedFrom.isEmpty()) {
             return Optional.empty();
         }
-        IdRuns out = places.plan(connection, shard, filter, chunks.get());
+        IdRuns out;
+        if (chunks.isPresent()) {
+            out = places.plan(connection, shard, filter, chunks.get());
+            if (byActor && !out.isEmpty()) {
+                out = out.intersect(actors.plan(connection, sql, filter));
+            }
+        } else {
+            out = actors.plan(connection, sql, filter);
+        }
+        // Every segment below indexed_from is a candidate: (place + old) and (actor + old) = both + old.
         if (indexedFrom.get() > 1) {
             out.addAll(IdRuns.range(0, indexedFrom.get() - 1));
         }
@@ -158,11 +173,12 @@ public final class SegmentIndex {
         if (ids.isEmpty()) {
             return 0;
         }
-        List<SegmentPlaces> added = new ArrayList<>(ids.size());
+        List<SegmentContent> added = new ArrayList<>(ids.size());
         for (SegmentRow segment : segments.rows(connection, sql, ids)) {
-            added.add(placesOf(connection, shard, segment));
+            SegmentHeader header = cache.header(shard.database(), segment.id(), segment.header());
+            added.add(new SegmentContent(placesOf(connection, shard, segment.id(), header), header.actorIds()));
         }
-        places.apply(connection, shard, added, Optional.empty(), segments.oldestSegmentId(connection, sql));
+        apply(connection, shard, added, Optional.empty());
         state.setIndexedFrom(connection, sql, ids.getLast());
         return ids.size();
     }
@@ -172,17 +188,25 @@ public final class SegmentIndex {
         return indexedFrom.isPresent() && !segments.idsBelow(connection, sql, indexedFrom.get(), 1).isEmpty();
     }
 
+    /** Both parts' write path, under the state lock the caller holds. */
+    private void apply(@NotNull Connection connection, @NotNull Shard shard, @NotNull List<SegmentContent> added,
+            @NotNull Optional<RemovedSegment> removal) throws SQLException {
+        Sql sql = shard.database().sql();
+        long oldest = segments.oldestSegmentId(connection, sql);
+        places.apply(connection, shard, added.stream().map(SegmentContent::places).toList(), removal, oldest);
+        actors.apply(connection, sql, added, removal, oldest);
+    }
+
     /** The places of a stored segment's rows, from its units' positions (nothing else is decoded). */
-    private @NotNull SegmentPlaces placesOf(@NotNull Connection connection, @NotNull Shard shard,
-            @NotNull SegmentRow segment) throws SQLException {
-        SegmentHeader header = cache.header(shard.database(), segment.id(), segment.header());
+    private @NotNull SegmentPlaces placesOf(@NotNull Connection connection, @NotNull Shard shard, long segment,
+            @NotNull SegmentHeader header) throws SQLException {
         List<ByteRange> ranges = new ArrayList<>(header.unitCount());
         for (int unit = 0; unit < header.unitCount(); unit++) {
             ranges.add(header.unit(unit));
         }
-        List<byte[]> frames = segments.readRanges(connection, shard.database().sql(), segment.id(), ranges);
+        List<byte[]> frames = segments.readRanges(connection, shard.database().sql(), segment, ranges);
         int[] worldIds = header.worldIds();
-        SegmentPlaces.Builder builder = SegmentPlaces.builder(segment.id());
+        SegmentPlaces.Builder builder = SegmentPlaces.builder(segment);
         for (int unit = 0; unit < header.unitCount(); unit++) {
             byte[] bytes = frames.get(unit);
             UnitScan scan = new UnitScan(header, unit, bytes, 0, bytes.length);

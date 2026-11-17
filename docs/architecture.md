@@ -220,8 +220,10 @@ A segment's header settles most lookups about a place without reading the segmen
 is active all the time (a hopper line, a farm) is in every segment, and a block inside it would cost
 one unit read per segment. The segment index (`core.storage.SegmentIndex`, the one entry point
 `Archive` uses) remembers which segments hold which place, so such a lookup reads only the segments
-that can hold the block. Its place part is `core.storage.PlaceIndex` (rows in
-`core.repository.place`); `SegmentIndex` takes the state lock and calls it. Schema version 5 (version
+that can hold the block, and which segments hold which actor, so a lookup by a player without a
+place reads only that player's segments instead of every segment's header. Its place part is
+`core.storage.PlaceIndex` (rows in `core.repository.place`), its actor part `core.storage.ActorIndex`;
+`SegmentIndex` takes the state lock and calls both in the same transaction. Schema version 5 (version
 4 had the place index under the names `place_region`, `place_chunk` and `place_state`; version 5
 drops them and every segment is indexed again: an index format change takes new table names, so a
 build that does not know the new formats fails on its first index statement instead of misreading
@@ -251,10 +253,15 @@ rows).
   first bucket. When the row exists it covers every segment the region row lists for the chunk.
   Bodies are zstd level 9 (`LEVEL`): rows are rewritten on every pack, where level 19 costs more time
   than it saves bytes.
+- **`actor_segment`.** One row per actor id (the dictionary id) that archived rows have: the ids of the
+  segments holding rows of that actor, as `IdRuns` bytes against 0 without a compression frame (rows
+  are a few bytes to a few hundred), and `newest`, the largest id. What a segment contributes to the
+  index travels as one value (`SegmentContent`: its places and its sorted distinct actor ids).
 - **Writing.** `Archive.pack` (compaction, bulk import, purge rewrite) updates the index in the
   transaction that inserts the segment. Every writer first locks the `segment_index` row (`FOR UPDATE`
   on MySQL and PostgreSQL), so two writers never rewrite a row from the same old version. The region
-  rows of the segment's chunks get its id; a chunk that now crosses `BUSY_SEGMENTS` gets a
+  rows of the segment's chunks get its id, and so do the actor rows of every actor it holds (the
+  distinct actors of the packed rows; the header's actor list when catching up: the same set); a chunk that now crosses `BUSY_SEGMENTS` gets a
   `block_segment` row built from all its segments (their units for the chunk are read and only the
   positions decoded) plus the new rows; an existing row gets the new segment at its positions (the
   smallest exact id of a position that already has 64 moves into its bucket).
@@ -264,30 +271,39 @@ rows).
 - **Deleting.** A purge that deletes whole segments leaves the rows alone (readers ignore ids that no
   longer exist) and then deletes the rows whose `newest` is below the oldest stored segment, so the
   index shrinks with the data; rows of places still active are trimmed by the next pack that touches
-  them. A rewrite (straddling or world purge) removes the old id from the rows of every region its
-  header lists and adds the new segment like any pack; the busy rows read for the new segment also
+  them; actor rows likewise (`newest` below the oldest stored segment). A rewrite (straddling or world
+  purge) removes the old id from the rows of every region and every actor its header lists and adds
+  the new segment like any pack; the busy rows read for the new segment also
   drop the old id from their exact ids (a bucket cannot drop one id; the region row no longer lists
   it, which keeps it out of lookups).
-- **Catching up.** `indexed_from`: every segment at or above it is indexed. Version 5 sets it to one
+- **Catching up.** `indexed_from`: every segment at or above it is indexed, places and actors alike
+  (one pass and one transaction per batch fills both). Version 5 sets it to one
   more than the largest existing segment id. After its packing passes the archiver spends up to
   `Archiver.CATCH_UP_TIME` (20 s) per run, under its lease, indexing the newest missing segments in
   transactions of `CATCH_UP_BATCH` (64; positions only are decoded) and lowering `indexed_from` in the
   same transaction (`Archive.catchUpIndex`). Emptying the index tables and resetting `indexed_from`
   (`SegmentIndexRepository.reset`) rebuilds the index the same way; the rows equal the ones packing
   wrote.
-- **Reading.** A filter with an area of at most `MAX_AREA_CHUNKS` (1,024 chunks, one region's worth:
-  at most a few region rows and a bounded number of busy rows, against a cached header test per
-  segment for larger areas) reads the region rows of the area's chunks and, for busy chunks the area
-  covers only partly, their `block_segment` rows (`IN` lists on the primary keys). A chunk without a
-  busy row contributes all its segment ids; a busy one, of the ids its region row lists, those the
-  accepted positions (`EventFilter.inPositions`) name exactly and those in their older buckets; no
-  accepted position, no segment. Every segment
-  below `indexed_from` is added. The id ranges of the candidates are read by primary-key ranges (for a
-  set of more than 16 runs, a place active for a long time, from one scan of the covering index
-  instead: about 20 bytes a segment where the seeks were thousands), put
-  in reading order and filtered by id range and cursor; headers and flags are then fetched page by page
-  (4, 8, 16, then 32 ids), with the same early stop as the keyset path. Larger areas and filters
-  without an area keep the keyset path over `last_id`/`first_id`.
+- **Reading.** `SegmentIndex.plan` combines two optional plans. The place plan: a filter with an area
+  of at most `MAX_AREA_CHUNKS` (1,024 chunks, one region's worth: at most a few region rows and a
+  bounded number of busy rows, against a cached header test per segment for larger areas) reads the
+  region rows of the area's chunks and, for busy chunks the area covers only partly, their
+  `block_segment` rows (`IN` lists on the primary keys). A chunk without a busy row contributes all its
+  segment ids; a busy one, of the ids its region row lists, those the accepted positions
+  (`EventFilter.inPositions`) name exactly and those in their older buckets; no accepted position, no
+  segment. The actor plan: a filter listing 1 to `ActorIndex.MAX_ACTORS` (64) actors reads their rows
+  (one `IN` list) and takes the union; an actor without a row contributes nothing, and excluded actors
+  never narrow. Both present: their intersection; one: that one; none: the keyset path below.
+  `indexed_from` is read before the rows, and every segment below it is added to the plan.
+- **Candidate ranges.** The id ranges of the planned segments overlapping the filter's id range are
+  read by primary-key ranges (`id = ? OR id BETWEEN ? AND ?`, filtered by the id range in Java), or,
+  for a set of more than 16 runs or 64 ids (a place active for a long time, an actor seen all the
+  time), from one scan of the covering index bounded by the filter's id range
+  (`last_id >= ? AND first_id <= ?` on `(last_id, id, first_id)`, about 20 bytes a segment where the
+  seeks were thousands or a long run dragged table pages, on InnoDB the inline headers). Both paths
+  give the same ranges. They are put in reading order and filtered by the cursor; headers and flags
+  are then fetched page by page (4, 8, 16, then 32 ids), with the same early stop as the keyset path.
+  Larger areas and filters the index does not narrow keep the keyset path over `last_id`/`first_id`.
 
 Measured with the version-4 place index (buckets only, no actor index) on the 1.40 billion event
 replay database (5,337 segments, 2026-11-17, SQLite, 4 KB pages):
@@ -321,7 +337,7 @@ for the unit, one for the shared frames when a row matched).
 | User | `actor IN (...)` on `(actor)` plus the id range |
 | Time only | primary key range |
 | Purge | primary key range delete, in batches; archive segments by `first_id`, deleted or rewritten whole |
-| Segment index, places | `world = ? AND region IN (...)` / `world = ? AND chunk IN (...)` on the primary keys; trimming `newest < ?` on `(newest)`; candidates `id = ? OR id BETWEEN ? AND ? ...` on the segment primary key, or `last_id >= ?` answered by the covering index alone for a scattered set, then `id IN (...)` on the primary key |
+| Segment index | `world = ? AND region IN (...)` / `world = ? AND chunk IN (...)` / `actor IN (...)` on the primary keys; trimming `newest < ?` on `(newest)` of all three tables; candidates `id = ? OR id BETWEEN ? AND ? ...` on the segment primary key, or `last_id >= ? AND first_id <= ?` answered by the covering index alone for a set of more than 16 runs or 64 ids, then `id IN (...)` on the primary key |
 | Archive candidates | `last_id >= ? AND first_id <= ?` on `(last_id)` (newest first) or `(first_id)` (oldest first); a later page adds `last_id <= ?` so it seeks to where the previous one ended; the flag row by its primary key; the body by `substr` byte ranges |
 
 InnoDB and SQLite append the primary key to secondary indexes, so `(world, pos)` and `(actor)` are

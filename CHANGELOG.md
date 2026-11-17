@@ -30,7 +30,9 @@ All notable changes to this project are documented in this file. The format is b
   and the archiver adds segments written before it existed (newest first, up to 20 s per run). A
   block or area lookup reads only the segments that can hold the place, so a block never touched
   inside a chunk that is active all the time no longer reads every segment, and a block with little
-  history inside it reads only the segments that hold it.
+  history inside it reads only the segments that hold it. Per actor, the segments holding its rows: a
+  lookup by up to 64 players reads only their segments instead of testing every segment's header,
+  and a lookup by player and place reads only the segments both name.
 - CoreProtect-compatible parameters (`u: t: r: a: i: e: s: #preview #count`) for lookups, rollbacks,
   restores and purges.
 - Multi-server operation: shared databases, shards read in parallel for network lookups, network

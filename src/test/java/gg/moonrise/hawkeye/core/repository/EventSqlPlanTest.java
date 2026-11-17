@@ -105,8 +105,19 @@ public class EventSqlPlanTest {
                     + kind.table(harness.database().sql()) + "_1 (world=? AND " + kind.keyColumn() + "=?)"), plan);
             assertTrue(!plan.contains("SCAN"), plan);
             String trim = explain(PlaceIndexRepository.deleteOlderQuery(harness.database().sql(), kind, 40));
-            assertTrue(trim.contains("_newest (newest<?)"), trim);
+            assertTrue(trim.contains(kind.table(harness.database().sql()) + "_newest (newest<?)"), trim);
         }
+    }
+
+    @Test
+    public void actorIndexRowsAreReadByPrimaryKeyAndTrimmedByNewest() throws SQLException {
+        Sql sql = harness.database().sql();
+        String plan = explain(ActorIndexRepository.readQuery(sql, List.of(5, 9, 12)));
+        assertTrue(plan.contains("SEARCH " + sql.tables().actorSegment() + " USING INTEGER PRIMARY KEY (rowid=?)"),
+                plan);
+        assertTrue(!plan.contains("SCAN"), plan);
+        String trim = explain(ActorIndexRepository.deleteOlderQuery(sql, 40));
+        assertTrue(trim.contains(sql.tables().actorSegment() + "_newest (newest<?)"), trim);
     }
 
     @Test
@@ -123,8 +134,10 @@ public class EventSqlPlanTest {
 
     @Test
     public void theIdRangesOfEverySegmentComeFromTheIndexAlone() throws SQLException {
-        String plan = explain(SegmentRepository.everyRangeQuery(harness.database().sql()));
+        String plan = explain(SegmentRepository.everyRangeQuery(harness.database().sql(), 5, 9_000));
         assertTrue(plan.contains("USING COVERING INDEX hawkeye_segment_last (last_id>?)"), plan);
+        String all = explain(SegmentRepository.everyRangeQuery(harness.database().sql(), 0, Long.MAX_VALUE));
+        assertTrue(all.contains("USING COVERING INDEX hawkeye_segment_last (last_id>?)"), all);
     }
 
     @Test
@@ -133,7 +146,7 @@ public class EventSqlPlanTest {
         SegmentRepository repository = new SegmentRepository();
         List<Long> stored = new ArrayList<>();
         harness.database().transaction(connection -> {
-            for (int segment = 0; segment < 80; segment++) {
+            for (int segment = 0; segment < 200; segment++) {
                 try (PreparedStatement statement = connection.prepareStatement("INSERT INTO " + sql.tables().segment()
                         + " (first_id, last_id, events, header, body) VALUES (?, ?, 1, ?, ?)",
                         Statement.RETURN_GENERATED_KEYS)) {
@@ -152,8 +165,9 @@ public class EventSqlPlanTest {
         });
         IdRuns scattered = new IdRuns();
         IdRuns few = new IdRuns();
+        IdRuns oneLongRun = IdRuns.range(stored.get(10), stored.get(150));
         for (int index = 0; index < stored.size(); index++) {
-            if (index % 2 == 0) {
+            if (index % 2 == 0 && index < 80) {
                 scattered.add(stored.get(index));
             }
             if (index < 6) {
@@ -162,11 +176,13 @@ public class EventSqlPlanTest {
         }
         scattered.add(stored.getLast() + 500);
         assertTrue(scattered.runCount() > SegmentRepository.SCATTERED_RUNS);
-        assertTrue(few.runCount() <= SegmentRepository.SCATTERED_RUNS);
+        assertTrue(few.runCount() <= SegmentRepository.SCATTERED_RUNS && few.count() <= SegmentRepository.SCATTERED_IDS);
+        assertTrue(oneLongRun.runCount() == 1 && oneLongRun.count() > SegmentRepository.SCATTERED_IDS);
 
-        List<SegmentRange> wide = harness.database().read(connection -> repository.ranges(connection, sql, scattered));
-        List<SegmentRange> narrow = harness.database().read(connection -> repository.ranges(connection, sql, few));
-
+        List<SegmentRange> wide = harness.database().read(connection -> repository.ranges(connection, sql, scattered,
+                0, Long.MAX_VALUE));
+        List<SegmentRange> narrow = harness.database().read(connection -> repository.ranges(connection, sql, few, 0,
+                Long.MAX_VALUE));
         assertEquals(40, wide.size(), "an id that is not stored is left out");
         for (int index = 0; index < wide.size(); index++) {
             assertEquals(new SegmentRange(stored.get(2 * index), 2_000L * index, 2_000L * index + 999), wide.get(index));
@@ -175,6 +191,30 @@ public class EventSqlPlanTest {
         for (int index = 0; index < narrow.size(); index++) {
             assertEquals(new SegmentRange(stored.get(index), 1_000L * index, 1_000L * index + 999), narrow.get(index));
         }
+
+        // Both paths give the same ranges for the same set and id range: the index scan for a set of many
+        // ids, the primary key for the same set split into batches of a few.
+        long minId = 20_500;
+        long maxId = 120_200;
+        for (IdRuns set : List.of(scattered, few, oneLongRun)) {
+            List<SegmentRange> bounded = harness.database().read(connection -> repository.ranges(connection, sql,
+                    set, minId, maxId));
+            List<SegmentRange> bySeeks = new ArrayList<>();
+            for (long id : toList(set)) {
+                bySeeks.addAll(harness.database().read(connection -> repository.ranges(connection, sql, IdRuns.of(id),
+                        minId, maxId)));
+            }
+            assertEquals(bySeeks, bounded, set.toString());
+            assertTrue(bounded.stream().allMatch(range -> range.lastId() >= minId && range.firstId() <= maxId));
+        }
+        assertEquals(101, harness.database().read(connection -> repository.ranges(connection, sql, oneLongRun, minId,
+                maxId)).size(), "segments 20 to 120 of the run overlap the id range");
+    }
+
+    private static List<Long> toList(IdRuns set) {
+        List<Long> out = new ArrayList<>();
+        set.forEach(out::add);
+        return out;
     }
 
     private static EventFilter filter(Set<Integer> worlds, List<EventFilter.WorldRange> ranges,

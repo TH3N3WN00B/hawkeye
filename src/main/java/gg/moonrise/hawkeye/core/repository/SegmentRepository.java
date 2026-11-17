@@ -39,6 +39,9 @@ public class SegmentRepository {
     /** A set of more runs than this is filtered from one index scan instead of sought run by run. */
     public static final int SCATTERED_RUNS = 16;
 
+    /** A set of more ids than this is filtered from one index scan instead of sought run by run. */
+    public static final int SCATTERED_IDS = 64;
+
     private static final String CANDIDATE_COLUMNS = "s.id, s.first_id, s.last_id, s.events, s.header, f.ordinals";
 
     /**
@@ -141,23 +144,27 @@ public class SegmentRepository {
     }
 
     /**
-     * The id ranges of the segments whose ids a set holds (those that still exist), in id order. A set
-     * of a few runs is read by primary-key ranges, one statement per {@link #RANGE_BATCH} runs. A set of
-     * more than {@link #SCATTERED_RUNS} runs (a place that has been active for a long time) would be
-     * thousands of seeks, so the id ranges of every segment are read once from the covering index on
-     * {@code (last_id, id, first_id)}, about 20 bytes a segment, and the set filters them.
+     * The id ranges of the segments whose ids a set holds (those that still exist) and whose id range
+     * overlaps {@code minId..maxId}, in id order. A set of a few ids is read by primary-key ranges, one
+     * statement per {@link #RANGE_BATCH} runs. A set of more than {@link #SCATTERED_RUNS} runs or
+     * {@link #SCATTERED_IDS} ids (a place active for a long time, an actor seen all the time) would be
+     * thousands of seeks or drag the table's pages for a long run, so the id ranges of the segments
+     * overlapping the id range are read once from the covering index on {@code (last_id, id, first_id)},
+     * about 20 bytes a segment, and the set filters them.
      *
      * @param connection a connection
      * @param sql        the shard's SQL context
      * @param ids        the segment ids
+     * @param minId      the smallest event id wanted
+     * @param maxId      the largest event id wanted
      * @return the ranges
      * @throws SQLException when a query fails
      */
-    public @NotNull List<SegmentRange> ranges(@NotNull Connection connection, @NotNull Sql sql, @NotNull IdRuns ids)
-            throws SQLException {
+    public @NotNull List<SegmentRange> ranges(@NotNull Connection connection, @NotNull Sql sql, @NotNull IdRuns ids,
+            long minId, long maxId) throws SQLException {
         List<SegmentRange> out = new ArrayList<>();
-        if (ids.runCount() > SCATTERED_RUNS) {
-            BoundSql query = everyRangeQuery(sql);
+        if (ids.runCount() > SCATTERED_RUNS || ids.count() > SCATTERED_IDS) {
+            BoundSql query = everyRangeQuery(sql, minId, maxId);
             try (PreparedStatement statement = connection.prepareStatement(query.sql())) {
                 query.bind(statement);
                 try (ResultSet rows = statement.executeQuery()) {
@@ -178,7 +185,10 @@ public class SegmentRepository {
                 query.bind(statement);
                 try (ResultSet rows = statement.executeQuery()) {
                     while (rows.next()) {
-                        out.add(new SegmentRange(rows.getLong(1), rows.getLong(2), rows.getLong(3)));
+                        SegmentRange range = new SegmentRange(rows.getLong(1), rows.getLong(2), rows.getLong(3));
+                        if (range.lastId() >= minId && range.firstId() <= maxId) {
+                            out.add(range);
+                        }
                     }
                 }
             }
@@ -188,15 +198,18 @@ public class SegmentRepository {
     }
 
     /**
-     * The statement that reads the id range of every segment (also read by the query-plan tests): the
-     * condition names the index's first column so each engine answers it from the index alone.
+     * The statement that reads the id ranges of every segment overlapping an id range (also read by the
+     * query-plan tests): both conditions are on columns of the {@code (last_id, id, first_id)} index, so
+     * each engine answers it from the index alone.
      *
-     * @param sql the shard's SQL context
+     * @param sql   the shard's SQL context
+     * @param minId the smallest event id wanted
+     * @param maxId the largest event id wanted
      * @return the statement
      */
-    public static @NotNull BoundSql everyRangeQuery(@NotNull Sql sql) {
-        return new BoundSql("SELECT id, first_id, last_id FROM " + sql.tables().segment() + " WHERE last_id >= ?",
-                List.of(0L));
+    public static @NotNull BoundSql everyRangeQuery(@NotNull Sql sql, long minId, long maxId) {
+        return new BoundSql("SELECT id, first_id, last_id FROM " + sql.tables().segment()
+                + " WHERE last_id >= ? AND first_id <= ?", List.of(minId, maxId));
     }
 
     /**

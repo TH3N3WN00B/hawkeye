@@ -1,5 +1,6 @@
 package gg.moonrise.hawkeye.core.storage;
 
+import gg.moonrise.hawkeye.core.repository.ActorIndexRepository;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
 import gg.moonrise.hawkeye.core.repository.PlaceIndexRepository;
 import gg.moonrise.hawkeye.core.repository.SegmentIndexRepository;
@@ -58,7 +59,7 @@ public final class Archives {
     public static @NotNull SegmentIndex index(@NotNull SegmentRepository segments, @NotNull SegmentCache cache,
             int busySegments, int exactSegments) {
         return new SegmentIndex(new SegmentIndexRepository(),
-                new PlaceIndex(new PlaceIndexRepository(), segments, cache, busySegments, exactSegments), segments,
-                cache);
+                new PlaceIndex(new PlaceIndexRepository(), segments, cache, busySegments, exactSegments),
+                new ActorIndex(new ActorIndexRepository()), segments, cache);
     }
 }

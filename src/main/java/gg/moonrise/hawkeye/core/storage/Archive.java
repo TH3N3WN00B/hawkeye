@@ -134,7 +134,7 @@ public final class Archive {
         Sql sql = shard.database().sql();
         PackedSegment segment = Segments.encode(rows, worldOrder(connection, shard, rows), executor);
         long id = segmentRepository.insert(connection, sql, segment);
-        segmentIndex.added(connection, shard, places(id, rows));
+        segmentIndex.added(connection, shard, content(id, rows));
         return id;
     }
 
@@ -411,11 +411,11 @@ public final class Archive {
         if (removed == 0) {
             return 0;
         }
-        Optional<SegmentPlaces> replacement = Optional.empty();
+        Optional<SegmentContent> replacement = Optional.empty();
         if (!kept.isEmpty()) {
             List<Integer> order = Arrays.stream(header.worldIds()).boxed().toList();
             long id = segmentRepository.insert(connection, sql, Segments.encode(kept, order, CALLING_THREAD));
-            replacement = Optional.of(places(id, kept));
+            replacement = Optional.of(content(id, kept));
         }
         segmentRepository.delete(connection, sql, List.of(segment.id()));
         cache.forget(shard.database(), segment.id());
@@ -525,11 +525,12 @@ public final class Archive {
         return cache.header(shard.database(), segment.id(), segment.header());
     }
 
-    /** The places of a new segment's rows, for the segment index. */
-    private static @NotNull SegmentPlaces places(long segment, @NotNull List<EventRow> rows) {
+    /** The places and actors of a new segment's rows, for the segment index. */
+    private static @NotNull SegmentContent content(long segment, @NotNull List<EventRow> rows) {
         SegmentPlaces.Builder builder = SegmentPlaces.builder(segment);
         rows.forEach(row -> builder.add(row.world(), row.position()));
-        return builder.build();
+        int[] actors = rows.stream().mapToInt(EventRow::actor).distinct().sorted().toArray();
+        return new SegmentContent(builder.build(), actors);
     }
 
     /**
@@ -547,9 +548,8 @@ public final class Archive {
         Comparator<SegmentRange> order = newestFirst
                 ? Comparator.comparingLong(SegmentRange::lastId).thenComparingLong(SegmentRange::id).reversed()
                 : Comparator.comparingLong(SegmentRange::firstId).thenComparingLong(SegmentRange::id);
-        List<Long> ids = segmentRepository.ranges(connection, sql, planned.get()).stream()
-                .filter(range -> range.lastId() >= filter.minId() && range.firstId() <= filter.maxId())
-                .filter(range -> cursor == 0 || (newestFirst ? range.firstId() < cursor : range.lastId() > cursor))
+        List<Long> ids = segmentRepository.ranges(connection, sql, planned.get(), filter.minId(), filter.maxId())
+                .stream().filter(range -> cursor == 0 || (newestFirst ? range.firstId() < cursor : range.lastId() > cursor))
                 .sorted(order).map(SegmentRange::id).toList();
         return new PlannedPages(connection, sql, ids);
     }

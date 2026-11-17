@@ -38,6 +38,8 @@ import gg.moonrise.hawkeye.entity.job.JobKind;
 import gg.moonrise.hawkeye.entity.query.Area;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import gg.moonrise.hawkeye.entity.query.RollbackState;
+import gg.moonrise.hawkeye.entity.query.ServerScope;
+import gg.moonrise.hawkeye.entity.query.TimeWindow;
 import gg.moonrise.hawkeye.entity.server.ServerNode;
 import gg.moonrise.hawkeye.util.BlockPositions;
 import gg.moonrise.hawkeye.util.EventIds;
@@ -196,8 +198,9 @@ public class ServerDatabaseIntegrationTest {
     }
 
     /**
-     * The place index on a server engine: rows of both tables exist, block lookups agree with the events,
-     * a block never touched finds nothing, and emptying the index and catching up writes the same rows.
+     * The segment index on a server engine: rows of all three tables exist, block and player lookups
+     * agree with the events, a block never touched finds nothing, and emptying the index and catching up
+     * writes the same rows byte for byte.
      */
     private static void assertPlaceIndex(Database database, Shard shard, EventStore store, Archive archive,
             ShardScope scope, List<PendingEvent> events) throws SQLException {
@@ -205,6 +208,13 @@ public class ServerDatabaseIntegrationTest {
         assertTrue(packed.keySet().stream().anyMatch(key -> key.startsWith(database.tables().blockSegment())),
                 "busy chunks have rows: " + packed.keySet());
         assertTrue(packed.keySet().stream().filter(key -> key.startsWith(database.tables().regionSegment())).count() > 0);
+        assertEquals(2, packed.keySet().stream().filter(key -> key.startsWith(database.tables().actorSegment()))
+                .count(), "a row for each of the two actors: " + packed.keySet());
+        LookupQuery alex = new LookupQuery(new ServerScope.Local(), new Area.Everywhere(), TimeWindow.ALL,
+                Set.of("alex"), Set.of(), Set.of(), Set.of(), Set.of(), RollbackState.ANY);
+        long byAlex = events.stream().filter(event -> event.actor().name().equals("Alex")).count();
+        assertEquals(byAlex, store.count(shard, alex, scope), "a player lookup agrees with the events");
+        assertEquals(Math.min(10, byAlex), store.find(shard, alex, scope, 0, 10, true).size());
         assertEquals(0, store.count(shard, LookupQuery.at(new Area.Block("world", 0, 0, 0)), scope));
         for (int i : new int[] {3, 517, 1_210, 1_599}) {
             long position = events.get(i).position();
@@ -224,7 +234,7 @@ public class ServerDatabaseIntegrationTest {
         packed.forEach((key, body) -> assertArrayEquals(body, caughtUp.get(key), key));
     }
 
-    /** Every place index row's body, by table, world, key and newest segment. */
+    /** Every segment index row's body, by table, key and newest segment. */
     private static Map<String, byte[]> placeRows(Database database) throws SQLException {
         return database.read(connection -> {
             Map<String, byte[]> out = new TreeMap<>();
@@ -236,6 +246,14 @@ public class ServerDatabaseIntegrationTest {
                         out.put(kind.table(database.sql()) + " " + rows.getInt(1) + " " + rows.getLong(2) + " "
                                 + rows.getLong(3), rows.getBytes(4));
                     }
+                }
+            }
+            try (Statement statement = connection.createStatement();
+                    ResultSet rows = statement.executeQuery("SELECT actor, newest, body FROM "
+                            + database.tables().actorSegment())) {
+                while (rows.next()) {
+                    out.put(database.tables().actorSegment() + " " + rows.getInt(1) + " " + rows.getLong(2),
+                            rows.getBytes(3));
                 }
             }
             return out;
