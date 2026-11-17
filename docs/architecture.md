@@ -79,6 +79,9 @@ All tables carry the configured prefix (default `hawkeye_`).
 | `lease` | `name`, `holder`, `expires` | PK `name` |
 | `segment` | `id` (auto-increment, never reused), `first_id BIGINT`, `last_id BIGINT`, `events INT`, `header` (small blob), `body` (SQLite `BLOB`, MySQL `LONGBLOB`, PostgreSQL `BYTEA` stored `EXTERNAL`) | PK `id`, indexes `(last_id)` and `(first_id)` |
 | `segment_flag` | `segment`, `ordinals` (blob: ascending ordinals of the rolled-back rows, delta varints) | PK `segment` |
+| `place_region` | `world INT`, `region BIGINT`, `newest BIGINT`, `body` (a compressed frame) | PK `(world, region)`, index `(newest)` |
+| `place_chunk` | `world INT`, `chunk BIGINT`, `newest BIGINT`, `body` (a compressed frame) | PK `(world, chunk)`, index `(newest)` |
+| `place_state` | `id` (always 1), `indexed_from BIGINT` | PK `id` |
 
 - **Dictionaries.** Worlds, actors and types are interned to small integers. `type` holds every
   namespaced value an event refers to: block states (`minecraft:oak_stairs[facing=east,...]`), item
@@ -193,11 +196,83 @@ packed); Hawkeye's real snapshots measured 6.8 bytes per kill on a Paper server 
 A running server adds the hot table on top: the events not yet packed and, as free pages, its
 high-water mark (about 22 MB at the default segment size).
 
-Lookups on that database (5,337 segments, warm, a shared host under load): the newest 10 events of a
-player 18 ms, a later page at a block 9 ms, a radius of 5 around a busy block 133 ms, everything in
-the last hour 106 ms, a block with little history 270-320 ms. The worst case is a block that was never
-touched inside a chunk that is active in every segment: one unit per segment has to be read to know,
-3.9 s warm and 14 s cold, because SQLite reads a whole segment body to slice it.
+Lookups on that database are measured under "Place index" below: with the index a block that was never
+touched inside a chunk active in every segment takes about 1-2 ms instead of 3.9 s.
+
+### Place index
+
+A segment's header settles most lookups about a place without reading the segment, but a chunk that
+is active all the time (a hopper line, a farm) is in every segment, and a block inside it would cost
+one unit read per segment. The place index (`core.storage.PlaceIndex`, rows in
+`core.repository.place`) remembers which segments hold which place, so such a lookup reads only the
+segments that can hold the block. Schema version 4.
+
+- **Keys.** A chunk key is a packed position without its 20 in-chunk bits (`pos >> 20`: chunk x above
+  chunk z + 2^21); a region key drops 5 more bits of each chunk coordinate (32 x 32 chunks, the
+  header's regions). Both order like packed positions.
+- **`place_region`.** One row per region that archived rows are in: per chunk (numbered
+  `(x & 31) << 5 | (z & 31)`, delta-coded) the ids of the segments holding rows in it, placed and
+  unplaced rows alike (a chat line said at a place is found there), as runs of consecutive ids
+  (`IdRuns`: start coded against the previous chunk's first id, gaps and lengths as varints), and
+  whether the chunk has a `place_chunk` row. `newest` is the largest id in the row.
+- **`place_chunk`.** Only for a chunk in more than `BUSY_SEGMENTS` (16) segments: every position the
+  archived rows touched (in-chunk key delta-coded), each with the *buckets* it was touched in as runs
+  (a bucket is `segment id >> 4`, 16 consecutive segments; exact segments per position would be about
+  three times the size, since positions flicker between neighbouring segments). When the row exists it
+  covers every segment the region row lists for the chunk. Bodies are zstd level 9 (`LEVEL`): rows are
+  rewritten on every pack, where level 19 costs more time than it saves bytes.
+- **Writing.** `Archive.pack` (compaction, bulk import, purge rewrite) updates the index in the
+  transaction that inserts the segment. Every writer first locks the `place_state` row (`FOR UPDATE`
+  on MySQL and PostgreSQL), so two writers never rewrite a row from the same old version. The region
+  rows of the segment's chunks get its id; a chunk that now crosses `BUSY_SEGMENTS` gets a
+  `place_chunk` row built from all its segments (their units for the chunk are read and only the
+  positions decoded) plus the new rows; an existing row gets the new positions in the new bucket.
+  Rows are read and written in batches (one `IN` list or multi-row upsert for many keys; busy rows 500
+  at a time, so memory stays bounded). While rewriting a row, ids below the oldest stored segment,
+  buckets below its bucket and chunks or positions left with nothing are dropped.
+- **Deleting.** A purge that deletes whole segments leaves the rows alone (readers ignore ids that no
+  longer exist) and then deletes the rows whose `newest` is below the oldest stored segment, so the
+  index shrinks with the data; rows of places still active are trimmed by the next pack that touches
+  them. A rewrite (straddling or world purge) removes the old id from the rows of every region its
+  header lists and adds the new segment like any pack.
+- **Catching up.** `indexed_from`: every segment at or above it is indexed. Version 4 sets it to one
+  more than the largest existing segment id. After its packing passes the archiver spends up to
+  `Archiver.CATCH_UP_TIME` (20 s) per run, under its lease, indexing the newest missing segments in
+  transactions of `CATCH_UP_BATCH` (64; positions only are decoded) and lowering `indexed_from` in the
+  same transaction (`Archive.indexPlaces`). Emptying the three tables and resetting `indexed_from`
+  (`PlaceIndexRepository.reset`) rebuilds the index the same way; the rows equal the ones packing wrote.
+- **Reading.** A filter with an area of at most `MAX_AREA_CHUNKS` (1,024 chunks, one region's worth:
+  at most a few region rows and a bounded number of busy rows, against a cached header test per
+  segment for larger areas) reads the region rows of the area's chunks and, for busy chunks the area
+  covers only partly, their `place_chunk` rows (`IN` lists on the primary keys). A chunk without a
+  busy row contributes all its segment ids, a busy one only its ids in the buckets of the positions
+  the filter accepts (`EventFilter.inPositions`); no accepted position, no segment. Every segment
+  below `indexed_from` is added. The id ranges of the candidates are read by primary-key ranges, put
+  in reading order and filtered by id range and cursor; headers and flags are then fetched page by page
+  (4, 8, 16, then 32 ids), with the same early stop as the keyset path. Larger areas and filters
+  without an area keep the keyset path over `last_id`/`first_id`.
+
+Measured on the 1.40 billion event replay database (5,337 segments, 2026-11-17, SQLite, 4 KB pages):
+catching the whole database up takes 607-627 s (about 8.5 segments a second, positions only). The
+index is 29,353 region rows (5.0 MB of bodies, 7.2 MB of pages) and 14,699 busy-chunk rows (17.3 MB,
+22.6 MB of pages): 29.8 MB, 2.0% of the 1.52 GB file. As `WITHOUT ROWID` tables the same rows took
+37.9 MB, because such a row keeps only about a quarter page on its b-tree page and most busy rows
+(1.2 KB on average, 48 KB at most) spilled to an overflow page.
+
+| Lookup (whole history, warm "againMillis") | Before | After (load 6) | After (load 9.5) |
+|---|---|---|---|
+| A block never touched in the busiest chunk | 3,900 (14,000 cold) | 2.0 | 1.1 |
+| Newest 10 at a block busy a month before the end | 686 | 31 | 36 |
+| Newest 10 at a block with little history, quiet chunk | 270-320 | 24 | 46 |
+| The same in the busiest chunk | 270-320 | 48 | 54-173 |
+| Radius 5 around the busy block, newest 10 | 133 | 59 | 108-115 |
+| A player's newest 10 / everything in the last hour | 18 / 106 | 10 / 100 | 7 / 98 |
+
+The plan itself (region and busy rows read and decoded) costs 0.4-1 ms for each of these. What is
+left is reading the segments it names: the busy block reads 2 segments (4 body reads), the
+little-history blocks 10-20 (241 and 1,196 candidate segments: those blocks were touched again later),
+radius 5 about 10 (3,606 candidates), at roughly 1-2.5 ms per segment on a loaded host (one statement
+for the unit, one for the shared frames when a row matched).
 
 ### Indexes and query shapes
 
@@ -208,6 +283,7 @@ touched inside a chunk that is active in every segment: one unit per segment has
 | User | `actor IN (...)` on `(actor)` plus the id range |
 | Time only | primary key range |
 | Purge | primary key range delete, in batches; archive segments by `first_id`, deleted or rewritten whole |
+| Place index | `world = ? AND region IN (...)` / `world = ? AND chunk IN (...)` on the primary keys; trimming `newest < ?` on `(newest)`; candidates `id = ? OR id BETWEEN ? AND ? ...` and `id IN (...)` on the segment primary key |
 | Archive candidates | `last_id >= ? AND first_id <= ?` on `(last_id)` (newest first) or `(first_id)` (oldest first); a later page adds `last_id <= ?` so it seeks to where the previous one ended; the flag row by its primary key; the body by `substr` byte ranges |
 
 InnoDB and SQLite append the primary key to secondary indexes, so `(world, pos)` and `(actor)` are

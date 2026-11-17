@@ -46,10 +46,24 @@ update them in the same change when you learn something durable or an entry stop
   in all); live mode (hot table plus archiver) about 18,000 and gives the same segments. The run is
   split by `HAWKEYE_REPLAY_DAYS` with `HAWKEYE_REPLAY_RESUME=1` (20714-20729, 20730-20740, 20741-20773)
   because a background command on this host ends after two hours. Lookups on the full database, warm,
-  host at load 6: a player's newest 10 events 18 ms, a later page at a block 9 ms, radius 5 at a busy
-  block 133 ms, the last hour 106 ms, a block with little history 270-320 ms, a block never touched in
-  the busiest chunk 3.9 s (14 s cold: one unit per segment, and SQLite reads the whole body to slice
-  it). Storing units as rows of their own would cut that read to the unit, for about 3% more bytes.
+  host at load 6, before the place index: a player's newest 10 events 18 ms, radius 5 at a busy block
+  133 ms, the last hour 106 ms, a block with little history 270-320 ms, a block never touched in the
+  busiest chunk 3.9 s (14 s cold: one unit per segment).
+- Place index on that database (verified 2026-11-17; `lookupsOnAKeptDatabase` catches it up first and
+  reports `placeTables` and `placeProfile`): catch-up 607-627 s for 5,337 segments; 29,353 region rows
+  and 14,699 busy-chunk rows, 22.3 MB of bodies, 29.8 MB of pages (SQLite rowid tables; `WITHOUT ROWID`
+  took 37.9 MB, since an index b-tree row keeps only about 1 KB of a 4 KB page before overflowing).
+  Warm, load 6 / load 9.5: a block never touched in the busiest chunk 2.0 / 1.1 ms (was 3.9 s), newest
+  10 at the busy block 31 / 36 (was 686), little history 24-48 / 46-173 (was 270-320), radius 5 59 /
+  108 (was 133), player 10 / 7, last hour 100 / 98. A plan costs at most 1 ms; the rest is 1-2.5 ms per
+  segment read (unit plus shared frames, separate statements). Timings on this host vary up to 3x
+  between runs at load 6-10. The reference copy at `~/.cache/hawkeye-bench/replay-index` is migrated
+  to version 4 and indexed.
+- Embedded servers for `ServerDatabaseIntegrationTest` live in `~/.cache/hawkeye-ref/dbs`: MariaDB
+  (`mariadb/bin/mariadbd --no-defaults --datadir=$PWD/mdata --basedir=$PWD/mariadb --port=33069`,
+  `HAWKEYE_TEST_MYSQL=mariadb://root:@127.0.0.1:33069/hawkeye`) and PostgreSQL (`pg/bin/pg_ctl -D pgdata`
+  on port 54329, trust auth, role `hawkeye`, database `postgres`:
+  `HAWKEYE_TEST_POSTGRES=postgresql://hawkeye:@127.0.0.1:54329/postgres`).
 - That reference database was copied while its server ran: the file is one page shorter than its header
   says (the last page was in the write-ahead log) and SQLite calls it malformed. Appending one page of
   zeros (8,192 bytes) to a copy makes every packed row readable.
