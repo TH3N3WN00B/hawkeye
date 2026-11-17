@@ -65,6 +65,11 @@ update them in the same change when you learn something durable or an entry stop
   archiver's catch-up. An index format change takes new table names on purpose: an older build then
   fails on its first index statement instead of misreading rows, and the migration needs no "empty
   and reset" step.
+- `ReplayBenchmark.lookupsOnAKeptDatabase` with schema version 5: `placeIndexCatchUp` catches places
+  and actors up in one pass, `placeTables` reports rows, body bytes and `dbstat` bytes of all four
+  index tables by table name, and `placeProfile` (plan time, candidate count, body reads per find)
+  also covers the three players of the "open the lookup of player ..." entries (the fewest, the
+  median and the most segments, counted from the headers).
 - `PlaceChunk.EXACT_SEGMENTS` (64) trades bytes for read precision: per busy-chunk position, the newest
   64 segment ids are exact and older ones are buckets of 16. On the full replay database's rows
   (study, zstd 9) buckets alone were 18.1 MB and named 3.34 times the segments holding a block; 64

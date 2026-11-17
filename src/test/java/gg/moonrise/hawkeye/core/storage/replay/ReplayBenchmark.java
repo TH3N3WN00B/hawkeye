@@ -233,7 +233,7 @@ public class ReplayBenchmark {
                 return null;
             });
             report.put("fileBytesAfter", Files.size(file));
-            progress("place index: " + report);
+            progress("segment index: " + report);
             Targets targets = Targets.load(runFolder.resolve(Targets.FILE));
             report.put("lookups", lookups(store, harness, targets));
             report.put("placeProfile", placeProfile(harness, targets));
@@ -243,8 +243,9 @@ public class ReplayBenchmark {
     }
 
     /**
-     * Per place lookup, the steps apart: the index plan alone (median of three, warm), how many segment
-     * ids it names, and how many segment bodies the newest-10 read then touches.
+     * Per place lookup, and per lookup of the three players {@link #playersBySegments} picks, the steps
+     * apart: the segment index plan alone (median of three, warm), how many segment ids it names, and
+     * how many segment bodies the newest-10 read then touches.
      */
     private static @NotNull Map<String, Object> placeProfile(@NotNull SqliteHarness harness,
             @NotNull Targets targets) throws SQLException {
@@ -266,6 +267,11 @@ public class ReplayBenchmark {
                 y >= 0 ? BlockPositions.MIN_Y + 7 : BlockPositions.MAX_Y - 7, z)));
         queries.put("radius 5", LookupQuery.at(new Area.Box(busy.world(), x - 5, Math.max(BlockPositions.MIN_Y, y - 5),
                 z - 5, x + 5, Math.min(BlockPositions.MAX_Y, y + 5), z + 5)));
+        for (Map.Entry<String, Integer> player : playersBySegments(harness.database()).entrySet()) {
+            queries.put("player " + player.getKey() + " (in " + player.getValue() + " segments)", new LookupQuery(
+                    new ServerScope.Local(), new Area.Everywhere(), TimeWindow.ALL, Set.of(player.getKey()), Set.of(),
+                    Set.of(), Set.of(), Set.of(), RollbackState.ANY));
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         ShardScope all = new ShardScope.All();
         for (Map.Entry<String, LookupQuery> entry : queries.entrySet()) {
@@ -288,7 +294,7 @@ public class ReplayBenchmark {
         return result;
     }
 
-    /** Adds every segment that is missing from the place index, newest first, and times it. */
+    /** Adds every segment that is missing from the segment index, newest first, and times it. */
     private @NotNull Map<String, Object> catchUp(@NotNull Archive archive, @NotNull SqliteHarness harness)
             throws IOException, SQLException {
         long start = System.nanoTime();
@@ -296,7 +302,7 @@ public class ReplayBenchmark {
         while (true) {
             SegmentIndex.CatchUp step = archive.catchUpIndex(harness.shard(), 256);
             indexed += step.indexed();
-            progress("place index: " + indexed + " segments indexed in "
+            progress("segment index: " + indexed + " segments indexed in "
                     + TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start) + " s, more: " + step.more());
             if (!step.more() || step.indexed() == 0) {
                 break;
