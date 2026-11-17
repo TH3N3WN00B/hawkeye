@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import gg.moonrise.hawkeye.core.storage.EventCount;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.actor.Actor;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
@@ -70,17 +71,27 @@ public class LookupMergeTest {
         LookupOutcome.Page page = assertInstanceOf(LookupOutcome.Page.class, LookupMerge.page(List.of(), 8));
         assertTrue(page.events().isEmpty());
         assertEquals(0, page.nextCursor());
-        assertEquals(new LookupOutcome.Count(0, List.of()), LookupMerge.count(List.of()));
+        assertEquals(new LookupOutcome.Count(0, true, List.of()), LookupMerge.count(List.of()));
     }
 
     @Test
     public void countsAddUpAndKeepWarnings() {
         LookupOutcome.Count count = assertInstanceOf(LookupOutcome.Count.class, LookupMerge.count(List.of(
-                new ShardResult.Read<>("home", 12L), new ShardResult.Read<>("east", 30L),
+                new ShardResult.Read<>("home", EventCount.of(12)), new ShardResult.Read<>("east", EventCount.of(30)),
                 new ShardResult.Unreadable<>("west", "timeout"))));
 
         assertEquals(42, count.total());
+        assertTrue(count.exact());
         assertEquals(List.of(new LookupWarning("west", "timeout")), count.warnings());
+    }
+
+    @Test
+    public void aTotalIsExactOnlyWhenEveryShardsCountIs() {
+        LookupOutcome.Count count = assertInstanceOf(LookupOutcome.Count.class, LookupMerge.count(List.of(
+                new ShardResult.Read<>("home", EventCount.of(12)), new ShardResult.Read<>("east",
+                        EventCount.atLeast(30)))));
+
+        assertEquals(new LookupOutcome.Count(42, false, List.of()), count);
     }
 
     /** An event {@code age} seconds old, recorded by {@code node}. */

@@ -5,7 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import gg.moonrise.hawkeye.config.file.ArchiveSettings;
 import gg.moonrise.hawkeye.core.service.capture.Actors;
+import gg.moonrise.hawkeye.core.storage.Archive;
+import gg.moonrise.hawkeye.core.storage.Shard;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
 import gg.moonrise.hawkeye.entity.query.Area;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
@@ -54,7 +57,7 @@ public class LookupPagerTest {
         PageView view = shown(pager.open(console, EVERYWHERE, 8));
 
         assertEquals(1, view.page());
-        assertEquals(20, view.total());
+        assertEquals(new LookupTotal.Exact(20), view.total());
         assertEquals(OptionalInt.of(3), view.pages());
         assertEquals(8, view.events().size());
         assertTrue(view.hasMore());
@@ -116,6 +119,57 @@ public class LookupPagerTest {
     }
 
     @Test
+    public void openingALookupOverManySegmentsCountsOnlyTheNewestAndShowsALowerBound() throws Exception {
+        archiveInSegmentsOfFive(100);
+
+        PageView first = shown(pager.open(console, EVERYWHERE, 4));
+
+        assertEquals(new LookupTotal.AtLeast(5L * LookupPager.COUNT_SEGMENTS), first.total());
+        assertTrue(first.pages().isEmpty(), "a lower bound is no page count");
+        assertEquals(List.of(99, 98, 97, 96), first.events().stream().map(StoredEvent::x).toList());
+        assertTrue(first.hasMore());
+        LookupOutcome exact = TestPlugins.bean(LookupService.class).count(EVERYWHERE).get(20, TimeUnit.SECONDS);
+        assertEquals(new LookupOutcome.Count(100, true, List.of()), exact, "#count stays exact");
+    }
+
+    @Test
+    public void pagingPastALowerBoundWalksOnAndEndsWhereTheRowsDo() throws Exception {
+        archiveInSegmentsOfFive(100);
+        shown(pager.open(console, EVERYWHERE, 4));
+
+        PageView beyond = shown(pager.page(console, 22));
+        assertEquals(List.of(15, 14, 13, 12), beyond.events().stream().map(StoredEvent::x).toList());
+        assertTrue(beyond.hasMore());
+        assertInstanceOf(LookupTotal.AtLeast.class, beyond.total());
+
+        PageView last = shown(pager.page(console, 25));
+        assertEquals(List.of(3, 2, 1, 0), last.events().stream().map(StoredEvent::x).toList());
+        assertFalse(last.hasMore());
+        assertEquals(new LookupTotal.Exact(100), last.total(), "the rows ended: the total is exact");
+        assertEquals(OptionalInt.of(25), last.pages());
+        assertEquals(new PageResult.OutOfRange(25), pager.page(console, 26).get(20, TimeUnit.SECONDS));
+    }
+
+    @Test
+    public void walkingBeyondTheEndOfALowerBoundIsOutOfRange() throws Exception {
+        archiveInSegmentsOfFive(100);
+        shown(pager.open(console, EVERYWHERE, 4));
+
+        assertEquals(new PageResult.OutOfRange(25), pager.page(console, 40).get(20, TimeUnit.SECONDS));
+        assertEquals(OptionalInt.of(25), TestPlugins.bean(LookupSessions.class).get(console).orElseThrow().pages());
+    }
+
+    @Test
+    public void aSmallArchivedResultHasItsExactTotal() throws Exception {
+        archiveInSegmentsOfFive(40);
+
+        PageView first = shown(pager.open(console, EVERYWHERE, 8));
+
+        assertEquals(new LookupTotal.Exact(40), first.total());
+        assertEquals(OptionalInt.of(5), first.pages());
+    }
+
+    @Test
     public void pagingWithoutALookupHasNoSession() throws Exception {
         assertInstanceOf(PageResult.NoSession.class, pager.page(console, 2).get(20, TimeUnit.SECONDS));
     }
@@ -125,6 +179,21 @@ public class LookupPagerTest {
         PageView view = shown(pager.open(console, EVERYWHERE, 8));
         assertTrue(view.events().isEmpty());
         assertEquals(new PageResult.OutOfRange(1), pager.page(console, 2).get(20, TimeUnit.SECONDS));
+    }
+
+    /** Records {@code count} breaks and packs them all into archive segments of five events. */
+    private void archiveInSegmentsOfFive(int count) throws Exception {
+        LookupFixtures.breaks(Actors.NATURE, world, count);
+        TestPlugins.flush();
+        Shard home = TestPlugins.awaitStorage().home();
+        Archive archive = TestPlugins.bean(Archive.class);
+        int packed = 0;
+        int pass;
+        while ((pass = archive.compact(home, new ArchiveSettings().withPacking(5, 60, 1), Long.MAX_VALUE / 4)) > 0) {
+            packed += pass;
+        }
+        assertEquals(count, packed);
+        assertEquals(count / 5, archive.totals(home).segments());
     }
 
     private static PageView shown(CompletableFuture<PageResult> result) throws Exception {

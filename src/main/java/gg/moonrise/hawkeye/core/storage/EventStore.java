@@ -143,7 +143,7 @@ public final class EventStore {
     }
 
     /**
-     * Counts matching events.
+     * Counts matching events, exactly.
      *
      * @param shard the shard
      * @param query the query
@@ -153,13 +153,30 @@ public final class EventStore {
      */
     public long count(@NotNull Shard shard, @NotNull LookupQuery query, @NotNull ShardScope scope)
             throws SQLException {
+        return count(shard, query, scope, Archive.ALL_SEGMENTS).total();
+    }
+
+    /**
+     * Counts matching events: the hot tier exactly, the archive reading the bodies of at most
+     * {@code maxSegments} segments, newest first ({@link Archive#count(Connection, Shard, EventFilter, int)}).
+     *
+     * @param shard       the shard
+     * @param query       the query
+     * @param scope       which of the shard's worlds
+     * @param maxSegments the most archive segment bodies to read; {@link Archive#ALL_SEGMENTS} for all
+     * @return the count, a lower bound when the archive budget ran out
+     * @throws SQLException when reading fails
+     */
+    public @NotNull EventCount count(@NotNull Shard shard, @NotNull LookupQuery query, @NotNull ShardScope scope,
+            int maxSegments) throws SQLException {
         return shard.database().read(connection -> {
             Optional<EventFilter> filter = queryResolver.resolve(connection, shard, query, scope);
             if (filter.isEmpty()) {
-                return 0L;
+                return EventCount.of(0);
             }
             Sql sql = shard.database().sql();
-            return eventRepository.count(connection, sql, filter.get()) + archive.count(connection, shard, filter.get());
+            EventCount hot = EventCount.of(eventRepository.count(connection, sql, filter.get()));
+            return hot.plus(archive.count(connection, shard, filter.get(), maxSegments));
         });
     }
 

@@ -6,6 +6,7 @@ import gg.moonrise.hawkeye.config.message.InspectMessages;
 import gg.moonrise.hawkeye.config.message.LookupMessages;
 import gg.moonrise.hawkeye.config.message.MessagesConfig;
 import gg.moonrise.hawkeye.core.service.lookup.LookupOutcome;
+import gg.moonrise.hawkeye.core.service.lookup.LookupTotal;
 import gg.moonrise.hawkeye.core.service.lookup.LookupWarning;
 import gg.moonrise.hawkeye.core.service.lookup.PageResult;
 import gg.moonrise.hawkeye.core.service.lookup.PageView;
@@ -79,7 +80,7 @@ public record LookupLines(@NotNull MessagesConfig messages, @NotNull EventLines 
             case LookupOutcome.Count count -> {
                 List<Component> lines = new ArrayList<>();
                 lines.add(Message.of(messages.getLookup().getCount()).asComponent(
-                        Placeholder.unparsed("total", Long.toString(count.total()))));
+                        Placeholder.parsed("total", total(LookupTotal.of(count)))));
                 lines.addAll(warnings(count.warnings()));
                 yield lines;
             }
@@ -137,13 +138,30 @@ public record LookupLines(@NotNull MessagesConfig messages, @NotNull EventLines 
     }
 
     private @NotNull TagResolver.Single @NotNull [] paging(@NotNull PageView view) {
-        String unknown = messages.getLookup().getUnknownTotal();
-        String pages = view.pages().isPresent() ? Integer.toString(view.pages().getAsInt()) : unknown;
-        String total = view.knownTotal().isPresent() ? Long.toString(view.knownTotal().getAsLong()) : unknown;
+        LookupMessages lookup = messages.getLookup();
+        String pages = switch (view.total()) {
+            case LookupTotal.Exact exact -> Integer.toString(view.pagesFor(exact.events()));
+            case LookupTotal.AtLeast atLeast -> atLeast(Integer.toString(view.pagesFor(atLeast.events())));
+            case LookupTotal.Unknown unknown -> lookup.getUnknownTotal();
+        };
         return new TagResolver.Single[] {
                 Placeholder.parsed("page", Integer.toString(view.page())),
                 Placeholder.parsed("pages", pages),
-                Placeholder.parsed("total", total)};
+                Placeholder.parsed("total", total(view.total()))};
+    }
+
+    /** {@code <total>}: the number, a lower bound through {@code lookup.at-least}, or {@code unknown-total}. */
+    private @NotNull String total(@NotNull LookupTotal total) {
+        return switch (total) {
+            case LookupTotal.Exact exact -> Long.toString(exact.events());
+            case LookupTotal.AtLeast atLeast -> atLeast(Long.toString(atLeast.events()));
+            case LookupTotal.Unknown unknown -> messages.getLookup().getUnknownTotal();
+        };
+    }
+
+    /** A lower bound through {@code lookup.at-least}; the result is MiniMessage for a parsed placeholder. */
+    private @NotNull String atLeast(@NotNull String value) {
+        return messages.getLookup().getAtLeast().replace("<value>", value);
     }
 
     private @NotNull List<Component> warnings(@NotNull List<LookupWarning> warnings) {

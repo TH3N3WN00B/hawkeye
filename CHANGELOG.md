@@ -39,6 +39,11 @@ All notable changes to this project are documented in this file. The format is b
   redaction) and sessions.
 - `/hawkeye lookup`, `near`, `page` and `tp` with clickable results, `#count`, sessions with pinned
   pages, and lookups across shards merged newest first with per-shard warnings.
+- Opening a lookup or an inspection counts at most the 16 newest archive segments with matches (the
+  hot table always exactly), so a large result shows lower bounds (`160+`, new message
+  `lookup.at-least`, default `<value>+`) instead of making the first page wait seconds for the whole
+  history; `/hawkeye page` walks past a lower bound until the events end, and `#count` and
+  `HawkeyeApi#count` stay exact.
 - The inspector (`/hawkeye inspect`): block history, container transactions, the adjacent block.
 - `/hawkeye rollback` and `restore` with chunk-by-chunk application on the owning region (blocks,
   container contents, sign text, container transactions, killed entities), `#preview` with `apply`

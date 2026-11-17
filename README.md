@@ -74,7 +74,7 @@ without relearning:
 | `e:` | Except these types or players | `e:stone,Steve` |
 | `s:` | Other servers | `s:creative`, `s:#network` |
 | `#preview` | Show a rollback or restore to you only | |
-| `#count` | Count matches instead of listing them | |
+| `#count` | Count matches instead of listing them (always the exact number) | |
 
 A lookup without `r:` searches every world of this server. Rollbacks and restores need a `t:` (a
 safety net against undoing a server's whole history by accident); without `r:` they use
@@ -85,7 +85,11 @@ player, so `/he rollback u:Griefer t:1h` also undoes their TNT damage.
 
 `/he page <n>` keeps working for `lookup.session-minutes` after a lookup or an inspection; page 1
 stays pinned to the events that were newest when you looked, so new events never shift the pages
-you are reading. Locations in results on this server are clickable (`/he tp`), results from other
+you are reading. Opening a lookup or an inspection counts at most the 16 newest archive segments
+that hold matches, so the first page never waits for months of history: the total and page count of
+a large result are lower bounds, shown as `160+` and `16+` (`lookup.at-least` in `messages.yml`).
+Paging past them keeps going until the events end, where the total becomes exact; `#count` gives the
+exact number. Locations in results on this server are clickable (`/he tp`), results from other
 servers show their server name.
 
 ## Inspector
@@ -145,7 +149,9 @@ previous configuration.
 | `network` | `bus` (`NONE` or `REDIS`), `redis-uri`, `poll-interval-seconds`, `shards` |
 | `archive` | `enabled`, `segment-events` (262144 events per segment, 16384 to 1048576), `settle-seconds` (60: newer events stay hot), `after-hours` (24: older events are packed even when fewer than a segment are waiting), `interval-minutes` (1) |
 
-Every player-facing text is a MiniMessage template in `messages.yml`.
+Every player-facing text is a MiniMessage template in `messages.yml`. `lookup.unknown-total` (`?`)
+stands in for `<total>` and `<pages>` when a lookup could not be counted and `lookup.at-least`
+(`<value>+`) when they are lower bounds.
 
 ## Running several servers
 

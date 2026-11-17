@@ -1,5 +1,6 @@
 package gg.moonrise.hawkeye.core.service.lookup;
 
+import gg.moonrise.hawkeye.core.storage.EventCount;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -43,23 +44,23 @@ public final class LookupMerge {
     }
 
     /**
-     * Adds per-shard counts.
+     * Adds per-shard counts; the total is exact only when every shard's count is.
      *
      * @param results each shard's count, or why it could not be read
      * @return the total, or {@link LookupOutcome.Failed} when every shard failed
      */
-    public static @NotNull LookupOutcome count(@NotNull List<ShardResult<Long>> results) {
+    public static @NotNull LookupOutcome count(@NotNull List<ShardResult<EventCount>> results) {
         List<LookupWarning> warnings = warnings(results);
         if (!results.isEmpty() && warnings.size() == results.size()) {
             return failed(warnings);
         }
-        long total = 0;
-        for (ShardResult<Long> result : results) {
-            if (result instanceof ShardResult.Read<Long> read) {
-                total += read.value();
+        EventCount total = EventCount.of(0);
+        for (ShardResult<EventCount> result : results) {
+            if (result instanceof ShardResult.Read<EventCount> read) {
+                total = total.plus(read.value());
             }
         }
-        return new LookupOutcome.Count(total, warnings);
+        return new LookupOutcome.Count(total.total(), total.exact(), warnings);
     }
 
     private static <T> @NotNull List<LookupWarning> warnings(@NotNull List<ShardResult<T>> results) {

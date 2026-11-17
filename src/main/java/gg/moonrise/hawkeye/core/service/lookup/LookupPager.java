@@ -18,11 +18,14 @@ import org.bukkit.command.CommandSender;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Opens lookups and turns their pages. Opening runs the first page and the count in parallel and
- * starts the sender's session ({@link LookupSessions}); turning to page {@code n} reads it from its
- * known start, or walks forward from the last known page when {@code n} is further, recording every
- * page start it passes. A walk reads up to {@link #WALK_ROWS} rows per query, so a long jump costs a
- * few queries rather than one per page.
+ * Opens lookups and turns their pages. Opening runs the first page and a bounded count in parallel and
+ * starts the sender's session ({@link LookupSessions}): the count reads at most {@link #COUNT_SEGMENTS}
+ * archive segments per shard, so a large result shows a lower bound ({@link LookupTotal.AtLeast})
+ * rather than making the first page wait for the whole history. Turning to page {@code n} reads it
+ * from its known start, or walks forward from the last known page when {@code n} is further, recording
+ * every page start it passes; past a lower bound it keeps walking until the rows end, and once they do
+ * the session's total becomes exact. A walk reads up to {@link #WALK_ROWS} rows per query, so a long
+ * jump costs a few queries rather than one per page.
  */
 @Slf4j
 @SpringComponent
@@ -31,6 +34,9 @@ public final class LookupPager {
 
     /** The most rows one walking query reads. */
     public static final int WALK_ROWS = 1_000;
+
+    /** The most archive segment bodies the count of an opened lookup reads per shard. */
+    public static final int COUNT_SEGMENTS = 16;
 
     private final @NotNull LookupService lookupService;
     private final @NotNull LookupSessions sessions;
@@ -45,7 +51,7 @@ public final class LookupPager {
      */
     public @NotNull CompletableFuture<PageResult> open(@NotNull CommandSender sender, @NotNull LookupQuery query,
             int pageSize) {
-        CompletableFuture<LookupOutcome> count = lookupService.count(query);
+        CompletableFuture<LookupOutcome> count = lookupService.count(query, COUNT_SEGMENTS);
         return lookupService.page(query, 0, pageSize)
                 .thenCombine(count, (page, total) -> opened(sender, query, pageSize, page, total))
                 .exceptionally(LookupPager::failed);
@@ -77,8 +83,7 @@ public final class LookupPager {
             @NotNull LookupOutcome page, @NotNull LookupOutcome count) {
         return switch (page) {
             case LookupOutcome.Page first -> {
-                long total = count instanceof LookupOutcome.Count counted ? counted.total()
-                        : LookupSession.UNKNOWN_TOTAL;
+                LookupTotal total = ended(LookupTotal.of(count), first.hasMore(), first.events().size());
                 List<Long> starts = new ArrayList<>();
                 starts.add(first.events().isEmpty() ? 0 : first.events().getFirst().id() + 1);
                 if (first.hasMore()) {
@@ -119,7 +124,8 @@ public final class LookupPager {
             int from, int target, @NotNull LookupOutcome.Page rows) {
         int pageSize = session.pageSize();
         List<StoredEvent> events = rows.events();
-        LookupSession updated = session;
+        LookupSession updated = rows.hasMore() ? session
+                : session.withTotal(ended(session.total(), false, (long) (from - 1) * pageSize + events.size()));
         // Page from + j starts below the last event of page from + j - 1.
         for (int j = 1; j * pageSize <= events.size(); j++) {
             if (j * pageSize < events.size() || rows.hasMore()) {
@@ -134,7 +140,7 @@ public final class LookupPager {
             int end = Math.min(events.size(), offset + pageSize);
             boolean hasMore = end < events.size() || rows.hasMore();
             return CompletableFuture.completedFuture(new PageResult.Shown(new PageView(session.query(), target,
-                    pageSize, session.total(), events.subList(offset, end), hasMore, rows.warnings())));
+                    pageSize, updated.total(), events.subList(offset, end), hasMore, rows.warnings())));
         }
         if (!rows.hasMore() || events.isEmpty()) {
             int last = from + Math.max(0, (events.size() + pageSize - 1) / pageSize - 1);
@@ -143,6 +149,18 @@ public final class LookupPager {
         }
         int next = from + events.size() / pageSize;
         return walk(sender, updated, next, target);
+    }
+
+    /**
+     * A lower bound becomes exact once the rows have ended: every event before the last read was on a
+     * full page.
+     *
+     * @param total   the total so far
+     * @param hasMore whether rows follow the last one read
+     * @param read    the events from the newest to the last one read
+     */
+    private static @NotNull LookupTotal ended(@NotNull LookupTotal total, boolean hasMore, long read) {
+        return total instanceof LookupTotal.AtLeast && !hasMore ? new LookupTotal.Exact(read) : total;
     }
 
     private static @NotNull List<LookupWarning> distinctShards(@NotNull List<LookupWarning> warnings) {

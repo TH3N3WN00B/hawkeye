@@ -4,7 +4,6 @@ import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.OptionalInt;
-import java.util.OptionalLong;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -16,20 +15,18 @@ import org.jetbrains.annotations.NotNull;
  *
  * @param query    the query
  * @param pageSize events per page
- * @param total    how many events matched when the lookup ran, or {@link #UNKNOWN_TOTAL}
+ * @param total    how many events matched when the lookup ran: exact, a lower bound or unknown
  * @param starts   the start cursor of every page seen so far, page 1 first (never empty)
  */
-public record LookupSession(@NotNull LookupQuery query, int pageSize, long total, @NotNull List<Long> starts) {
-
-    /** {@link #total()} when the count could not be read. */
-    public static final long UNKNOWN_TOTAL = -1;
+public record LookupSession(@NotNull LookupQuery query, int pageSize, @NotNull LookupTotal total,
+        @NotNull List<Long> starts) {
 
     /**
      * Validates and copies.
      *
      * @param query    the query
      * @param pageSize events per page
-     * @param total    the total or {@link #UNKNOWN_TOTAL}
+     * @param total    the total
      * @param starts   the known page starts
      */
     public LookupSession {
@@ -43,24 +40,19 @@ public record LookupSession(@NotNull LookupQuery query, int pageSize, long total
     }
 
     /**
-     * The total, if it could be counted.
+     * How many pages there are: from an exact total, but never fewer than the pages already seen. A
+     * lower bound is no page count: the pages beyond it are found by walking, like those of an unknown
+     * total.
      *
-     * @return the total, or empty
-     */
-    public @NotNull OptionalLong knownTotal() {
-        return total < 0 ? OptionalLong.empty() : OptionalLong.of(total);
-    }
-
-    /**
-     * How many pages there are: from the total, but never fewer than the pages already seen.
-     *
-     * @return the page count, or empty when the total is unknown
+     * @return the page count, or empty when the total is not exact
      */
     public @NotNull OptionalInt pages() {
-        if (total < 0) {
-            return OptionalInt.empty();
-        }
-        return OptionalInt.of(Math.max(PageView.pagesOf(total, pageSize), starts.size()));
+        return switch (total) {
+            case LookupTotal.Exact exact -> OptionalInt.of(Math.max(PageView.pagesOf(exact.events(), pageSize),
+                    starts.size()));
+            case LookupTotal.AtLeast atLeast -> OptionalInt.empty();
+            case LookupTotal.Unknown unknown -> OptionalInt.empty();
+        };
     }
 
     /**
@@ -80,6 +72,16 @@ public record LookupSession(@NotNull LookupQuery query, int pageSize, long total
      */
     public long start(int page) {
         return starts.get(page - 1);
+    }
+
+    /**
+     * This session with another total.
+     *
+     * @param newTotal the total
+     * @return the copy, or this session when the total is the same
+     */
+    public @NotNull LookupSession withTotal(@NotNull LookupTotal newTotal) {
+        return newTotal.equals(total) ? this : new LookupSession(query, pageSize, newTotal, starts);
     }
 
     /**

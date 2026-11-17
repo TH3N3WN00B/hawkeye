@@ -3,9 +3,10 @@ package gg.moonrise.hawkeye.ui.lookup;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import gg.moonrise.hawkeye.config.message.LookupMessages;
 import gg.moonrise.hawkeye.config.message.MessagesConfig;
 import gg.moonrise.hawkeye.core.service.lookup.LookupOutcome;
-import gg.moonrise.hawkeye.core.service.lookup.LookupSession;
+import gg.moonrise.hawkeye.core.service.lookup.LookupTotal;
 import gg.moonrise.hawkeye.core.service.lookup.LookupWarning;
 import gg.moonrise.hawkeye.core.service.lookup.PageResult;
 import gg.moonrise.hawkeye.core.service.lookup.PageView;
@@ -16,6 +17,7 @@ import gg.moonrise.hawkeye.entity.query.Area;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import gg.moonrise.hawkeye.util.BlockPositions;
 import gg.moonrise.hawkeye.util.EventIds;
+import java.lang.reflect.Field;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -35,7 +37,7 @@ public class LookupLinesTest {
 
     @Test
     public void aMiddlePageHasHeaderLinesAndBothPageLinks() {
-        List<Component> page = lines.page(new PageView(EVERYWHERE, 2, 2, 6, events(2), true, List.of()));
+        List<Component> page = lines.page(new PageView(EVERYWHERE, 2, 2, exact(6), events(2), true, List.of()));
 
         assertEquals(4, page.size());
         assertEquals("----- Hawkeye results -----", EventLinesTest.plain(page.getFirst()));
@@ -47,13 +49,13 @@ public class LookupLinesTest {
 
     @Test
     public void aSinglePageHasNoFooter() {
-        List<Component> page = lines.page(new PageView(EVERYWHERE, 1, 8, 2, events(2), false, List.of()));
+        List<Component> page = lines.page(new PageView(EVERYWHERE, 1, 8, exact(2), events(2), false, List.of()));
         assertEquals(3, page.size());
     }
 
     @Test
     public void theFirstPageLinksOnlyForward() {
-        List<Component> page = lines.page(new PageView(EVERYWHERE, 1, 2, LookupSession.UNKNOWN_TOTAL, events(2),
+        List<Component> page = lines.page(new PageView(EVERYWHERE, 1, 2, new LookupTotal.Unknown(), events(2),
                 true, List.of()));
         Component footer = page.getLast();
         assertEquals("Page 1/? [next >]", EventLinesTest.plain(footer).replaceAll(" +", " ").trim());
@@ -62,21 +64,21 @@ public class LookupLinesTest {
 
     @Test
     public void aPageAboutOneBlockHasTheInspectorHeader() {
-        List<Component> page = lines.page(new PageView(BLOCK, 1, 8, 1, events(1), false, List.of()));
+        List<Component> page = lines.page(new PageView(BLOCK, 1, 8, exact(1), events(1), false, List.of()));
         assertEquals("----- Hawkeye 4 70 -9 -----", EventLinesTest.plain(page.getFirst()));
     }
 
     @Test
     public void emptyPagesSayNothingWasFound() {
-        assertEquals(List.of("No results found."), plain(lines.page(new PageView(EVERYWHERE, 1, 8, 0, List.of(),
+        assertEquals(List.of("No results found."), plain(lines.page(new PageView(EVERYWHERE, 1, 8, exact(0), List.of(),
                 false, List.of()))));
-        assertEquals(List.of("No history for this block."), plain(lines.page(new PageView(BLOCK, 1, 8, 0, List.of(),
+        assertEquals(List.of("No history for this block."), plain(lines.page(new PageView(BLOCK, 1, 8, exact(0), List.of(),
                 false, List.of()))));
     }
 
     @Test
     public void unreadableShardsFollowThePage() {
-        List<Component> page = lines.page(new PageView(EVERYWHERE, 1, 8, 1, events(1), false,
+        List<Component> page = lines.page(new PageView(EVERYWHERE, 1, 8, exact(1), events(1), false,
                 List.of(new LookupWarning("east", "connection refused"))));
         assertEquals("Shard east could not be read: connection refused", EventLinesTest.plain(page.getLast()));
     }
@@ -97,9 +99,56 @@ public class LookupLinesTest {
     @Test
     public void aCountShowsTheTotalAndWarnings() {
         assertEquals(List.of("Matching events: 42", "Shard east could not be read: down"),
-                plain(lines.count(new LookupOutcome.Count(42, List.of(new LookupWarning("east", "down"))))));
+                plain(lines.count(new LookupOutcome.Count(42, true, List.of(new LookupWarning("east", "down"))))));
         assertEquals(List.of("The lookup took too long; narrow it with t:, r: or u:."),
                 plain(lines.count(new LookupOutcome.TimedOut())));
+        assertEquals(List.of("Matching events: 42+"), plain(lines.count(new LookupOutcome.Count(42, false, List.of()))));
+    }
+
+    @Test
+    public void exactLowerBoundAndUnknownTotalsEachHaveTheirMessage() {
+        LookupLines custom = linesWith("<page>/<pages> of <total>");
+        assertEquals("1/3 of 6", EventLinesTest.plain(custom.page(new PageView(EVERYWHERE, 1, 2, exact(6), events(2),
+                true, List.of())).getFirst()));
+        assertEquals("1/8+ of 16+", EventLinesTest.plain(custom.page(new PageView(EVERYWHERE, 1, 2,
+                new LookupTotal.AtLeast(16), events(2), true, List.of())).getFirst()));
+        assertEquals("1/? of ?", EventLinesTest.plain(custom.page(new PageView(EVERYWHERE, 1, 2,
+                new LookupTotal.Unknown(), events(2), true, List.of())).getFirst()));
+
+        List<Component> inspected = custom.page(new PageView(BLOCK, 1, 10, new LookupTotal.AtLeast(160), events(10),
+                true, List.of()));
+        assertEquals("----- Hawkeye 4 70 -9 -----", EventLinesTest.plain(inspected.getFirst()));
+        assertEquals("Page 1/16+ [next >]", EventLinesTest.plain(inspected.getLast()).replaceAll(" +", " ").trim());
+    }
+
+    @Test
+    public void theLowerBoundMessageIsConfigurable() throws Exception {
+        MessagesConfig changed = new MessagesConfig();
+        Field atLeast = LookupMessages.class.getDeclaredField("atLeast");
+        atLeast.setAccessible(true);
+        atLeast.set(changed.getLookup(), "<value> or more");
+        LookupLines custom = new LookupLines(changed, new EventLines(changed.getLookup(), changed.getActions(),
+                "survival", NOW, ZoneOffset.UTC));
+        assertEquals(List.of("Matching events: 16 or more"), plain(custom.count(new LookupOutcome.Count(16, false,
+                List.of()))));
+    }
+
+    /** Lines whose results header is {@code header}. */
+    private static LookupLines linesWith(String header) {
+        MessagesConfig custom = new MessagesConfig();
+        try {
+            Field field = LookupMessages.class.getDeclaredField("header");
+            field.setAccessible(true);
+            field.set(custom.getLookup(), header);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
+        return new LookupLines(custom, new EventLines(custom.getLookup(), custom.getActions(), "survival", NOW,
+                ZoneOffset.UTC));
+    }
+
+    private static LookupTotal exact(long events) {
+        return new LookupTotal.Exact(events);
     }
 
     private static List<StoredEvent> events(int count) {

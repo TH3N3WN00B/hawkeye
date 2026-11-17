@@ -43,14 +43,17 @@ public sealed interface LookupOutcome {
      * How many events match.
      *
      * @param total    the number of matching events in the shards that could be read
+     * @param exact    whether every candidate was counted; when not, {@code total} is a lower bound (a
+     *                 count with a segment budget stopped early)
      * @param warnings shards that could not be read
      */
-    record Count(long total, @NotNull List<LookupWarning> warnings) implements LookupOutcome {
+    record Count(long total, boolean exact, @NotNull List<LookupWarning> warnings) implements LookupOutcome {
 
         /**
          * Copies the warnings.
          *
          * @param total    the count
+         * @param exact    whether it is exact
          * @param warnings unreadable shards
          */
         public Count {

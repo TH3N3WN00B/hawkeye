@@ -25,7 +25,8 @@ import org.mockbukkit.mockbukkit.entity.PlayerMock;
 
 public class LookupSessionsTest {
 
-    private static final LookupSession SESSION = new LookupSession(LookupQuery.at(new Area.Everywhere()), 8, 20,
+    private static final LookupSession SESSION = new LookupSession(LookupQuery.at(new Area.Everywhere()), 8,
+            new LookupTotal.Exact(20),
             List.of(0L));
 
     private ServerMock server;
@@ -75,7 +76,8 @@ public class LookupSessionsTest {
     public void anUpdateNeverReplacesANewerSession() {
         PlayerMock alex = server.addPlayer("Alex");
         sessions.put(alex, SESSION);
-        LookupSession newer = new LookupSession(LookupQuery.at(new Area.World("world")), 8, 3, List.of(0L));
+        LookupSession newer = new LookupSession(LookupQuery.at(new Area.World("world")), 8, new LookupTotal.Exact(3),
+                List.of(0L));
         sessions.put(alex, newer);
 
         assertFalse(sessions.replace(alex, SESSION, SESSION.withStart(2, 40L)));

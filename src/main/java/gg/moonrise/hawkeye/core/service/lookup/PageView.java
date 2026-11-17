@@ -4,7 +4,6 @@ import gg.moonrise.hawkeye.entity.event.StoredEvent;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import java.util.List;
 import java.util.OptionalInt;
-import java.util.OptionalLong;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -13,12 +12,12 @@ import org.jetbrains.annotations.NotNull;
  * @param query    the query (an exact block is an inspector page)
  * @param page     the page number, from 1
  * @param pageSize events per page
- * @param total    how many events matched, or {@link LookupSession#UNKNOWN_TOTAL}
+ * @param total    how many events matched: exact, a lower bound or unknown
  * @param events   the page's events, newest first
  * @param hasMore  whether a next page exists
  * @param warnings shards that could not be read
  */
-public record PageView(@NotNull LookupQuery query, int page, int pageSize, long total,
+public record PageView(@NotNull LookupQuery query, int page, int pageSize, @NotNull LookupTotal total,
         @NotNull List<StoredEvent> events, boolean hasMore, @NotNull List<LookupWarning> warnings) {
 
     /**
@@ -27,7 +26,7 @@ public record PageView(@NotNull LookupQuery query, int page, int pageSize, long 
      * @param query    the query
      * @param page     the page number
      * @param pageSize events per page
-     * @param total    the total or {@link LookupSession#UNKNOWN_TOTAL}
+     * @param total    the total
      * @param events   the events
      * @param hasMore  whether a next page exists
      * @param warnings unreadable shards
@@ -38,25 +37,24 @@ public record PageView(@NotNull LookupQuery query, int page, int pageSize, long 
     }
 
     /**
-     * The total, if it could be counted.
+     * How many pages there are, when the total is exact.
      *
-     * @return the total, or empty
+     * @return the page count, or empty when the total is a lower bound or unknown
      */
-    public @NotNull OptionalLong knownTotal() {
-        return total < 0 ? OptionalLong.empty() : OptionalLong.of(total);
+    public @NotNull OptionalInt pages() {
+        return total instanceof LookupTotal.Exact exact ? OptionalInt.of(pagesFor(exact.events()))
+                : OptionalInt.empty();
     }
 
     /**
-     * How many pages there are: from the total, but never fewer than this page (and the next, when
-     * there is one).
+     * The pages a number of events fill, but never fewer than this page (and the next, when there is
+     * one): the page count of an exact total, or the lower bound of the page count of a lower bound.
      *
-     * @return the page count, or empty when the total is unknown
+     * @param events the events
+     * @return at least this page's number
      */
-    public @NotNull OptionalInt pages() {
-        if (total < 0) {
-            return OptionalInt.empty();
-        }
-        return OptionalInt.of(Math.max(pagesOf(total, pageSize), hasMore ? page + 1 : page));
+    public int pagesFor(long events) {
+        return Math.max(pagesOf(events, pageSize), hasMore ? page + 1 : page);
     }
 
     /**

@@ -68,6 +68,9 @@ public final class Archive {
     /** Segments read per candidate query. */
     public static final int SEGMENT_PAGE = 32;
 
+    /** A segment budget for {@link #count(Connection, Shard, EventFilter, int)} that counts every candidate. */
+    public static final int ALL_SEGMENTS = Integer.MAX_VALUE;
+
     /** Compresses frames on the calling thread: no burst of cores on a game server. */
     public static final Executor CALLING_THREAD = Runnable::run;
 
@@ -195,7 +198,7 @@ public final class Archive {
     }
 
     /**
-     * Counts archived events matching a filter.
+     * Counts archived events matching a filter, every candidate segment.
      *
      * @param connection a connection
      * @param shard      the shard
@@ -205,14 +208,40 @@ public final class Archive {
      */
     public long count(@NotNull Connection connection, @NotNull Shard shard, @NotNull EventFilter filter)
             throws SQLException {
+        return count(connection, shard, filter, ALL_SEGMENTS).total();
+    }
+
+    /**
+     * Counts archived events matching a filter, newest segments first, reading the bodies of at most
+     * {@code maxSegments} segments. A candidate whose header selects no unit costs no body read and
+     * does not use the budget; once the budget is spent and another candidate would need its body, the
+     * count stops and is a lower bound.
+     *
+     * @param connection  a connection
+     * @param shard       the shard
+     * @param filter      the filter
+     * @param maxSegments the most segment bodies to read; {@link #ALL_SEGMENTS} for an exact count
+     * @return the count, exact when every candidate was counted
+     * @throws SQLException when reading fails
+     */
+    public @NotNull EventCount count(@NotNull Connection connection, @NotNull Shard shard,
+            @NotNull EventFilter filter, int maxSegments) throws SQLException {
         long count = 0;
-        SegmentPages pages = pages(connection, shard, filter, 0, false);
+        int read = 0;
+        SegmentPages pages = pages(connection, shard, filter, 0, true);
         while (true) {
             List<SegmentRow> page = pages.next();
             if (page.isEmpty()) {
-                return count;
+                return EventCount.of(count);
             }
             for (SegmentRow segment : page) {
+                if (header(shard, segment).units(filter).length == 0) {
+                    continue;
+                }
+                if (read >= maxSegments) {
+                    return EventCount.atLeast(count);
+                }
+                read++;
                 count += count(connection, shard, segment, filter);
             }
         }

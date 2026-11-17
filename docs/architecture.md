@@ -158,6 +158,16 @@ by `core.storage.Archive` under the `archive` lease (one server per shard).
   segment counts column matches without computing ids. `EventFilter.matches` is the Java twin of the
   SQL predicate (`EventFilterTest` checks they agree); both steps use its rule methods. A page stops
   reading segments once none can beat its worst event (by `first_id`/`last_id`).
+- **Counting.** `Archive.count` takes a segment budget: it reads candidates newest first and counts
+  at most that many segment bodies (a candidate whose header selects no unit costs nothing); when the
+  budget is spent with a candidate left that needs its body, the count stops and is a lower bound
+  (`EventCount.exact` false). The hot table's SQL count is always exact, and a total summed over shards
+  is exact only when every shard's is. Opening a lookup or an inspection (`LookupPager.open`) runs the
+  first page and a count with a budget of `LookupPager.COUNT_SEGMENTS` (16) side by side, so the reply
+  never waits for the whole history; the header and footer then show the total and the page count as
+  lower bounds (`lookup.at-least`, "160+"). A session with a lower bound has no page count:
+  `/hawkeye page n` walks forward until the rows end (reporting "out of range" only there), and once
+  they have ended the session's total is exact. `#count` and `HawkeyeApi#count` count every segment.
 - **Flags.** A rollback of archived events maps their ids to ordinals (from the shared frames) and
   rewrites the segment's `segment_flag` row under a lock on the segment row; a body is never rewritten
   for a flag.

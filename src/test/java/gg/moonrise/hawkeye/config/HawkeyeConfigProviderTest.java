@@ -13,6 +13,7 @@ import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -89,6 +90,18 @@ public class HawkeyeConfigProviderTest {
         assertFalse(written.contains("batch-events"), written);
         assertTrue(written.contains("segment-events: 262144") && written.contains("settle-seconds: 60"), written);
         assertTrue(written.contains("after-hours: 12"), written);
+    }
+
+    @Test
+    public void aMessagesFileWithoutTheLowerBoundKeyGetsItsDefault() throws IOException {
+        Path messages = plugin.getDataPath().resolve(HawkeyeConfigProvider.MESSAGES_FILE);
+        Files.writeString(messages, "lookup:\n  unknown-total: '<gray>?'\n");
+        assertInstanceOf(ReloadResult.Reloaded.class, provider.reloadConfig());
+        assertEquals("<gray>?", provider.messages().getLookup().getUnknownTotal());
+        assertEquals("<value>+", provider.messages().getLookup().getAtLeast(), "a key missing from the file");
+        String written = Files.readString(messages);
+        assertTrue(written.contains("at-least: <value>+") || written.contains("at-least: '<value>+'"), written);
+        assertTrue(written.contains("<gray>?"), written);
     }
 
     @Test

@@ -89,8 +89,8 @@ public class LookupServiceTest {
 
         LookupQuery fire = new LookupQuery(new ServerScope.Local(), new Area.Everywhere(), TimeWindow.ALL,
                 Set.of("#fire"), Set.of(), Set.of(), Set.of(), Set.of(), RollbackState.ANY);
-        assertEquals(new LookupOutcome.Count(5, List.of()), lookups.count(fire).get(20, TimeUnit.SECONDS));
-        assertEquals(new LookupOutcome.Count(17, List.of()), lookups.count(EVERYWHERE).get(20, TimeUnit.SECONDS));
+        assertEquals(new LookupOutcome.Count(5, true, List.of()), lookups.count(fire).get(20, TimeUnit.SECONDS));
+        assertEquals(new LookupOutcome.Count(17, true, List.of()), lookups.count(EVERYWHERE).get(20, TimeUnit.SECONDS));
     }
 
     @Test

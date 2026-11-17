@@ -5,6 +5,7 @@ import gg.moonrise.hawkeye.config.file.LookupSettings;
 import gg.moonrise.hawkeye.core.queue.EventWriter;
 import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
 import gg.moonrise.hawkeye.core.service.query.QueryTargets;
+import gg.moonrise.hawkeye.core.storage.Archive;
 import gg.moonrise.hawkeye.core.storage.EventStore;
 import gg.moonrise.hawkeye.core.storage.StorageManager;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
@@ -60,13 +61,27 @@ public final class LookupService {
     }
 
     /**
-     * Counts the matching events.
+     * Counts the matching events exactly, however many archive segments that reads.
      *
      * @param query the query
-     * @return a {@link LookupOutcome.Count} or a {@link LookupOutcome.Problem}
+     * @return an exact {@link LookupOutcome.Count} or a {@link LookupOutcome.Problem}
      */
     public @NotNull CompletableFuture<LookupOutcome> count(@NotNull LookupQuery query) {
-        return run(target -> store.count(target.shard(), query, target.scope()), query, LookupMerge::count);
+        return count(query, Archive.ALL_SEGMENTS);
+    }
+
+    /**
+     * Counts the matching events, reading the bodies of at most {@code maxSegments} archive segments per
+     * shard, newest first; the hot tier is always counted exactly.
+     *
+     * @param query       the query
+     * @param maxSegments the segment budget per shard; {@link Archive#ALL_SEGMENTS} for an exact count
+     * @return a {@link LookupOutcome.Count} (a lower bound when a budget ran out) or a
+     *         {@link LookupOutcome.Problem}
+     */
+    public @NotNull CompletableFuture<LookupOutcome> count(@NotNull LookupQuery query, int maxSegments) {
+        return run(target -> store.count(target.shard(), query, target.scope(), maxSegments), query,
+                LookupMerge::count);
     }
 
     private <T> @NotNull CompletableFuture<LookupOutcome> run(@NotNull ShardRead<T> read, @NotNull LookupQuery query,

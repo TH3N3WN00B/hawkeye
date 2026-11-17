@@ -58,4 +58,8 @@ public final class LookupMessages {
 
     @Comment("<pages> and <total> when the matching events could not be counted.")
     private String unknownTotal = "?";
+
+    @Comment({"<pages> and <total> of a large result when they are lower bounds: opening a lookup counts at most",
+            "16 archive segments; #count gives the exact number. Placeholder: <value>."})
+    private String atLeast = "<value>+";
 }
