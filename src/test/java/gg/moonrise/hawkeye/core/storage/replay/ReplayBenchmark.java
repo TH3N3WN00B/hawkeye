@@ -288,8 +288,9 @@ public class ReplayBenchmark {
             one.put("candidateRuns", plan[0].runCount());
             store.find(harness.shard(), entry.getValue(), all, 0, 10, true);
             counting.takeBodyReads();
+            store.find(harness.shard(), entry.getValue(), all, 0, 10, true);
+            one.put("bodyReadsPerFind", counting.takeBodyReads().size());
             one.put("find", timed(() -> store.find(harness.shard(), entry.getValue(), all, 0, 10, true).size()));
-            one.put("bodyReadsPerFind", counting.takeBodyReads().size() / 4);
             result.put(entry.getKey(), one);
         }
         return result;
