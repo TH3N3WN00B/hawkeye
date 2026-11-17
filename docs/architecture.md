@@ -295,15 +295,21 @@ rows).
   (one `IN` list) and takes the union; an actor without a row contributes nothing, and excluded actors
   never narrow. Both present: their intersection; one: that one; none: the keyset path below.
   `indexed_from` is read before the rows, and every segment below it is added to the plan.
-- **Candidate ranges.** The id ranges of the planned segments overlapping the filter's id range are
-  read by primary-key ranges (`id = ? OR id BETWEEN ? AND ?`, filtered by the id range in Java), or,
-  for a set of more than 16 runs or 64 ids (a place active for a long time, an actor seen all the
-  time), from one scan of the covering index bounded by the filter's id range
-  (`last_id >= ? AND first_id <= ?` on `(last_id, id, first_id)`, about 20 bytes a segment where the
-  seeks were thousands or a long run dragged table pages, on InnoDB the inline headers). Both paths
-  give the same ranges. They are put in reading order and filtered by the cursor; headers and flags
-  are then fetched page by page (4, 8, 16, then 32 ids), with the same early stop as the keyset path.
-  Larger areas and filters the index does not narrow keep the keyset path over `last_id`/`first_id`.
+- **Candidate ranges.** How the planned segments are put in reading order depends on how many there
+  are. A plan of at most 16 runs and 64 ids reads their id ranges by primary-key ranges
+  (`id = ? OR id BETWEEN ? AND ?`), filters them by the filter's id range and the cursor, and sorts
+  them. A larger plan (a place active for a long time, an actor seen all the time) read newest first
+  walks the covering index on `(last_id, id, first_id)` in its own order, 64 ranges with the first
+  statement and four times as many with each later one up to 4,096
+  (`last_id >= ? AND first_id <= ? ... ORDER BY last_id DESC, id DESC LIMIT ?`, the candidate keyset
+  without headers, about 20 bytes a segment), and keeps the ids the plan names: a lookup that fills
+  its page from the newest segments stops after the first statement instead of reading every
+  segment's id range (about 3 ms through JDBC for 5,337 segments, and growing with history), and a
+  count or a rollback walks them all in a few statements. Read oldest first, a larger plan reads every
+  range overlapping the filter's id range from the same index in one statement and sorts them (no
+  index holds `first_id` order with `last_id`). Headers and flags are then fetched page by page (4, 8,
+  16, then 32 ids), with the same early stop as the keyset path. Larger areas and filters the index
+  does not narrow keep the keyset path over `last_id`/`first_id`.
 
 Measured with the version-4 place index (buckets only, no actor index) on the 1.40 billion event
 replay database (5,337 segments, 2026-11-17, SQLite, 4 KB pages):
@@ -337,7 +343,7 @@ for the unit, one for the shared frames when a row matched).
 | User | `actor IN (...)` on `(actor)` plus the id range |
 | Time only | primary key range |
 | Purge | primary key range delete, in batches; archive segments by `first_id`, deleted or rewritten whole |
-| Segment index | `world = ? AND region IN (...)` / `world = ? AND chunk IN (...)` / `actor IN (...)` on the primary keys; trimming `newest < ?` on `(newest)` of all three tables; candidates `id = ? OR id BETWEEN ? AND ? ...` on the segment primary key, or `last_id >= ? AND first_id <= ?` answered by the covering index alone for a set of more than 16 runs or 64 ids, then `id IN (...)` on the primary key |
+| Segment index | `world = ? AND region IN (...)` / `world = ? AND chunk IN (...)` / `actor IN (...)` on the primary keys; trimming `newest < ?` on `(newest)` of all three tables; candidates `id = ? OR id BETWEEN ? AND ? ...` on the segment primary key, or, for a set of more than 16 runs or 64 ids, `last_id >= ? AND first_id <= ?` answered by the covering index alone (newest first: in index order with `ORDER BY last_id DESC, id DESC LIMIT ?`, page by page), then `id IN (...)` on the primary key |
 | Archive candidates | `last_id >= ? AND first_id <= ?` on `(last_id)` (newest first) or `(first_id)` (oldest first); a later page adds `last_id <= ?` so it seeks to where the previous one ended; the flag row by its primary key; the body by `substr` byte ranges |
 
 InnoDB and SQLite append the primary key to secondary indexes, so `(world, pos)` and `(actor)` are

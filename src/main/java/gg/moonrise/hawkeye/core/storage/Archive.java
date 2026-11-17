@@ -27,11 +27,13 @@ import gg.moonrise.moss.spring.SpringComponent;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -70,6 +72,12 @@ public final class Archive {
 
     /** A segment budget for {@link #count(Connection, Shard, EventFilter, int)} that counts every candidate. */
     public static final int ALL_SEGMENTS = Integer.MAX_VALUE;
+
+    /** Id ranges read by the first statement of a walk of the covering index; each later one reads four times as many. */
+    public static final int FIRST_WALK = 64;
+
+    /** The most id ranges one statement of a walk reads. */
+    public static final int MAX_WALK = 4_096;
 
     /** Compresses frames on the calling thread: no burst of cores on a game server. */
     public static final Executor CALLING_THREAD = Runnable::run;
@@ -545,6 +553,9 @@ public final class Archive {
         if (planned.isEmpty()) {
             return new KeysetPages(connection, sql, filter, cursor, newestFirst);
         }
+        if (newestFirst && SegmentRepository.scattered(planned.get())) {
+            return new WalkedPages(connection, sql, filter, cursor, planned.get());
+        }
         Comparator<SegmentRange> order = newestFirst
                 ? Comparator.comparingLong(SegmentRange::lastId).thenComparingLong(SegmentRange::id).reversed()
                 : Comparator.comparingLong(SegmentRange::firstId).thenComparingLong(SegmentRange::id);
@@ -611,6 +622,59 @@ public final class Archive {
                 }
             }
             return List.of();
+        }
+    }
+
+    /**
+     * The segments the segment index named, newest first, when they are many (a busy place, an actor
+     * seen all the time): the covering index is walked in reading order a page at a time and the named
+     * ones are kept, so a lookup that fills its page from the newest segments never reads the id ranges
+     * of the rest. A read of every candidate walks {@link #MAX_WALK} ranges a statement.
+     */
+    @RequiredArgsConstructor
+    private final class WalkedPages implements SegmentPages {
+
+        private final @NotNull Connection connection;
+        private final @NotNull Sql sql;
+        private final @NotNull EventFilter filter;
+        private final long cursor;
+        private final @NotNull IdRuns planned;
+        private final Deque<Long> pending = new ArrayDeque<>();
+        private @Nullable SegmentRange after;
+        private boolean walked;
+        private int walk = FIRST_WALK;
+        private int size = 4;
+
+        @Override
+        public @NotNull List<SegmentRow> next() throws SQLException {
+            while (true) {
+                while (pending.size() < size && !walked) {
+                    List<SegmentRange> ranges = segmentRepository.newestRanges(connection, sql, filter, cursor, after,
+                            walk);
+                    walked = ranges.size() < walk;
+                    if (!ranges.isEmpty()) {
+                        after = ranges.getLast();
+                    }
+                    for (SegmentRange range : ranges) {
+                        if (planned.contains(range.id())) {
+                            pending.add(range.id());
+                        }
+                    }
+                    walk = Math.min(MAX_WALK, walk * 4);
+                }
+                if (pending.isEmpty()) {
+                    return List.of();
+                }
+                List<Long> page = new ArrayList<>(size);
+                while (page.size() < size && !pending.isEmpty()) {
+                    page.add(pending.poll());
+                }
+                size = Math.min(SEGMENT_PAGE, size * 2);
+                List<SegmentRow> rows = segmentRepository.rows(connection, sql, page);
+                if (!rows.isEmpty()) {
+                    return rows;
+                }
+            }
         }
     }
 

@@ -10,6 +10,7 @@ import gg.moonrise.hawkeye.core.repository.DictionaryRepository;
 import gg.moonrise.hawkeye.core.repository.EventFilter;
 import gg.moonrise.hawkeye.core.repository.EventRepository;
 import gg.moonrise.hawkeye.core.repository.SegmentIndexRepository;
+import gg.moonrise.hawkeye.core.repository.SegmentRepository;
 import gg.moonrise.hawkeye.core.repository.place.IdRuns;
 import gg.moonrise.hawkeye.core.sql.SqliteHarness;
 import gg.moonrise.hawkeye.entity.action.Action;
@@ -133,6 +134,29 @@ public class ActorIndexTest {
         assertEquals(2, store.count(harness.shard(), query, ALL));
         assertEquals(2, new HashSet<>(segments.takeBodyReads()).size(), "only the two segments holding it are read");
         assertEquals(2, plan(query).orElseThrow().count());
+    }
+
+    @Test
+    public void thePageOfAPlayerInEverySegmentWalksTheIndexOnceAndReadsTheNewestSegments() throws SQLException {
+        LookupQuery query = byActors(Set.of("player3"));
+        assertTrue(SegmentRepository.scattered(plan(query).orElseThrow()), "the plan names more segments than are sought");
+        List<Long> expected = referenceStore.find(reference.shard(), query, ALL, 0, 5, true).stream()
+                .map(StoredEvent::id).toList();
+        segments.takeWalks();
+        segments.takeBodyReads();
+
+        assertEquals(expected, store.find(harness.shard(), query, ALL, 0, 5, true).stream().map(StoredEvent::id).toList());
+        assertEquals(List.of(Archive.FIRST_WALK), segments.takeWalks(), "one statement names enough segments");
+        assertTrue(new HashSet<>(segments.takeBodyReads()).size() <= 3, "only the newest segments are read");
+
+        List<Long> all = pages(referenceStore, reference, query, true);
+        assertEquals(all, pages(store, harness, query, true));
+        assertEquals(all.reversed(), pages(store, harness, query, false));
+        assertEquals(all.size(), store.count(harness.shard(), query, ALL));
+        segments.takeWalks();
+        store.count(harness.shard(), query, ALL);
+        assertEquals(List.of(Archive.FIRST_WALK, 4 * Archive.FIRST_WALK), segments.takeWalks(),
+                "a count walks every candidate, four times as many a statement");
     }
 
     @Test

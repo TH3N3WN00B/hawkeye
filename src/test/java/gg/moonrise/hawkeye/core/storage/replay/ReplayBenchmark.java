@@ -89,6 +89,7 @@ public class ReplayBenchmark {
     private static final long PROFILED_EVENTS = 5_000_000;
     private static final long PROGRESS_EVERY = 20_000_000;
     private static final List<PendingEvent> END = List.of();
+    private static final double SLOW_LOOKUP_MILLIS = 300;
 
     private Path folder;
 
@@ -244,7 +245,7 @@ public class ReplayBenchmark {
 
     /**
      * Per place lookup, and per lookup of the three players {@link #playersBySegments} picks, the steps
-     * apart: the segment index plan alone (median of three, warm), how many segment ids it names, and
+     * apart: the segment index plan alone (median of the warm runs), how many segment ids it names, and
      * how many segment bodies the newest-10 read then touches.
      */
     private static @NotNull Map<String, Object> placeProfile(@NotNull SqliteHarness harness,
@@ -390,7 +391,10 @@ public class ReplayBenchmark {
         }
     }
 
-    /** Typical lookups against the finished database: the first run and the median of three more, in ms. */
+    /**
+     * Typical lookups against the finished database: the first run and the median of 15 more (3 when the
+     * first took over 300 ms), in ms.
+     */
     private static @NotNull Map<String, Object> lookups(@NotNull EventStore store, @NotNull SqliteHarness harness,
             @NotNull Targets targets) throws SQLException {
         Map<String, Object> result = new LinkedHashMap<>();
@@ -526,14 +530,16 @@ public class ReplayBenchmark {
         long start = System.nanoTime();
         int rows = lookup.run();
         result.put("firstMillis", (System.nanoTime() - start) / 1e6);
+        // A lookup of a few milliseconds is drowned by one collector pause on a shared host: take the median of more runs.
+        int runs = (System.nanoTime() - start) / 1e6 > SLOW_LOOKUP_MILLIS ? 3 : 15;
         List<Double> more = new ArrayList<>();
-        for (int run = 0; run < 3; run++) {
+        for (int run = 0; run < runs; run++) {
             start = System.nanoTime();
             lookup.run();
             more.add((System.nanoTime() - start) / 1e6);
         }
         more.sort(Comparator.naturalOrder());
-        result.put("againMillis", more.get(1));
+        result.put("againMillis", more.get(runs / 2));
         result.put("rows", rows);
         return result;
     }

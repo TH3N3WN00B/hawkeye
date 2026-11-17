@@ -97,6 +97,19 @@ public class EventSqlPlanTest {
     }
 
     @Test
+    public void aWalkOfTheNewestIdRangesIsAnsweredFromTheIndexInItsOrder() throws SQLException {
+        Sql sql = harness.database().sql();
+        String first = explain(SegmentRepository.newestRangesQuery(sql, EventFilter.everything(5, 9_000), 0, null, 64));
+        assertTrue(first.contains("USING COVERING INDEX hawkeye_segment_last (last_id>?)"), first);
+        assertTrue(!first.contains("TEMP B-TREE"), "no sort: " + first);
+
+        String later = explain(SegmentRepository.newestRangesQuery(sql, EventFilter.everything(5, 9_000), 7_000,
+                new SegmentRange(40, 1_000, 5_000), 256));
+        assertTrue(later.contains("USING COVERING INDEX hawkeye_segment_last (last_id>? AND last_id<?)"), later);
+        assertTrue(!later.contains("TEMP B-TREE"), "no sort: " + later);
+    }
+
+    @Test
     public void placeIndexRowsAreReadByPrimaryKey() throws SQLException {
         for (PlaceIndexRepository.Kind kind : PlaceIndexRepository.Kind.values()) {
             String plan = explain(PlaceIndexRepository.readQuery(harness.database().sql(), kind, 1,

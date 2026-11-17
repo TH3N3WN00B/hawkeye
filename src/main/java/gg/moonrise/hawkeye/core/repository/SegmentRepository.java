@@ -112,6 +112,75 @@ public class SegmentRepository {
     public static @NotNull BoundSql candidateQuery(@NotNull Sql sql, @NotNull EventFilter filter, long eventCursor,
             @Nullable SegmentRow after, int limit, boolean newestFirst) {
         List<Object> parameters = new ArrayList<>();
+        SegmentRange afterRange = after == null ? null : new SegmentRange(after.id(), after.firstId(), after.lastId());
+        String where = candidateWhere(filter, eventCursor, afterRange, newestFirst, parameters);
+        parameters.add(limit);
+        return query(sql, where + " LIMIT ?", parameters);
+    }
+
+    /**
+     * A page of the id ranges of the candidate segments of a filter, newest first: the walk of
+     * {@link #candidates} without headers and flags, which the covering index on
+     * {@code (last_id, id, first_id)} answers alone and in its own order. A read that names many
+     * segments walks this and keeps the ones it named, so it stops where a page of events is full
+     * instead of reading every segment's id range first.
+     *
+     * @param connection  a connection
+     * @param sql         the shard's SQL context
+     * @param filter      the event filter (only its id range narrows the rows)
+     * @param eventCursor the event keyset bound of the lookup (0 for none)
+     * @param after       the last range of the previous page, or {@code null} for the first page
+     * @param limit       the most ranges
+     * @return the ranges, newest first
+     * @throws SQLException when the query fails
+     */
+    public @NotNull List<SegmentRange> newestRanges(@NotNull Connection connection, @NotNull Sql sql,
+            @NotNull EventFilter filter, long eventCursor, @Nullable SegmentRange after, int limit) throws SQLException {
+        BoundSql query = newestRangesQuery(sql, filter, eventCursor, after, limit);
+        List<SegmentRange> out = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(query.sql())) {
+            query.bind(statement);
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    out.add(new SegmentRange(rows.getLong(1), rows.getLong(2), rows.getLong(3)));
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The statement of {@link #newestRanges} (also read by the query-plan tests).
+     *
+     * @param sql         the shard's SQL context
+     * @param filter      the event filter
+     * @param eventCursor the event keyset bound (0 for none)
+     * @param after       the last range of the previous page, or {@code null}
+     * @param limit       the most ranges
+     * @return the statement
+     */
+    public static @NotNull BoundSql newestRangesQuery(@NotNull Sql sql, @NotNull EventFilter filter, long eventCursor,
+            @Nullable SegmentRange after, int limit) {
+        List<Object> parameters = new ArrayList<>();
+        String where = candidateWhere(filter, eventCursor, after, true, parameters);
+        parameters.add(limit);
+        return new BoundSql("SELECT s.id, s.first_id, s.last_id FROM " + sql.tables().segment() + " s WHERE " + where
+                + " LIMIT ?", parameters);
+    }
+
+    /**
+     * Whether {@link #ranges} reads a set from the covering index instead of by primary-key ranges.
+     *
+     * @param ids the segment ids
+     * @return {@code true} for more than {@link #SCATTERED_RUNS} runs or {@link #SCATTERED_IDS} ids
+     */
+    public static boolean scattered(@NotNull IdRuns ids) {
+        return ids.runCount() > SCATTERED_RUNS || ids.count() > SCATTERED_IDS;
+    }
+
+    /** The conditions and order of a candidate walk; the parameters are appended in order. */
+    private static @NotNull String candidateWhere(@NotNull EventFilter filter, long eventCursor,
+            @Nullable SegmentRange after, boolean newestFirst, @NotNull List<Object> parameters) {
         List<String> conditions = new ArrayList<>();
         conditions.add("s.last_id >= ? AND s.first_id <= ?");
         parameters.add(filter.minId());
@@ -139,8 +208,7 @@ public class SegmentRepository {
             }
             order = " ORDER BY s.first_id ASC, s.id ASC";
         }
-        parameters.add(limit);
-        return query(sql, String.join(" AND ", conditions) + order + " LIMIT ?", parameters);
+        return String.join(" AND ", conditions) + order;
     }
 
     /**
@@ -163,7 +231,7 @@ public class SegmentRepository {
     public @NotNull List<SegmentRange> ranges(@NotNull Connection connection, @NotNull Sql sql, @NotNull IdRuns ids,
             long minId, long maxId) throws SQLException {
         List<SegmentRange> out = new ArrayList<>();
-        if (ids.runCount() > SCATTERED_RUNS || ids.count() > SCATTERED_IDS) {
+        if (scattered(ids)) {
             BoundSql query = everyRangeQuery(sql, minId, maxId);
             try (PreparedStatement statement = connection.prepareStatement(query.sql())) {
                 query.bind(statement);
