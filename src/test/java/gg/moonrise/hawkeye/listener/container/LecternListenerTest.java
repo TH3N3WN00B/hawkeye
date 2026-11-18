@@ -14,6 +14,7 @@ import org.bukkit.block.Block;
 import org.bukkit.block.Lectern;
 import org.bukkit.event.player.PlayerTakeLecternBookEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.LecternInventory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,7 +61,7 @@ public class LecternListenerTest {
     public void aBookTakenFromALecternIsAWithdrawal() {
         Lectern lectern = (Lectern) block.getState();
         lectern.getInventory().setItem(0, new ItemStack(Material.WRITABLE_BOOK));
-        server.getPluginManager().callEvent(new PlayerTakeLecternBookEvent(player, lectern));
+        server.getPluginManager().callEvent(new PlayerTakeLecternBookEvent(player, (LecternInventory) lectern.getInventory(), lectern));
 
         StoredEvent withdrawal = Recorded.only(Action.CONTAINER_WITHDRAW);
         assertEquals("minecraft:writable_book", withdrawal.subject());
@@ -72,7 +73,7 @@ public class LecternListenerTest {
     public void aCancelledTakeIsNotRecorded() {
         Lectern lectern = (Lectern) block.getState();
         lectern.getInventory().setItem(0, new ItemStack(Material.WRITABLE_BOOK));
-        PlayerTakeLecternBookEvent take = new PlayerTakeLecternBookEvent(player, lectern);
+        PlayerTakeLecternBookEvent take = new PlayerTakeLecternBookEvent(player, (LecternInventory) lectern.getInventory(), lectern);
         take.setCancelled(true);
         server.getPluginManager().callEvent(take);
 
