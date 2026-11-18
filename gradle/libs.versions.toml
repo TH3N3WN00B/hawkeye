@@ -1,6 +1,6 @@
 [versions]
 shadow = "9.6.1"
-paper = "26.3.build.246-stable"
+paper = "26.3.build.249-stable"
 lombok = "1.18.48"
 jetbrainsAnnotations = "26.1.0"
 
