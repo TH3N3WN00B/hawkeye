@@ -5,6 +5,7 @@ import gg.moonrise.hawkeye.core.repository.segment.ByteRange;
 import gg.moonrise.hawkeye.core.repository.segment.PackedSegment;
 import gg.moonrise.hawkeye.core.sql.Dialect;
 import gg.moonrise.hawkeye.core.sql.Sql;
+import gg.moonrise.hawkeye.entity.storage.SegmentTotals;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.sql.Connection;
 import java.sql.PreparedStatement;

@@ -7,6 +7,7 @@ import gg.moonrise.hawkeye.core.sql.Sql;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.query.Area;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
+import gg.moonrise.hawkeye.entity.query.ShardScope;
 import gg.moonrise.hawkeye.entity.server.WorldKey;
 import gg.moonrise.hawkeye.util.BlockPositions;
 import gg.moonrise.moss.spring.SpringComponent;

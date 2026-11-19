@@ -1,7 +1,7 @@
 package gg.moonrise.hawkeye.core.service.lookup;
 
-import gg.moonrise.hawkeye.core.storage.EventCount;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
+import gg.moonrise.hawkeye.entity.query.EventCount;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
