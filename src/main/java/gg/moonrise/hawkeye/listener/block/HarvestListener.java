@@ -2,8 +2,8 @@ package gg.moonrise.hawkeye.listener.block;
 
 import gg.moonrise.hawkeye.config.file.LogCategory;
 import gg.moonrise.hawkeye.core.service.capture.Actors;
-import gg.moonrise.hawkeye.core.service.capture.BlockRecheck;
 import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
+import gg.moonrise.hawkeye.core.service.capture.block.BlockRecheck;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.actor.Actor;
 import gg.moonrise.moss.spring.SpringComponent;

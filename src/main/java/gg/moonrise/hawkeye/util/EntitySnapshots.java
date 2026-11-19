@@ -1,8 +1,8 @@
 package gg.moonrise.hawkeye.util;
 
 import gg.moonrise.hawkeye.util.nbt.NbtRoot;
-import gg.moonrise.hawkeye.util.nbt.NbtTag;
 import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtCompound;
+import gg.moonrise.hawkeye.util.nbt.NbtTag;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;

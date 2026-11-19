@@ -3,8 +3,8 @@ package gg.moonrise.hawkeye.listener.block;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import gg.moonrise.hawkeye.core.service.capture.BlockChanges;
 import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
+import gg.moonrise.hawkeye.core.service.capture.block.BlockChanges;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
 import gg.moonrise.hawkeye.entity.payload.Payload;

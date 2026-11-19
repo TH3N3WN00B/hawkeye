@@ -10,7 +10,7 @@ import gg.moonrise.hawkeye.command.HawkeyeCommandRegistry;
 import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.queue.EventWriter;
 import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
-import gg.moonrise.hawkeye.core.storage.StorageManager;
+import gg.moonrise.hawkeye.core.storage.shard.StorageManager;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import gg.moonrise.moss.paper.MossPaper;
 import java.nio.file.Files;

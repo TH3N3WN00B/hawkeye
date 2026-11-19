@@ -1,11 +1,11 @@
 package gg.moonrise.hawkeye.core.sql;
 
 import gg.moonrise.hawkeye.config.file.StorageSettings;
-import gg.moonrise.hawkeye.core.repository.ActorRepository;
-import gg.moonrise.hawkeye.core.repository.DictionaryRepository;
-import gg.moonrise.hawkeye.core.repository.ServerRepository;
-import gg.moonrise.hawkeye.core.storage.Dictionaries;
-import gg.moonrise.hawkeye.core.storage.Shard;
+import gg.moonrise.hawkeye.core.repository.dictionary.ActorRepository;
+import gg.moonrise.hawkeye.core.repository.dictionary.DictionaryRepository;
+import gg.moonrise.hawkeye.core.repository.network.ServerRepository;
+import gg.moonrise.hawkeye.core.storage.shard.Dictionaries;
+import gg.moonrise.hawkeye.core.storage.shard.Shard;
 import gg.moonrise.hawkeye.entity.server.ServerNode;
 import java.nio.file.Path;
 import java.sql.SQLException;

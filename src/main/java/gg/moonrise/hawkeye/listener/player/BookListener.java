@@ -2,8 +2,8 @@ package gg.moonrise.hawkeye.listener.player;
 
 import gg.moonrise.hawkeye.config.file.LogCategory;
 import gg.moonrise.hawkeye.core.service.capture.Actors;
-import gg.moonrise.hawkeye.core.service.capture.BookText;
 import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
+import gg.moonrise.hawkeye.core.service.capture.text.BookText;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.moss.spring.SpringComponent;
 import lombok.RequiredArgsConstructor;

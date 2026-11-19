@@ -2,9 +2,9 @@ package gg.moonrise.hawkeye.listener.block;
 
 import gg.moonrise.hawkeye.config.file.LogCategory;
 import gg.moonrise.hawkeye.core.service.capture.Actors;
-import gg.moonrise.hawkeye.core.service.capture.BlockCapture;
-import gg.moonrise.hawkeye.core.service.capture.BlockHalves;
 import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
+import gg.moonrise.hawkeye.core.service.capture.block.BlockCapture;
+import gg.moonrise.hawkeye.core.service.capture.block.BlockHalves;
 import gg.moonrise.hawkeye.entity.actor.Actor;
 import gg.moonrise.moss.spring.SpringComponent;
 import lombok.RequiredArgsConstructor;

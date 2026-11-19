@@ -2,9 +2,9 @@ package gg.moonrise.hawkeye.listener.block;
 
 import gg.moonrise.hawkeye.config.file.LogCategory;
 import gg.moonrise.hawkeye.core.service.capture.Actors;
-import gg.moonrise.hawkeye.core.service.capture.BlockCapture;
 import gg.moonrise.hawkeye.core.service.capture.CauseTracker;
 import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
+import gg.moonrise.hawkeye.core.service.capture.block.BlockCapture;
 import gg.moonrise.hawkeye.core.service.thread.ServerThreads;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.actor.Actor;

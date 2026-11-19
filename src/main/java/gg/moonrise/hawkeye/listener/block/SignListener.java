@@ -3,7 +3,7 @@ package gg.moonrise.hawkeye.listener.block;
 import gg.moonrise.hawkeye.config.file.LogCategory;
 import gg.moonrise.hawkeye.core.service.capture.Actors;
 import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
-import gg.moonrise.hawkeye.core.service.capture.SignText;
+import gg.moonrise.hawkeye.core.service.capture.text.SignText;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.payload.Payload;
 import gg.moonrise.hawkeye.entity.payload.SignSides;
