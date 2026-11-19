@@ -2,13 +2,13 @@ package gg.moonrise.hawkeye.core.service.status;
 
 import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.queue.EventWriter;
-import gg.moonrise.hawkeye.core.queue.WriterStats;
-import gg.moonrise.hawkeye.core.repository.SegmentTotals;
 import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
 import gg.moonrise.hawkeye.core.service.network.NetworkJobService;
 import gg.moonrise.hawkeye.core.storage.Archive;
 import gg.moonrise.hawkeye.core.storage.StorageManager;
 import gg.moonrise.hawkeye.core.storage.StorageState;
+import gg.moonrise.hawkeye.entity.storage.SegmentTotals;
+import gg.moonrise.hawkeye.entity.storage.WriterStats;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.sql.SQLException;
 import java.util.concurrent.CompletableFuture;

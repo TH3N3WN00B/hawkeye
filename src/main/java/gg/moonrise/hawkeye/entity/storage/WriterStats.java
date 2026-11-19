@@ -1,4 +1,4 @@
-package gg.moonrise.hawkeye.core.queue;
+package gg.moonrise.hawkeye.entity.storage;
 
 import org.jetbrains.annotations.NotNull;
 

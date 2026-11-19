@@ -2,9 +2,9 @@ package gg.moonrise.hawkeye.core.service.query;
 
 import gg.moonrise.hawkeye.core.storage.EventStore;
 import gg.moonrise.hawkeye.core.storage.Shard;
-import gg.moonrise.hawkeye.core.storage.ShardScope;
 import gg.moonrise.hawkeye.core.storage.StorageManager;
 import gg.moonrise.hawkeye.entity.query.ServerScope;
+import gg.moonrise.hawkeye.entity.query.ShardScope;
 import gg.moonrise.hawkeye.entity.server.ServerNode;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.sql.SQLException;

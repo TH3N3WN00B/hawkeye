@@ -1,4 +1,4 @@
-package gg.moonrise.hawkeye.core.repository;
+package gg.moonrise.hawkeye.entity.storage;
 
 /**
  * How much the archive of a shard holds.

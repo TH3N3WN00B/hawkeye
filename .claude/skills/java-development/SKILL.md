@@ -768,6 +768,35 @@ packages `presentation`, `application`, `domain` or `infrastructure`.
 
 The plugin's main class stays in the root package and may use any layer.
 
+## Hawkeye's layers
+
+In this repository the layers are these packages under `gg.moonrise.hawkeye`.
+`ArchitectureTest` encodes exactly this table and fails on a class outside every layer, so a
+new top-level package (or a new `core.*` package) goes into a layer there in the same change.
+
+| Layer | Packages | Holds |
+|---|---|---|
+| Plugin | the root package | `HawkeyePlugin` only; may use any layer |
+| Loader | `loader` | `HawkeyePluginLoader` (runtime libraries) |
+| Player-facing | `command` (`command.support`), `listener.<family>`, `ui.<feature>`, `integration.api` (`type`, `indicator` are reserved) | Cloud commands, Bukkit listeners, chat output, the `HawkeyeApi` implementation other plugins call |
+| Service | `core.service.<feature>` (`capture`, `inspect`, `lookup`, `network`, `purge`, `query`, `rollback`, `status`, `thread`) | Use cases: recording, lookups, rollbacks, purges, network jobs, status |
+| Backend | `core.repository` (`.place`, `.segment`), `core.sql`, `core.storage`, `core.queue`, `core.bus`, `core.scheduler`, `core.time` | Repositories and SQL, the storage engine (shards, archive, indexes), the write queue and spool, the cross-server bus, executors, the clock |
+| Bottom | `entity.<concept>`, `config` (`config.file`, `config.message`), `util` (`util.codec`, `util.nbt`), `api` | Data model, config model, pure helpers, the public API types |
+
+Hawkeye specifics:
+- **Services use backend components, not backend data types.** A service may call a backend
+  bean (`StorageManager`, `EventStore`, `EventWriter`, `JobRepository`) and catch its
+  `SQLException`. A plain value it receives or passes (a count, a scope, totals, writer
+  counters) is an entity: `entity.query.EventCount`, `entity.query.ShardScope`,
+  `entity.storage.SegmentTotals`, `entity.storage.WriterStats`. Only a type that carries a
+  backend handle stays in the backend (`core.storage.Shard` and `StorageState` hold a
+  `Database` and `Dictionaries`). `ArchitectureTest` checks this too.
+- **Player-facing code reaches storage through a service.** No class in `command`,
+  `listener`, `ui` or `integration` imports a `core.*` package other than `core.service`.
+- **A callback a service drives is a service-layer interface** implemented above it:
+  `core.service.rollback.RollbackListener` is implemented by `RollbackCommand`. Despite the
+  name it is not a Bukkit listener.
+
 Rules:
 - **Services never run SQL.** All `Connection`, `PreparedStatement` and transaction code
   lives in a repository in `core.repository`. The service calls the repository and keeps

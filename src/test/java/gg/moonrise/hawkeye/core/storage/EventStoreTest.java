@@ -18,6 +18,7 @@ import gg.moonrise.hawkeye.entity.query.Area;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import gg.moonrise.hawkeye.entity.query.RollbackState;
 import gg.moonrise.hawkeye.entity.query.ServerScope;
+import gg.moonrise.hawkeye.entity.query.ShardScope;
 import gg.moonrise.hawkeye.entity.query.TimeWindow;
 import gg.moonrise.hawkeye.entity.server.ServerNode;
 import gg.moonrise.hawkeye.util.BlockPositions;

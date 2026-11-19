@@ -1,11 +1,11 @@
 package gg.moonrise.hawkeye.listener;
 
 import gg.moonrise.hawkeye.core.storage.EventStore;
-import gg.moonrise.hawkeye.core.storage.ShardScope;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
 import gg.moonrise.hawkeye.entity.query.Area;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
+import gg.moonrise.hawkeye.entity.query.ShardScope;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import java.sql.SQLException;
 import java.util.Comparator;
