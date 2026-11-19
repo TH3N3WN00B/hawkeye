@@ -2,10 +2,10 @@ package gg.moonrise.hawkeye.core.service.purge;
 
 import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.config.file.PurgeSettings;
-import gg.moonrise.hawkeye.core.repository.LeaseRepository;
+import gg.moonrise.hawkeye.core.repository.network.LeaseRepository;
 import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
-import gg.moonrise.hawkeye.core.storage.StorageManager;
-import gg.moonrise.hawkeye.core.storage.StorageState;
+import gg.moonrise.hawkeye.core.storage.shard.StorageManager;
+import gg.moonrise.hawkeye.core.storage.shard.StorageState;
 import gg.moonrise.moss.spring.Disableable;
 import gg.moonrise.moss.spring.Enableable;
 import gg.moonrise.moss.spring.SpringComponent;

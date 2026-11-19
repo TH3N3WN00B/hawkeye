@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import gg.moonrise.hawkeye.core.repository.LeaseRepository;
+import gg.moonrise.hawkeye.core.repository.network.LeaseRepository;
 import gg.moonrise.hawkeye.core.sql.Database;
 import gg.moonrise.hawkeye.entity.query.Area;
 import gg.moonrise.hawkeye.support.TestHawkeyePlugin;

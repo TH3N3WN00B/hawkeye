@@ -1,8 +1,8 @@
 package gg.moonrise.hawkeye.core.service.purge;
 
-import gg.moonrise.hawkeye.core.storage.EventStore;
-import gg.moonrise.hawkeye.core.storage.StorageManager;
-import gg.moonrise.hawkeye.core.storage.StorageState;
+import gg.moonrise.hawkeye.core.storage.event.EventStore;
+import gg.moonrise.hawkeye.core.storage.shard.StorageManager;
+import gg.moonrise.hawkeye.core.storage.shard.StorageState;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.actor.Actor;
 import gg.moonrise.hawkeye.entity.event.PendingEvent;

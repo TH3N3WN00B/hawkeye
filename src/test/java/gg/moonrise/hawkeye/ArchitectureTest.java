@@ -28,7 +28,7 @@ public class ArchitectureTest {
 
     /** Backend value types a service may hold because they carry a backend handle (a database). */
     private static final Set<String> BACKEND_HANDLES = Set.of(
-            ROOT + ".core.storage.Shard", ROOT + ".core.storage.StorageState");
+            ROOT + ".core.storage.shard.Shard", ROOT + ".core.storage.shard.StorageState");
 
     private static final JavaClasses CLASSES = new ClassFileImporter()
             .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
@@ -49,6 +49,14 @@ public class ArchitectureTest {
         noClasses().that().resideInAPackage(ROOT + ".core.service..")
                 .should().dependOnClassesThat(backendValueType())
                 .because("a value that crosses into the service layer belongs in entity")
+                .check(CLASSES);
+    }
+
+    @Test
+    public void groupingPackagesHoldOnlySubpackages() {
+        noClasses().should().resideInAnyPackage(ROOT + ".core", ROOT + ".core.service", ROOT + ".core.storage",
+                        ROOT + ".core.repository")
+                .because("these packages are split by concern; a class goes into one of their subpackages")
                 .check(CLASSES);
     }
 

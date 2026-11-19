@@ -3,7 +3,7 @@ package gg.moonrise.hawkeye.listener.player;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import gg.moonrise.hawkeye.core.service.capture.WrittenBooks;
+import gg.moonrise.hawkeye.core.service.capture.text.WrittenBooks;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
 import gg.moonrise.hawkeye.entity.payload.Payload;

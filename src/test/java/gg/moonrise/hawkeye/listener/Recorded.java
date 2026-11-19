@@ -1,6 +1,6 @@
 package gg.moonrise.hawkeye.listener;
 
-import gg.moonrise.hawkeye.core.storage.EventStore;
+import gg.moonrise.hawkeye.core.storage.event.EventStore;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
 import gg.moonrise.hawkeye.entity.query.Area;

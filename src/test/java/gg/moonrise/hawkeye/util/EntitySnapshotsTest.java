@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import gg.moonrise.hawkeye.util.nbt.NbtRoot;
-import gg.moonrise.hawkeye.util.nbt.NbtTag;
 import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtByte;
 import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtCompound;
 import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtDouble;
@@ -18,6 +17,7 @@ import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtList;
 import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtLong;
 import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtShort;
 import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtString;
+import gg.moonrise.hawkeye.util.nbt.NbtTag;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;

@@ -2,12 +2,12 @@ package gg.moonrise.hawkeye.core.service.network;
 
 import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.bus.SyncBus;
-import gg.moonrise.hawkeye.core.repository.JobRepository;
+import gg.moonrise.hawkeye.core.repository.network.JobRepository;
 import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
 import gg.moonrise.hawkeye.core.service.query.QueryTargets;
-import gg.moonrise.hawkeye.core.storage.Shard;
-import gg.moonrise.hawkeye.core.storage.StorageManager;
-import gg.moonrise.hawkeye.core.storage.StorageState;
+import gg.moonrise.hawkeye.core.storage.shard.Shard;
+import gg.moonrise.hawkeye.core.storage.shard.StorageManager;
+import gg.moonrise.hawkeye.core.storage.shard.StorageState;
 import gg.moonrise.hawkeye.entity.job.JobKind;
 import gg.moonrise.hawkeye.entity.job.JobResult;
 import gg.moonrise.hawkeye.entity.job.JobStatus;

@@ -114,8 +114,8 @@ All tables carry the configured prefix (default `hawkeye_`).
 ### Archive
 
 The `event` table is the hot tier: every row individually indexed, cheap to insert and to flag. The
-cold tier is `segment`: immutable segments of archive format 2 (`core.repository.segment`), written
-by `core.storage.Archive` under the `archive` lease (one server per shard).
+cold tier is `segment`: immutable segments of archive format 2 (`core.storage.segment`), written
+by `core.storage.archive.Archive` under the `archive` lease (one server per shard).
 
 - **Packing.** Every `archive.interval-minutes` (1) a run packs the `archive.segment-events` (262,144)
   oldest hot events that are older than `archive.settle-seconds` (60) into one segment and deletes
@@ -221,12 +221,12 @@ player who is in one or two segments 3 ms instead of 150-225.
 
 A segment's header settles most lookups about a place without reading the segment, but a chunk that
 is active all the time (a hopper line, a farm) is in every segment, and a block inside it would cost
-one unit read per segment. The segment index (`core.storage.SegmentIndex`, the one entry point
+one unit read per segment. The segment index (`core.storage.index.SegmentIndex`, the one entry point
 `Archive` uses) remembers which segments hold which place, so such a lookup reads only the segments
 that can hold the block, and which segments hold which actor, so a lookup by a player without a
 place reads only that player's segments instead of every segment's header. Its place part is
-`core.storage.PlaceIndex` (rows in `core.repository.place`), its actor part `core.storage.ActorIndex`;
-`SegmentIndex` takes the state lock and calls both in the same transaction. Schema version 5 (version
+`core.storage.index.PlaceIndex` (rows in `core.storage.index.place`), its actor part
+`core.storage.index.ActorIndex`; `SegmentIndex` takes the state lock and calls both in the same transaction. Schema version 5 (version
 4 had the place index under the names `place_region`, `place_chunk` and `place_state`; version 5
 drops them and every segment is indexed again: an index format change takes new table names, so a
 build that does not know the new formats fails on its first index statement instead of misreading
