@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import gg.moonrise.hawkeye.entity.payload.Payload;
 import gg.moonrise.hawkeye.entity.payload.SignSides;
+import gg.moonrise.hawkeye.util.codec.binary.CodecException;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;

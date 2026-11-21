@@ -6,7 +6,7 @@ import gg.moonrise.hawkeye.core.sql.Database;
 import gg.moonrise.hawkeye.core.storage.segment.Palettes;
 import gg.moonrise.hawkeye.core.storage.segment.SegmentHeader;
 import gg.moonrise.hawkeye.core.storage.segment.SharedColumns;
-import gg.moonrise.hawkeye.util.codec.CodecException;
+import gg.moonrise.hawkeye.util.codec.binary.CodecException;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.util.Optional;
 import org.jetbrains.annotations.NotNull;

@@ -9,8 +9,8 @@ import org.jetbrains.annotations.NotNull;
  * The optional {@code data} of an event. Item and entity bytes are the NBT of Paper's own serialization
  * ({@code ItemStack#serializeAsBytes}, {@code UnsafeValues#serializeEntity}), which carries the data
  * version and is upgraded by the server's data fixers, so stored items survive Minecraft updates. They
- * are stored uncompressed ({@code util.ItemBytes}, {@code util.EntityBytes}; entity snapshots
- * normalized by {@code util.EntitySnapshots}) so the archive's compression sees what repeats between
+ * are stored uncompressed ({@code util.serialize.ItemBytes}, {@code util.serialize.EntityBytes}; entity snapshots
+ * normalized by {@code util.serialize.EntitySnapshots}) so the archive's compression sees what repeats between
  * them; rows from earlier builds hold Paper's gzip form, which reads the same. Encoded by
  * {@code util.codec.PayloadCodec}.
  */

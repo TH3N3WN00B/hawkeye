@@ -1,8 +1,8 @@
 package gg.moonrise.hawkeye.core.repository.event;
 
 import gg.moonrise.hawkeye.entity.query.RollbackState;
-import gg.moonrise.hawkeye.util.BlockPositions;
-import gg.moonrise.hawkeye.util.EventIds;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
+import gg.moonrise.hawkeye.util.event.EventIds;
 import java.util.List;
 import java.util.Set;
 import org.jetbrains.annotations.NotNull;

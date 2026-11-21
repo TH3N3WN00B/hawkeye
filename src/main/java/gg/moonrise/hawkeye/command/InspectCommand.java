@@ -2,8 +2,9 @@ package gg.moonrise.hawkeye.command;
 
 import gg.moonrise.engine.message.Message;
 import gg.moonrise.engine.paper.command.PaperCommand;
-import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.config.message.InspectMessages;
+import gg.moonrise.hawkeye.config.permission.Permissions;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.service.inspect.InspectorService;
 import gg.moonrise.moss.spring.SpringComponent;
 import io.papermc.paper.command.brigadier.CommandSourceStack;

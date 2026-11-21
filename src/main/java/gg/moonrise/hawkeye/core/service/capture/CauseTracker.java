@@ -3,7 +3,7 @@ package gg.moonrise.hawkeye.core.service.capture;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import gg.moonrise.hawkeye.entity.actor.Actor;
-import gg.moonrise.hawkeye.util.BlockPositions;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.time.Duration;
 import java.util.Optional;

@@ -3,6 +3,7 @@ package gg.moonrise.hawkeye.command;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import gg.moonrise.hawkeye.config.permission.Permissions;
 import gg.moonrise.hawkeye.core.service.purge.PurgeEvents;
 import gg.moonrise.hawkeye.entity.query.Area;
 import gg.moonrise.hawkeye.support.TestCommandManager;

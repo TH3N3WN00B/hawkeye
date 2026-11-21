@@ -1,5 +1,7 @@
 package gg.moonrise.hawkeye.core.service.query;
 
+import gg.moonrise.hawkeye.core.service.query.syntax.QueryError;
+import gg.moonrise.hawkeye.core.service.query.syntax.QueryParameters;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import org.jetbrains.annotations.NotNull;
 

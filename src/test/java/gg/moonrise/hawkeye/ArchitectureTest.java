@@ -55,7 +55,8 @@ public class ArchitectureTest {
     @Test
     public void groupingPackagesHoldOnlySubpackages() {
         noClasses().should().resideInAnyPackage(ROOT + ".core", ROOT + ".core.service", ROOT + ".core.storage",
-                        ROOT + ".core.repository")
+                        ROOT + ".core.repository", ROOT + ".core.repository.coreprotect", ROOT + ".core.queue",
+                        ROOT + ".config", ROOT + ".util")
                 .because("these packages are split by concern; a class goes into one of their subpackages")
                 .check(CLASSES);
     }

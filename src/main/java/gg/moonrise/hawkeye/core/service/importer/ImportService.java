@@ -1,11 +1,11 @@
 package gg.moonrise.hawkeye.core.service.importer;
 
-import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.config.file.HawkeyeConfig;
-import gg.moonrise.hawkeye.core.repository.coreprotect.CoreProtectSources;
+import gg.moonrise.hawkeye.core.repository.coreprotect.source.CoreProtectSources;
 import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
-import gg.moonrise.hawkeye.core.service.importer.mapping.ServerBlockStates;
-import gg.moonrise.hawkeye.core.service.importer.mapping.ServerItemDecoder;
+import gg.moonrise.hawkeye.core.service.importer.mapping.block.ServerBlockStates;
+import gg.moonrise.hawkeye.core.service.importer.mapping.item.ServerItemDecoder;
 import gg.moonrise.hawkeye.core.service.importer.pipeline.ImportRun;
 import gg.moonrise.hawkeye.core.service.importer.pipeline.RunSettings;
 import gg.moonrise.hawkeye.core.storage.importer.ImportStore;

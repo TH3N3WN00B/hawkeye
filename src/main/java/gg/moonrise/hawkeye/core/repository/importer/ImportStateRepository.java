@@ -2,7 +2,7 @@ package gg.moonrise.hawkeye.core.repository.importer;
 
 import gg.moonrise.hawkeye.core.sql.Sql;
 import gg.moonrise.hawkeye.entity.importer.ImportState;
-import gg.moonrise.hawkeye.util.codec.CodecException;
+import gg.moonrise.hawkeye.util.codec.binary.CodecException;
 import gg.moonrise.hawkeye.util.codec.ImportStateCodec;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.sql.Connection;

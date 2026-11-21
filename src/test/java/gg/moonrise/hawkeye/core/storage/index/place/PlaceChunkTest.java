@@ -5,10 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import gg.moonrise.hawkeye.util.BlockPositions;
-import gg.moonrise.hawkeye.util.codec.ByteWriter;
-import gg.moonrise.hawkeye.util.codec.CodecException;
-import gg.moonrise.hawkeye.util.codec.Compression;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
+import gg.moonrise.hawkeye.util.codec.binary.ByteWriter;
+import gg.moonrise.hawkeye.util.codec.binary.CodecException;
+import gg.moonrise.hawkeye.util.codec.binary.Compression;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;

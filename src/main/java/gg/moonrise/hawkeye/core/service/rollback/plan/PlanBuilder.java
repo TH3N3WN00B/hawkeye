@@ -6,7 +6,7 @@ import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
 import gg.moonrise.hawkeye.entity.payload.Payload;
 import gg.moonrise.hawkeye.entity.payload.SignSides;
-import gg.moonrise.hawkeye.util.BlockPositions;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Comparator;

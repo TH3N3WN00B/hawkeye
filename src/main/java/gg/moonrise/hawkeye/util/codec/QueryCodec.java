@@ -6,6 +6,7 @@ import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import gg.moonrise.hawkeye.entity.query.RollbackState;
 import gg.moonrise.hawkeye.entity.query.ServerScope;
 import gg.moonrise.hawkeye.entity.query.TimeWindow;
+import gg.moonrise.hawkeye.util.codec.binary.CodecException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;

@@ -1,6 +1,6 @@
 package gg.moonrise.hawkeye.listener.player;
 
-import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.config.file.LogCategory;
 import gg.moonrise.hawkeye.core.service.capture.Actors;
 import gg.moonrise.hawkeye.core.service.capture.EventRecorder;

@@ -12,7 +12,7 @@ import gg.moonrise.hawkeye.core.sql.Sql;
 import gg.moonrise.hawkeye.core.sql.SqliteHarness;
 import gg.moonrise.hawkeye.core.storage.index.place.IdRuns;
 import gg.moonrise.hawkeye.entity.query.RollbackState;
-import gg.moonrise.hawkeye.util.BlockPositions;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
 import java.nio.file.Path;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;

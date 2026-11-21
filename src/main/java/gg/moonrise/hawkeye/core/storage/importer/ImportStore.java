@@ -10,7 +10,7 @@ import gg.moonrise.hawkeye.entity.event.PendingEvent;
 import gg.moonrise.hawkeye.entity.importer.CheckpointResult;
 import gg.moonrise.hawkeye.entity.importer.ImportState;
 import gg.moonrise.hawkeye.entity.server.ServerNode;
-import gg.moonrise.hawkeye.util.EventIds;
+import gg.moonrise.hawkeye.util.event.EventIds;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.io.Serial;
 import java.sql.SQLException;

@@ -1,6 +1,6 @@
 package gg.moonrise.hawkeye.core.time;
 
-import gg.moonrise.hawkeye.util.EventIds;
+import gg.moonrise.hawkeye.util.event.EventIds;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.time.Clock;
 import java.util.concurrent.atomic.AtomicLong;

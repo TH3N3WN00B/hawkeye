@@ -1,8 +1,8 @@
 package gg.moonrise.hawkeye.core.service.rollback;
 
-import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.config.file.RollbackSettings;
-import gg.moonrise.hawkeye.core.queue.EventWriter;
+import gg.moonrise.hawkeye.core.queue.event.EventWriter;
 import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
 import gg.moonrise.hawkeye.core.service.rollback.apply.ChunkApplier;
 import gg.moonrise.hawkeye.core.service.rollback.plan.PlanBuilder;

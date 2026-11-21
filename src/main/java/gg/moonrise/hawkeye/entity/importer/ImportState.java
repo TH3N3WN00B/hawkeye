@@ -1,5 +1,7 @@
 package gg.moonrise.hawkeye.entity.importer;
 
+import gg.moonrise.hawkeye.entity.importer.source.SourceCursor;
+import gg.moonrise.hawkeye.entity.importer.source.SourceTable;
 import java.util.EnumMap;
 import java.util.Map;
 import org.jetbrains.annotations.NotNull;

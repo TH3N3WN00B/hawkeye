@@ -5,9 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import gg.moonrise.hawkeye.entity.importer.SourceCursor;
-import gg.moonrise.hawkeye.entity.importer.SourceRow;
-import gg.moonrise.hawkeye.entity.importer.SourceTable;
+import gg.moonrise.hawkeye.entity.importer.source.SourceCursor;
+import gg.moonrise.hawkeye.entity.importer.source.SourceRow;
+import gg.moonrise.hawkeye.entity.importer.source.SourceTable;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Comparator;

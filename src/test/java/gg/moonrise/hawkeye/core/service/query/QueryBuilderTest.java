@@ -3,11 +3,16 @@ package gg.moonrise.hawkeye.core.service.query;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
+import gg.moonrise.hawkeye.core.service.query.catalog.FakeTypeCatalog;
+import gg.moonrise.hawkeye.core.service.query.syntax.ParseResult;
+import gg.moonrise.hawkeye.core.service.query.syntax.QueryError;
+import gg.moonrise.hawkeye.core.service.query.syntax.QueryParameters;
+import gg.moonrise.hawkeye.core.service.query.syntax.QuerySyntax;
 import gg.moonrise.hawkeye.entity.query.Area;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import gg.moonrise.hawkeye.entity.query.ServerScope;
 import gg.moonrise.hawkeye.entity.query.TimeWindow;
-import gg.moonrise.hawkeye.util.BlockPositions;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;

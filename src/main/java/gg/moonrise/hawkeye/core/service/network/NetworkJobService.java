@@ -1,6 +1,6 @@
 package gg.moonrise.hawkeye.core.service.network;
 
-import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.bus.SyncBus;
 import gg.moonrise.hawkeye.core.repository.network.JobRepository;
 import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
@@ -15,7 +15,7 @@ import gg.moonrise.hawkeye.entity.job.NetworkJob;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import gg.moonrise.hawkeye.entity.query.ServerScope;
 import gg.moonrise.hawkeye.entity.server.ServerNode;
-import gg.moonrise.hawkeye.util.codec.CodecException;
+import gg.moonrise.hawkeye.util.codec.binary.CodecException;
 import gg.moonrise.hawkeye.util.codec.QueryCodec;
 import gg.moonrise.moss.spring.Enableable;
 import gg.moonrise.moss.spring.SpringComponent;

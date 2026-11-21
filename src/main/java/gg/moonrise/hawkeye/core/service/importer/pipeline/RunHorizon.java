@@ -1,6 +1,6 @@
 package gg.moonrise.hawkeye.core.service.importer.pipeline;
 
-import gg.moonrise.hawkeye.entity.importer.SourceRow;
+import gg.moonrise.hawkeye.entity.importer.source.SourceRow;
 import org.jetbrains.annotations.NotNull;
 
 /**

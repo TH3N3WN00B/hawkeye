@@ -1,6 +1,6 @@
 package gg.moonrise.hawkeye.core.storage.shard;
 
-import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.config.file.HawkeyeConfig;
 import gg.moonrise.hawkeye.config.file.ShardSettings;
 import gg.moonrise.hawkeye.core.repository.dictionary.ActorRepository;

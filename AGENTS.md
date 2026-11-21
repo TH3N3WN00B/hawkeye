@@ -39,7 +39,7 @@ check the skip count in the test report.
   the engine is relocated to `gg.moonrise.hawkeye.libs.engine` so its beans fall inside that scan.
 - Commands are Cloud annotation methods on `PaperCommand` beans, registered by
   `HawkeyeCommandRegistry` (the only command registry; `verifyPluginJar` checks it). Handlers run on
-  the calling thread. `@Suggestions` match with case-insensitive `contains` (`util.Completions`) and
+  the calling thread. `@Suggestions` match with case-insensitive `contains` (`util.text.Completions`) and
   never return a `CompletableFuture`.
 - Folia-safe scheduling only: the engine `Scheduler` (`sync()`, `entity(..)`, `location()`,
   `async()`), never `Bukkit.getScheduler()`. Keep file, database and network I/O off server threads

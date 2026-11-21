@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import gg.moonrise.hawkeye.core.service.capture.text.SignText;
 import gg.moonrise.hawkeye.entity.payload.Payload;
 import gg.moonrise.hawkeye.entity.payload.SignSides;
-import gg.moonrise.hawkeye.util.ItemBytes;
+import gg.moonrise.hawkeye.util.serialize.ItemBytes;
 import java.util.List;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;

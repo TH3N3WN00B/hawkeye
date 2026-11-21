@@ -1,6 +1,6 @@
 package gg.moonrise.hawkeye.core.storage.segment;
 
-import gg.moonrise.hawkeye.util.BlockPositions;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
 import java.util.Arrays;
 import org.jetbrains.annotations.NotNull;
 

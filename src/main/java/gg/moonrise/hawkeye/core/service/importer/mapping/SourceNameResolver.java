@@ -1,9 +1,11 @@
 package gg.moonrise.hawkeye.core.service.importer.mapping;
 
+import gg.moonrise.hawkeye.core.service.importer.mapping.block.BlockRowMapper;
+import gg.moonrise.hawkeye.core.service.importer.mapping.block.BlockStates;
 import gg.moonrise.hawkeye.entity.actor.Actor;
-import gg.moonrise.hawkeye.entity.importer.SourceNames;
-import gg.moonrise.hawkeye.entity.importer.SourceRow;
-import gg.moonrise.hawkeye.entity.importer.SourceUser;
+import gg.moonrise.hawkeye.entity.importer.source.SourceNames;
+import gg.moonrise.hawkeye.entity.importer.source.SourceRow;
+import gg.moonrise.hawkeye.entity.importer.source.SourceUser;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;

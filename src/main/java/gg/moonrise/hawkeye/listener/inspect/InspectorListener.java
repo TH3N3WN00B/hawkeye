@@ -1,9 +1,9 @@
 package gg.moonrise.hawkeye.listener.inspect;
 
-import gg.moonrise.hawkeye.command.Permissions;
-import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
+import gg.moonrise.hawkeye.config.permission.Permissions;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.service.inspect.InspectorService;
-import gg.moonrise.hawkeye.core.service.lookup.LookupPager;
+import gg.moonrise.hawkeye.core.service.lookup.page.LookupPager;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import gg.moonrise.hawkeye.ui.lookup.LookupReplies;
 import gg.moonrise.moss.spring.SpringComponent;

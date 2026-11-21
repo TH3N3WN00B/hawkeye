@@ -22,7 +22,7 @@ commit as the code.
 
 ## Storage format
 
-### Event id (`util.EventIds`)
+### Event id (`util.event.EventIds`)
 
 Every event has a 64-bit id, issued on the server that captured it, without a database round trip:
 
@@ -37,8 +37,8 @@ Every event has a 64-bit id, issued on the server that captured it, without a da
 - The node id is the server's registration number in its shard (`hawkeye_server`, 1..1023), so two
   servers never produce the same id, and ids from all servers interleave by time.
 - **The one-second grid.** Capture only stamps events (`[time][sequence]`, capture order). The writer
-  (`core.queue.IdAssigner`) buffers them by second (their *slot*) until the second has closed (plus
-  250 ms of grace), sorts each slot's events in `util.EventOrder` and numbers them 0, 1, 2, ... (their
+  (`core.queue.id.IdAssigner`) buffers them by second (their *slot*) until the second has closed (plus
+  250 ms of grace), sorts each slot's events in `util.event.EventOrder` and numbers them 0, 1, 2, ... (their
   *rank*). The rank fills the sequence bits and then the millisecond bits, so an id is
   `slot * 1000 ms + rank` and is never more than a second off; a slot holds 4,096,000 events.
 - **The order inside a second.** Events about a player rather than a place (chat, commands, books,
@@ -49,7 +49,7 @@ Every event has a 64-bit id, issued on the server that captured it, without a da
 - Late events of a slot continue its numbering (the counters of the last 120 slots are kept); the
   writer starts after the newest stored slot on restart, so no id is ever issued twice.
 
-### Packed position (`util.BlockPositions`)
+### Packed position (`util.position.BlockPositions`)
 
 ```
  63 ............ 42   41 ............ 20   19 .. 16   15 .. 12   11 ...... 0
@@ -109,10 +109,10 @@ All tables carry the configured prefix (default `hawkeye_`).
   commands), sign sides (before and after), an item (only when the item has components), an inventory
   snapshot (a broken container), or an entity (for kill and removal rollback). Items and entities are
   the NBT of Paper's version-safe serialization (it carries the data version, so the server's data
-  fixers upgrade old rows), stored uncompressed (`util.ItemBytes`, `util.EntityBytes`) so the archive,
+  fixers upgrade old rows), stored uncompressed (`util.serialize.ItemBytes`, `util.serialize.EntityBytes`) so the archive,
   which compresses many rows together, finds what repeats between snapshots; rows in Paper's own gzip
   form (from earlier builds) read the same. Entity snapshots are normalized first
-  (`util.EntitySnapshots`): what a respawn resets, re-rolls or takes from the event row is stripped.
+  (`util.serialize.EntitySnapshots`): what a respawn resets, re-rolls or takes from the event row is stripped.
   Large text and sign payloads are deflated; nothing else is compressed per row.
 
 ### Archive
@@ -141,7 +141,7 @@ by `core.storage.archive.Archive` under the `archive` lease (one server per shar
   bytes are: placed units by the chunk list and their first keys, unplaced units by the region list
   (a world or area that reaches none of those regions skips them). The byte layout is in the
   `SegmentHeader` Javadoc.
-- **Body.** Frames (`util.codec.Compression`: stored, zstd level 19, or deflate level 9 when zstd's
+- **Body.** Frames (`util.codec.binary.Compression`: stored, zstd level 19, or deflate level 9 when zstd's
   native library does not load). First the shared frames: per row the slot delta, the node index (with
   several nodes), the rank difference from the expected rank (omitted when all are 0, the normal case
   for ids the writer issued), and the actor and type palettes. Then per unit a scalar frame (world,
@@ -382,7 +382,8 @@ one `server` row and one `import_state` row per source.
   job destinations leave it out. Lookups filter by world scope, so imported events appear in ordinary
   lookups and rollbacks. The row is a plain insert (`ServerRepository.registerImport`): a taken name is
   rejected by the unique key on every engine and the next suffix is tried.
-- **Reading the source.** `core.repository.coreprotect`: `CoreProtectSources` finds the database from a
+- **Reading the source.** `core.repository.coreprotect` (`source`, `schema`, `driver`, `reader`):
+  `CoreProtectSources` finds the database from a
   folder (its `config.yml`, else `database.db`, else `database.duckdb`), a config or a database file, and
   opens one read-only connection (`CoreProtectSource`). SQLite, MySQL and DuckDB tables are walked by rowid
   in windows of row ids (`WHERE rowid > ? AND rowid <= ?`; an empty window is jumped with `MIN(rowid)`),

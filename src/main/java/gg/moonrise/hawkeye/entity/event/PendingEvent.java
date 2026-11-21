@@ -2,7 +2,7 @@ package gg.moonrise.hawkeye.entity.event;
 
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.actor.Actor;
-import gg.moonrise.hawkeye.util.EventIds;
+import gg.moonrise.hawkeye.util.event.EventIds;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -13,7 +13,7 @@ import org.jetbrains.annotations.Nullable;
  *
  * @param stamp      the capture stamp from {@code core.time.EventClock}
  * @param world      the world name
- * @param position   the packed block position ({@code util.BlockPositions})
+ * @param position   the packed block position ({@code util.position.BlockPositions})
  * @param actor      who or what caused it
  * @param action     what happened
  * @param subject    the namespaced subject value (block state, material or entity type), or empty

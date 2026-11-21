@@ -1,11 +1,11 @@
 package gg.moonrise.hawkeye.core.storage.segment;
 
 import gg.moonrise.hawkeye.core.repository.event.EventRow;
-import gg.moonrise.hawkeye.util.BlockPositions;
-import gg.moonrise.hawkeye.util.EventIds;
-import gg.moonrise.hawkeye.util.EventOrder;
-import gg.moonrise.hawkeye.util.codec.ByteWriter;
-import gg.moonrise.hawkeye.util.codec.Compression;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
+import gg.moonrise.hawkeye.util.event.EventIds;
+import gg.moonrise.hawkeye.util.event.EventOrder;
+import gg.moonrise.hawkeye.util.codec.binary.ByteWriter;
+import gg.moonrise.hawkeye.util.codec.binary.Compression;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;

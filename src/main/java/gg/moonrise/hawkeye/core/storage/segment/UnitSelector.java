@@ -2,7 +2,7 @@ package gg.moonrise.hawkeye.core.storage.segment;
 
 import gg.moonrise.hawkeye.core.repository.event.EventFilter.WorldRange;
 import gg.moonrise.hawkeye.core.repository.event.EventFilter;
-import gg.moonrise.hawkeye.util.EventIds;
+import gg.moonrise.hawkeye.util.event.EventIds;
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.Set;

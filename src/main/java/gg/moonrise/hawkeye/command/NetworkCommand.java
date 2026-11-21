@@ -2,11 +2,12 @@ package gg.moonrise.hawkeye.command;
 
 import gg.moonrise.engine.message.Message;
 import gg.moonrise.engine.paper.command.PaperCommand;
-import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.config.message.StatusMessages;
+import gg.moonrise.hawkeye.config.permission.Permissions;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.service.network.NetworkService;
 import gg.moonrise.hawkeye.core.service.thread.ServerThreads;
-import gg.moonrise.hawkeye.util.Durations;
+import gg.moonrise.hawkeye.util.text.Durations;
 import gg.moonrise.moss.spring.SpringComponent;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import java.time.Duration;

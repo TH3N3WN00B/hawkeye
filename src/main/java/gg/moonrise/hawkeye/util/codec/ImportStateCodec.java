@@ -2,8 +2,9 @@ package gg.moonrise.hawkeye.util.codec;
 
 import gg.moonrise.hawkeye.entity.importer.ImportState;
 import gg.moonrise.hawkeye.entity.importer.SkipReason;
-import gg.moonrise.hawkeye.entity.importer.SourceCursor;
-import gg.moonrise.hawkeye.entity.importer.SourceTable;
+import gg.moonrise.hawkeye.entity.importer.source.SourceCursor;
+import gg.moonrise.hawkeye.entity.importer.source.SourceTable;
+import gg.moonrise.hawkeye.util.codec.binary.CodecException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;

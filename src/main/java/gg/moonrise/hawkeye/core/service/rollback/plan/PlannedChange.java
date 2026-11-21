@@ -1,7 +1,7 @@
 package gg.moonrise.hawkeye.core.service.rollback.plan;
 
 import gg.moonrise.hawkeye.entity.payload.Payload;
-import gg.moonrise.hawkeye.util.BlockPositions;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;

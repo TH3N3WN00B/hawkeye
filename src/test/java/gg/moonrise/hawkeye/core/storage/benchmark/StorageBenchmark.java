@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import gg.moonrise.hawkeye.config.file.ArchiveSettings;
-import gg.moonrise.hawkeye.core.queue.IdAssigner;
+import gg.moonrise.hawkeye.core.queue.id.IdAssigner;
 import gg.moonrise.hawkeye.core.repository.dictionary.ActorRepository;
 import gg.moonrise.hawkeye.core.repository.dictionary.DictionaryRepository;
 import gg.moonrise.hawkeye.core.repository.event.EventRepository;
@@ -16,7 +16,7 @@ import gg.moonrise.hawkeye.core.storage.event.EventStore;
 import gg.moonrise.hawkeye.core.storage.event.QueryResolver;
 import gg.moonrise.hawkeye.entity.event.PendingEvent;
 import gg.moonrise.hawkeye.entity.server.ServerNode;
-import gg.moonrise.hawkeye.util.EventIds;
+import gg.moonrise.hawkeye.util.event.EventIds;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;

@@ -1,19 +1,19 @@
 package gg.moonrise.hawkeye.core.service.importer;
 
-import static gg.moonrise.hawkeye.core.repository.coreprotect.CoreProtectFixture.at;
+import static gg.moonrise.hawkeye.core.repository.coreprotect.source.CoreProtectFixture.at;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import gg.moonrise.hawkeye.core.repository.coreprotect.CoreProtectFixture;
-import gg.moonrise.hawkeye.core.repository.coreprotect.CoreProtectFixture.Layout;
-import gg.moonrise.hawkeye.core.repository.coreprotect.DriverArtifact;
-import gg.moonrise.hawkeye.core.repository.coreprotect.SourceDialect;
-import gg.moonrise.hawkeye.core.repository.coreprotect.SourceDrivers;
+import gg.moonrise.hawkeye.core.repository.coreprotect.source.CoreProtectFixture;
+import gg.moonrise.hawkeye.core.repository.coreprotect.source.CoreProtectFixture.Layout;
+import gg.moonrise.hawkeye.core.repository.coreprotect.driver.DriverArtifact;
+import gg.moonrise.hawkeye.core.repository.coreprotect.schema.SourceDialect;
+import gg.moonrise.hawkeye.core.repository.coreprotect.driver.SourceDrivers;
 import gg.moonrise.hawkeye.entity.importer.SkipReason;
-import gg.moonrise.hawkeye.entity.importer.SourceSettings;
-import gg.moonrise.hawkeye.entity.importer.SourceType;
+import gg.moonrise.hawkeye.entity.importer.source.SourceSettings;
+import gg.moonrise.hawkeye.entity.importer.source.SourceType;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import java.io.IOException;
 import java.net.URI;

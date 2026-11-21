@@ -2,13 +2,14 @@ package gg.moonrise.hawkeye.command;
 
 import gg.moonrise.engine.message.Message;
 import gg.moonrise.engine.paper.command.PaperCommand;
-import gg.moonrise.hawkeye.command.support.QueryInput;
-import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
+import gg.moonrise.hawkeye.command.query.QueryInput;
 import gg.moonrise.hawkeye.config.file.LookupSettings;
-import gg.moonrise.hawkeye.core.service.lookup.LookupPager;
+import gg.moonrise.hawkeye.config.permission.Permissions;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.service.lookup.LookupService;
+import gg.moonrise.hawkeye.core.service.lookup.page.LookupPager;
 import gg.moonrise.hawkeye.core.service.query.BuildResult;
-import gg.moonrise.hawkeye.core.service.query.QueryFlag;
+import gg.moonrise.hawkeye.core.service.query.syntax.QueryFlag;
 import gg.moonrise.hawkeye.ui.lookup.LookupReplies;
 import gg.moonrise.moss.spring.SpringComponent;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
