@@ -6,8 +6,8 @@ jetbrainsAnnotations = "26.1.0"
 
 # Moonrise plugin-engine and the runtime libraries its loader resolves (PaperPluginLoader defaults).
 # Keep these five in step with the engine: the plugin compiles against them, the server runs the loader's.
-engine = "1.10.1"
-mossPaper = "1.2.2"
+engine = "1.10.2"
+mossPaper = "1.2.3"
 springContext = "6.2.13"
 jakarta = "3.0.0"
 cloudPaper = "2.0.1"

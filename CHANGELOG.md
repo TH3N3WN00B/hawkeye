@@ -95,6 +95,8 @@ second release in a quarter).
   `vX.Y.Z`. The jar is named after its version (`Hawkeye-26.4.jar`, `Hawkeye-26.4.B12.jar`).
 - `Jenkinsfile` builds and tests every push and archives only that build's jar. GitHub Actions no longer builds
   every push or publishes to the Moonrise Nexus: `release.yml` only attaches the jar to a published release.
+- plugin-engine 1.10.2 and Moss 1.2.3 come from Maven Central; the build no longer uses
+  `repo.moonrise.gg`, and at server start the engine downloads its libraries from Maven Central only.
 
 - Breaking (before the first release): the archive format and its settings. Schema version 3 drops the
   development archive (`segment` and `segment_actor`); its segments are discarded, not converted, and
