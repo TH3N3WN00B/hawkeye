@@ -1,8 +1,10 @@
 package gg.moonrise.hawkeye.core.bus;
 
-import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
+import gg.moonrise.hawkeye.config.env.Environment;
 import gg.moonrise.hawkeye.config.file.NetworkSettings;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
+import gg.moonrise.hawkeye.util.redact.Redactor;
 import gg.moonrise.moss.spring.Enableable;
 import gg.moonrise.moss.spring.SpringComponent;
 import io.lettuce.core.RedisClient;
@@ -10,6 +12,7 @@ import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.pubsub.RedisPubSubAdapter;
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection;
 import jakarta.annotation.PreDestroy;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -31,6 +34,9 @@ import org.jetbrains.annotations.NotNull;
  * lost message only costs latency (Lettuce can resubscribe silently after a short drop).
  *
  * <p>Handlers run one at a time on the bus's own dispatch thread and must only hand work off.
+ *
+ * <p>The URI's {@code ${NAME}} references are resolved when connecting. It may carry a password, so it is
+ * logged as scheme and host only, and a failure's message is scrubbed of the URI and its user info first.
  */
 @Slf4j
 @SpringComponent
@@ -41,6 +47,7 @@ public final class SyncBus implements Enableable {
 
     private final @NotNull HawkeyeConfigProvider configProvider;
     private final @NotNull HawkeyeExecutors executors;
+    private final @NotNull Environment environment;
     private final Map<String, List<Consumer<String>>> handlers = new ConcurrentHashMap<>();
     private final ExecutorService dispatch = Executors.newSingleThreadExecutor(HawkeyeExecutors.threads("Hawkeye-Bus"));
     private volatile RedisClient client;
@@ -107,7 +114,13 @@ public final class SyncBus implements Enableable {
         if (closed) {
             return;
         }
-        String uri = configProvider.get().network().redisUri();
+        String uri;
+        try {
+            uri = configProvider.get().network().redisUri(environment);
+        } catch (IllegalStateException e) {
+            log.warn("Not connecting to Redis: {}", e.getMessage());
+            return;
+        }
         try {
             RedisClient redis = RedisClient.create(uri);
             StatefulRedisPubSubConnection<String, String> pubSub = redis.connectPubSub();
@@ -127,7 +140,7 @@ public final class SyncBus implements Enableable {
         } catch (RuntimeException e) {
             closeQuietly();
             log.warn("Could not connect to Redis at {} (retrying in {} s; jobs still arrive by polling): {}",
-                    redact(uri), RETRY_SECONDS, Objects.requireNonNullElse(e.getMessage(), e.getClass().getName()));
+                    redact(uri), RETRY_SECONDS, failure(uri, e));
             try {
                 executors.maintenance().schedule(this::connect, RETRY_SECONDS, TimeUnit.SECONDS);
             } catch (RejectedExecutionException rejected) {
@@ -180,9 +193,43 @@ public final class SyncBus implements Enableable {
         return configProvider.get().network().channel() + ":" + channel;
     }
 
-    private static @NotNull String redact(@NotNull String uri) {
+    /**
+     * Why connecting failed, without the URI's credentials: Lettuce reads the URI with {@code URI.create},
+     * whose message for a malformed URI quotes all of it.
+     *
+     * @param uri   the resolved URI
+     * @param error what connecting threw
+     * @return the message, with the URI, its user info, user and password replaced by {@link Redactor#MASK}
+     */
+    public static @NotNull String failure(@NotNull String uri, @NotNull Throwable error) {
+        List<String> secrets = new ArrayList<>(List.of(uri));
         int at = uri.lastIndexOf('@');
         int scheme = uri.indexOf("://");
-        return at > 0 && scheme > 0 ? uri.substring(0, scheme + 3) + "***" + uri.substring(at) : uri;
+        if (at > 0) {
+            String userInfo = uri.substring(scheme > 0 && scheme + 3 <= at ? scheme + 3 : 0, at);
+            secrets.add(userInfo);
+            int colon = userInfo.indexOf(':');
+            if (colon >= 0) {
+                secrets.add(userInfo.substring(0, colon));
+                secrets.add(userInfo.substring(colon + 1));
+            }
+        }
+        return Redactor.of(secrets, List.of())
+                .scrub(Objects.requireNonNullElse(error.getMessage(), error.getClass().getName()));
+    }
+
+    /**
+     * The URI for the log: the user info is replaced by {@code ***}.
+     *
+     * @param uri the resolved URI
+     * @return e.g. {@code redis://***@cache.example:6379}
+     */
+    public static @NotNull String redact(@NotNull String uri) {
+        int at = uri.lastIndexOf('@');
+        int scheme = uri.indexOf("://");
+        if (at < 0) {
+            return uri;
+        }
+        return (scheme > 0 && scheme + 3 <= at ? uri.substring(0, scheme + 3) : "") + "***" + uri.substring(at);
     }
 }

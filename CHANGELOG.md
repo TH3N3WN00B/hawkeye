@@ -88,6 +88,16 @@ second release in a quarter).
 - Books, game mode changes, sign-click and console commands, and kick reasons on quits.
 - `config.yml` and `messages.yml` with every default documented; invalid files keep the previous
   configuration, and restart-only changes are reported.
+- Database and Redis credentials from environment variables, the recommended setting and the default:
+  `${NAME}` in `storage.username`, `storage.password`, `storage.parameters` values (also in every
+  `network.shards` entry) and `network.redis-uri` is replaced by the environment variable `NAME` when
+  Hawkeye connects. `username` and `password` default to `${HAWKEYE_DB_USERNAME}` and
+  `${HAWKEYE_DB_PASSWORD}`; a literal value still works. An unset variable is a configuration error that
+  names the variable. Credentials never reach a log, the console or a player: the server engines get
+  them as driver properties only (no longer in the JDBC URL or Hikari's configuration), driver errors are
+  scrubbed (`<redacted>`), a `config.yml` error names the key instead of quoting a section, and a numeric
+  `password: 123456` is read as text. The CoreProtect import shows its source without the username, and
+  scrubs driver errors and YAML errors of CoreProtect's config the same way.
 ### Changed
 
 - Versions are year.quarter: a stable release is `26.4`, a Jenkins build `26.4.B<build>` (`26.4.B25`), any other

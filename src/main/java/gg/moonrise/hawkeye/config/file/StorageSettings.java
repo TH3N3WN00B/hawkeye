@@ -2,18 +2,32 @@ package gg.moonrise.hawkeye.config.file;
 
 import de.exlll.configlib.Comment;
 import de.exlll.configlib.Configuration;
+import de.exlll.configlib.SerializeWith;
+import gg.moonrise.hawkeye.config.env.EnvReferences;
+import gg.moonrise.hawkeye.config.env.EnvValue;
+import gg.moonrise.hawkeye.config.env.Environment;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Pattern;
+import lombok.AccessLevel;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
 import lombok.experimental.Accessors;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * A database connection: the home shard ({@code storage}) or a remote shard ({@code network.shards}).
+ *
+ * <p>The user, the password and the parameter values may hold {@code ${NAME}} references to environment
+ * variables ({@link EnvReferences}); the defaults read {@code HAWKEYE_DB_USERNAME} and
+ * {@code HAWKEYE_DB_PASSWORD}. The object keeps the text as written: references are resolved only when a
+ * connection is opened ({@link #login}), and none of the three is reachable through a getter or shown by
+ * {@link #toString()}.
  */
 @Getter
 @Accessors(fluent = true)
@@ -21,6 +35,12 @@ import org.jetbrains.annotations.NotNull;
 @ToString
 @Configuration
 public final class StorageSettings {
+
+    /** The environment variable the default {@code username} reads. */
+    public static final String USERNAME_VARIABLE = "HAWKEYE_DB_USERNAME";
+
+    /** The environment variable the default {@code password} reads. */
+    public static final String PASSWORD_VARIABLE = "HAWKEYE_DB_PASSWORD";
 
     private static final Pattern PREFIX = Pattern.compile("[a-z0-9_]{0,24}");
 
@@ -37,12 +57,24 @@ public final class StorageSettings {
 
     private String database = "hawkeye";
 
-    private String username = "hawkeye";
-
+    @Comment({"The user and password. Environment variables are the recommended way: ${NAME} is replaced by the",
+            "variable NAME when Hawkeye connects, and an unset variable is a configuration error. A literal value",
+            "works too. Give each shard its own variables (e.g. ${HAWKEYE_SHARD_EU_PASSWORD}). Hawkeye never logs",
+            "or shows these values."})
+    @Getter(AccessLevel.NONE)
     @ToString.Exclude
-    private String password = "";
+    @SerializeWith(serializer = TextValueSerializer.class)
+    private String username = "${" + USERNAME_VARIABLE + "}";
 
-    @Comment("Extra JDBC URL parameters, e.g. sslMode: verify-full.")
+    @Getter(AccessLevel.NONE)
+    @ToString.Exclude
+    @SerializeWith(serializer = TextValueSerializer.class)
+    private String password = "${" + PASSWORD_VARIABLE + "}";
+
+    @Comment("Extra driver parameters, e.g. sslMode: verify-full. Values may use ${NAME} as well.")
+    @Getter(AccessLevel.NONE)
+    @ToString.Exclude
+    @SerializeWith(serializer = TextValueSerializer.class, nesting = 1)
     private Map<String, String> parameters = Map.of();
 
     @Comment("Prefix of every table. Servers that share a database must use the same prefix.")
@@ -60,6 +92,29 @@ public final class StorageSettings {
      */
     public int effectivePort() {
         return port > 0 ? port : type.defaultPort();
+    }
+
+    /**
+     * The credentials with every {@code ${NAME}} reference resolved. Validation ({@link #problems}) makes
+     * sure every referenced variable is set for a server engine.
+     *
+     * @param environment where variables are looked up
+     * @return the user, password and parameters
+     * @throws IllegalStateException when a referenced variable is not set; the message names the variable
+     */
+    public @NotNull StorageLogin login(@NotNull Environment environment) {
+        String user = EnvReferences.require(text(username), environment, "username").value();
+        String pass = EnvReferences.require(text(password), environment, "password").value();
+        Map<String, String> resolved = new LinkedHashMap<>();
+        List<String> secrets = new ArrayList<>();
+        parameters().forEach((key, value) -> {
+            EnvValue.Resolved parameter = EnvReferences.require(text(value), environment, "parameters." + key);
+            resolved.put(key, parameter.value());
+            if (parameter.substituted()) {
+                secrets.add(parameter.value());
+            }
+        });
+        return new StorageLogin(user, pass, resolved, secrets);
     }
 
     /**
@@ -105,12 +160,14 @@ public final class StorageSettings {
     }
 
     /**
-     * Validation problems.
+     * Validation problems. A server engine needs every variable its user, password and parameters
+     * reference; a problem names the variable, never a value.
      *
-     * @param path the section path for messages
+     * @param path        the section path for messages
+     * @param environment where variables are looked up
      * @return one message per problem
      */
-    public @NotNull List<String> problems(@NotNull String path) {
+    public @NotNull List<String> problems(@NotNull String path, @NotNull Environment environment) {
         List<String> problems = new ArrayList<>();
         if (!PREFIX.matcher(tablePrefix).matches()) {
             problems.add(path + ".table-prefix must be up to 24 of a-z, 0-9 and _: '" + tablePrefix + "'");
@@ -127,6 +184,26 @@ public final class StorageSettings {
         if (connectionTimeoutMillis < 250) {
             problems.add(path + ".connection-timeout-millis must be at least 250");
         }
+        if (type != StorageType.SQLITE) {
+            unset(problems, path + ".username", username, environment);
+            unset(problems, path + ".password", password, environment);
+            parameters().forEach((key, value) -> unset(problems, path + ".parameters." + key, value, environment));
+        }
         return problems;
+    }
+
+    private @NotNull Map<String, String> parameters() {
+        return Objects.requireNonNullElse(parameters, Map.of());
+    }
+
+    private static void unset(@NotNull List<String> problems, @NotNull String key, @Nullable String value,
+            @NotNull Environment environment) {
+        EnvReferences.unset(text(value), environment)
+                .forEach(variable -> problems.add(EnvReferences.unsetMessage(key, variable)));
+    }
+
+    /** An empty YAML value reads as {@code null}; it means no text. */
+    private static @NotNull String text(@Nullable String value) {
+        return Objects.requireNonNullElse(value, "");
     }
 }

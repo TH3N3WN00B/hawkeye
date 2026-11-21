@@ -9,6 +9,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,7 +24,8 @@ public class MigrationsTest {
 
     @BeforeEach
     public void setUp() {
-        database = new DatabaseFactory().open("home", new StorageSettings().withSqliteFile("m.db"), folder);
+        database = new DatabaseFactory(name -> Optional.empty()).open("home",
+                new StorageSettings().withSqliteFile("m.db"), folder);
     }
 
     @AfterEach

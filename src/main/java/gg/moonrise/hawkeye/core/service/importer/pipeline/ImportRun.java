@@ -21,6 +21,7 @@ import gg.moonrise.hawkeye.entity.importer.source.SourceSettings;
 import gg.moonrise.hawkeye.entity.importer.source.SourceTable;
 import gg.moonrise.hawkeye.entity.importer.source.SourceType;
 import gg.moonrise.hawkeye.entity.server.ServerNode;
+import gg.moonrise.hawkeye.util.redact.RedactedErrors;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
@@ -138,8 +139,11 @@ public final class ImportRun {
         try (CoreProtectSource opened = sources.open(source)) {
             return begin(opened);
         } catch (SQLException | RuntimeException e) {
-            log.warn("The CoreProtect import from {} failed", source.describe(), e);
-            return new ImportOutcome.Failed(Objects.requireNonNullElse(e.getMessage(), e.getClass().getSimpleName()));
+            // A driver's message can name the user ("Access denied for user 'root'@..."): never log or show it.
+            Throwable safe = RedactedErrors.safe(e, source.redactor());
+            log.warn("The CoreProtect import from {} failed", source.describe(), safe);
+            return new ImportOutcome.Failed(Objects.requireNonNullElse(safe.getMessage(),
+                    safe.getClass().getSimpleName()));
         }
     }
 

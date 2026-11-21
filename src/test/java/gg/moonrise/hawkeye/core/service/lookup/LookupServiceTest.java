@@ -119,6 +119,8 @@ public class LookupServiceTest {
                   type: MYSQL
                   host: 127.0.0.1
                   port: 1
+                  username: hawkeye
+                  password: ''
                   connection-timeout-millis: 250
                 """);
         LookupService lookups = TestPlugins.bean(LookupService.class);
