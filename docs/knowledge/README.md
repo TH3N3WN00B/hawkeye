@@ -372,8 +372,8 @@ update them in the same change when you learn something durable or an entry stop
   toolchain. Its "restricted method System::load" and `sun.misc.Unsafe` warnings (Gradle's
   native-platform, Lombok, ByteBuddy in MockBukkit) are harmless.
 - `https://repo.moonrise.gg/repository/maven-releases/` and `.../maven-snapshots/` allow anonymous
-  read: no credentials are needed to build. Publishing needs `nexusUsername`/`nexusPassword`
-  (CI: the `NEXUS_USERNAME`/`NEXUS_PASSWORD` repository secrets; there are no org-level secrets).
+  read: no credentials are needed to build. Publishing needs `nexusUsername`/`nexusPassword`; no CI
+  publishes (`./gradlew publish -Pversion=26.4` by hand).
 - GitHub Actions in `moonrise-studios` refused to start any job on 2026-11-12 ("recent account
   payments have failed or your spending limit needs to be increased"); the run shows as failed with
   no steps. That is billing, not the workflow: build locally or on Jenkins until it is fixed.
@@ -420,16 +420,22 @@ update them in the same change when you learn something durable or an entry stop
 - Moss lifecycle: `Loadable` (after the context refresh in `onLoad`), `Enableable`, `Disableable` and
   the engine's `Reloadable` (run by `PaperPlugin.reload()`); `@PostConstruct` works. Every `Listener`
   bean is registered at enable.
-- `processResources` expands `${version}` in `paper-plugin.yml`; CI passes `-Pversion=<tag>` for
-  releases.
+- `processResources` expands `${version}` in `paper-plugin.yml`; `release.yml` passes `-Pversion=<tag>`.
 - CI pins `gradle/actions/setup-gradle@v5` on purpose. v6 (2026-03) moved caching into the closed-source
   `gradle-actions-caching` component; using v6 accepts the Gradle Terms of Use. Dependabot ignores
   `gradle/actions >= 6` until the owner decides to accept them.
 
 ## Release facts
 
-- A release is: set `version` in `gradle.properties` to the release version, commit, publish a GitHub
-  release tagged `vX.Y.Z`. CI builds that version, attaches `Hawkeye-X.Y.Z.jar` and, when the Nexus
-  secrets exist, publishes it. Then set the next `-SNAPSHOT` version.
-- Without GitHub Actions: build locally with `./gradlew build -Pversion=X.Y.Z`, rename the jar to
-  `Hawkeye-X.Y.Z.jar` and attach it with `gh release create vX.Y.Z --verify-tag`.
+- Versions follow MyCore's scheme and are year.quarter, computed in `build.gradle.kts` (there is no
+  `version` in `gradle.properties`): a stable release is `26.4` (a second one in the same quarter
+  `26.4.1`), a Jenkins build `26.4.B<BUILD_NUMBER>`, anything else `26.4-SNAPSHOT`. The quarter comes from
+  the HEAD commit's date in UTC, so a rebuild of an old commit keeps its version. The build fails on any
+  other version. The jar is `build/libs/Hawkeye-<version>.jar`.
+- Jenkins (`ci.moonrise.gg`, `Jenkinsfile`) is the only build and test CI for pushes; GitHub Actions only
+  runs `release.yml`.
+- A release is: publish a GitHub release tagged `26.4` (`v26.4` also works). `release.yml` builds
+  `-Pversion=26.4` (jar and `verifyPluginJar`, no tests: Jenkins ran them) and attaches `Hawkeye-26.4.jar`.
+  Nothing to bump afterwards.
+- Without GitHub Actions: build locally with `./gradlew build -Pversion=26.4` and attach
+  `build/libs/Hawkeye-26.4.jar` with `gh release create 26.4 --verify-tag`.

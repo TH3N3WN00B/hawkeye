@@ -1,3 +1,5 @@
+import java.time.LocalDate
+import java.time.ZoneOffset
 import java.util.zip.ZipFile
 
 plugins {
@@ -8,6 +10,29 @@ plugins {
 
 group = "gg.moonrise.hawkeye"
 description = "Hawkeye Paper plugin"
+
+// Versions are year.quarter (docs/knowledge/README.md "Release facts"), and paper-plugin.yml, /he help and the
+// startup line all show this one string:
+//   stable release   26.4      -Pversion from the GitHub release tag (CI); a second release that quarter is 26.4.1
+//   Jenkins build    26.4.B25  the quarter of the commit plus Jenkins' BUILD_NUMBER
+//   any other build  26.4-SNAPSHOT
+// The quarter comes from the commit date (UTC), so rebuilding an old commit gives it the same version.
+val versionPattern = Regex("""\d{2}\.[1-4](\.\d+|\.B\d+|-SNAPSHOT)?""")
+if (version == Project.DEFAULT_VERSION) {
+    val commitDate = providers.exec {
+        commandLine("git", "log", "-1", "--format=%cd", "--date=format-local:%Y-%m-%d")
+        environment("TZ", "UTC")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim()
+    val date = if (commitDate.isEmpty()) LocalDate.now(ZoneOffset.UTC) else LocalDate.parse(commitDate)
+    val quarter = "%02d.%d".format(date.year % 100, (date.monthValue - 1) / 3 + 1)
+    val jenkinsBuild = providers.environmentVariable("BUILD_NUMBER").orNull?.takeIf { it.isNotBlank() }
+    version = if (jenkinsBuild != null) "$quarter.B$jenkinsBuild" else "$quarter-SNAPSHOT"
+}
+require(versionPattern.matches(version.toString())) {
+    "Version '$version' is not year.quarter (26.4), year.quarter.hotfix (26.4.1), a Jenkins build (26.4.B25) " +
+        "or a snapshot (26.4-SNAPSHOT)"
+}
 
 val pluginName = "Hawkeye"
 val basePackage = "gg.moonrise.hawkeye"
@@ -81,11 +106,11 @@ tasks {
         inputs.property("hawkeyeRuntimeLibraries", runtimeLibraries)
         systemProperty("hawkeye.runtime.libraries", runtimeLibraries)
     }
-    // The shipped jar: build/libs/<pluginName>.jar with our classes and the relocated engine only.
+    // The shipped jar: build/libs/<pluginName>-<version>.jar (Hawkeye-26.4.jar, Hawkeye-26.4.B12.jar) with our
+    // classes and the relocated engine only.
     shadowJar {
         archiveBaseName.set(pluginName)
         archiveClassifier.set("")
-        archiveVersion.set("")
 
         // Paper provides itself and the loader resolves the engine's libraries: only the engine is bundled.
         dependencies {
@@ -150,8 +175,8 @@ tasks.check {
     dependsOn(verifyPluginJar)
 }
 
-// Publishes the plugin jar to the Moonrise Nexus (CI does this for published releases when the
-// NEXUS_USERNAME and NEXUS_PASSWORD secrets exist). Snapshot versions go to maven-snapshots.
+// Publishes the plugin jar to the Moonrise Nexus on request (`./gradlew publish -Pversion=26.4` with
+// nexusUsername/nexusPassword); no CI does it. Snapshot versions go to maven-snapshots.
 publishing {
     publications {
         create<MavenPublication>("plugin") {

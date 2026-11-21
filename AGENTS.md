@@ -21,7 +21,7 @@ Read before changing anything:
 ./gradlew test --tests '<TestClass>'     # one test class while iterating
 ```
 
-The jar is `build/libs/Hawkeye.jar`. Never disable a check or a test to get a green build; fix the
+The jar is `build/libs/Hawkeye-<version>.jar` (`Hawkeye-26.4-SNAPSHOT.jar` locally). Never disable a check or a test to get a green build; fix the
 cause. MockBukkit reports an `UnimplementedOperationException` as a skipped test, not a failure:
 check the skip count in the test report.
 

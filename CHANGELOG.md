@@ -1,8 +1,8 @@
 # Changelog
 
 All notable changes to this project are documented in this file. The format is based on
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions are year.quarter (`26.4`, `26.4.1` for a
+second release in a quarter).
 
 ## [Unreleased]
 
@@ -89,6 +89,12 @@ All notable changes to this project are documented in this file. The format is b
 - `config.yml` and `messages.yml` with every default documented; invalid files keep the previous
   configuration, and restart-only changes are reported.
 ### Changed
+
+- Versions are year.quarter: a stable release is `26.4`, a Jenkins build `26.4.B<build>` (`26.4.B25`), any other
+  build `26.4-SNAPSHOT`. Release tags are `26.4` (or `26.4.1` for a second release in a quarter) instead of
+  `vX.Y.Z`. The jar is named after its version (`Hawkeye-26.4.jar`, `Hawkeye-26.4.B12.jar`).
+- `Jenkinsfile` builds and tests every push and archives only that build's jar. GitHub Actions no longer builds
+  every push or publishes to the Moonrise Nexus: `release.yml` only attaches the jar to a published release.
 
 - Breaking (before the first release): the archive format and its settings. Schema version 3 drops the
   development archive (`segment` and `segment_actor`); its segments are discarded, not converted, and

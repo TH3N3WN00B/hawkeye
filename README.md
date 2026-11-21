@@ -265,7 +265,7 @@ counts events without blocking the caller. `HawkeyeApi.VERSION` changes on incom
 ./gradlew test --tests '<TestClass>'     # one test class
 ```
 
-The plugin jar is `build/libs/Hawkeye.jar`. Storage tests run on real SQLite files. To run the same
+The plugin jar is `build/libs/Hawkeye-<version>.jar` (`Hawkeye-26.4-SNAPSHOT.jar` locally). Storage tests run on real SQLite files. To run the same
 scenarios on server engines, point `HAWKEYE_TEST_MYSQL` and/or `HAWKEYE_TEST_POSTGRES` at an empty
 database (`mariadb://user:password@host:3306/db`, `postgresql://user:password@host:5432/db`); the
 tests are skipped without them.
@@ -273,6 +273,19 @@ tests are skipped without them.
 `scripts/smoke/run.py <server-dir> scripts/smoke/tnt-rollback.txt` boots a real Paper server with the
 jar and runs a console scenario: TNT damage is recorded, looked up, rolled back, restored and undone,
 with the world checked by `/execute if block` after each step.
+
+### CI and releases
+
+- Versions are year.quarter: a stable release is `26.4` (`26.4.1` for a second release in the same quarter),
+  a Jenkins build `26.4.B<build>` (`26.4.B25`), any other build `26.4-SNAPSHOT`. The quarter is that of the
+  commit's date (UTC). `paper-plugin.yml`, `/he help` and the startup line show the full version.
+- `Jenkinsfile` builds and tests every push on `ci.moonrise.gg` and archives that build's
+  `build/libs/Hawkeye-26.4.B<build>.jar` only (it first deletes every jar already in `build/libs`).
+- A GitHub release tagged `26.4` (a leading `v` is allowed) runs `.github/workflows/release.yml`, which builds
+  that version and attaches `Hawkeye-26.4.jar` to the release.
+- Nothing publishes to the Moonrise Nexus automatically. `./gradlew publish -Pversion=26.4` with
+  `nexusUsername`/`nexusPassword` still can (snapshot versions to `maven-snapshots`, others to
+  `maven-releases`).
 
 ## Documentation
 
