@@ -248,6 +248,25 @@ update them in the same change when you learn something durable or an entry stop
 
 ## CoreProtect import facts (verified 2026-11-21)
 
+- Real-server check (2026-11-21): `scripts/smoke/coreprotect-generate.txt` on Paper 26.2 build 135 with
+  CoreProtect CE 24.1 (Modrinth; it refuses to enable on 26.3: "Minecraft 26.3 is not supported") wrote a
+  SQLite database of 13 `block` rows (11 `#tnt` breaks, 2 `#kill` kills) and 6 `container` rows (`#hopper`,
+  blobs of 497 and 451 bytes for the sword and the potion). `scripts/smoke/coreprotect-import.txt` on Paper
+  26.3 build 253 imported its 19 rows, imported nothing the second time, and rolled back from it: the
+  stairs came back as `oak_stairs[facing=east,half=top]` (stored with block data) and
+  `oak_stairs[facing=north,half=bottom]` (stored without: the server's default), the chest got back the
+  sword with `custom_name` and `sharpness` 5 and the potion with `custom_color`. So item metadata written by
+  CoreProtect on 26.2 is rebuilt by `ConfigurationSerialization` on 26.3. The same rows copied into a
+  DuckDB file (CoreProtect's column layout) and into ClickHouse tables shaped like CoreProtect's views
+  passed the same scenario on that server with each driver downloaded by `DriverResolver` on first use
+  (DuckDB about 4 s for 80 MB): both drivers load under Paper's plugin class loader. Not checked: a DuckDB
+  or ClickHouse database written by CoreProtect 25 itself (no released build runs on 26.3 yet). On this
+  host the two server folders are `~/.cache/hawkeye-ref/coreprotect-gen` (Paper 26.2, CoreProtect) and
+  `~/.cache/hawkeye-ref/import-smoke` (Paper 26.3, Hawkeye); both may be cleared.
+- CoreProtect 24.1 stores the version row as `2.24.1`, a non-player cause as a user with a NULL uuid
+  (`#tnt`, `#hopper`, `#kill`), `/kill` as a kill by `#kill`, and a block whose state is the default
+  without block data.
+
 - `CoreProtectSourceIntegrationTest` runs the reader scenario on real engines when set:
   `HAWKEYE_TEST_COREPROTECT_MYSQL=mariadb://root:@127.0.0.1:33069/coreprotect` (the embedded MariaDB,
   database `coreprotect`), `HAWKEYE_TEST_COREPROTECT_DUCKDB=1` (with

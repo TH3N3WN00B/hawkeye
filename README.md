@@ -212,6 +212,11 @@ how it goes about every 30 seconds; `/he import status` shows the same at any ti
   more and only the new rows are imported. No row is ever imported twice: each batch is written in
   one transaction with its checkpoint, and a second server importing the same database at the same
   time is stopped.
+- **Import before or instead of logging side by side.** The import copies everything CoreProtect
+  logged. If Hawkeye was already logging on the same server for part of that time, that period is
+  then stored twice, once from each plugin, and a rollback of it would undo container changes twice.
+  Import right after installing Hawkeye, or roll back such a period with a time range that avoids
+  the overlap.
 - **What is carried:** block breaks, places and interactions with their full block states,
   container and item transactions (with names, enchantments and other components when the item data
   can be read), sign text, kills, entity spawns, paintings, item frames, armour stands and end
