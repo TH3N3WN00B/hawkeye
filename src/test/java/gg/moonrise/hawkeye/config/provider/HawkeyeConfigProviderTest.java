@@ -6,8 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import gg.moonrise.hawkeye.config.env.Environment;
 import gg.moonrise.hawkeye.config.file.HawkeyeConfig;
 import gg.moonrise.hawkeye.config.file.LogCategory;
+import gg.moonrise.hawkeye.config.file.StorageLogin;
+import gg.moonrise.hawkeye.config.file.StorageSettings;
 import gg.moonrise.hawkeye.config.file.StorageType;
 import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
 import gg.moonrise.hawkeye.support.TestPlugins;
@@ -15,6 +18,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,7 +55,8 @@ public class HawkeyeConfigProviderTest {
 
     @Test
     public void reloadAppliesAValidFileAndKeepsDefaultsForMissingKeys() {
-        TestPlugins.writeConfig(plugin, "logging:\n  chat: false\nstorage:\n  type: POSTGRESQL\n  host: db\n");
+        TestPlugins.writeConfig(plugin, "logging:\n  chat: false\nstorage:\n  type: POSTGRESQL\n  host: db\n"
+                + "  username: hawkeye\n  password: literal\n");
         assertInstanceOf(ReloadResult.Reloaded.class, provider.reloadConfig());
         assertFalse(provider.get().logging().enabled(LogCategory.CHAT));
         assertTrue(provider.get().logging().enabled(LogCategory.BLOCK_BREAK), "missing keys get their defaults");
@@ -114,6 +120,95 @@ public class HawkeyeConfigProviderTest {
 
     @Test
     public void defaultsAreValid() {
-        assertEquals(List.of(), new HawkeyeConfig().problems());
+        assertEquals(List.of(), new HawkeyeConfig().problems(name -> Optional.empty()));
+    }
+
+    @Test
+    public void theDefaultFileReadsTheCredentialsFromTheEnvironmentAndSurvivesAReload() throws IOException {
+        Path file = plugin.getDataPath().resolve(HawkeyeConfigProvider.CONFIG_FILE);
+        String written = Files.readString(file);
+        // SnakeYAML quotes a value with braces.
+        assertTrue(written.contains("username: '${HAWKEYE_DB_USERNAME}'"), written);
+        assertTrue(written.contains("password: '${HAWKEYE_DB_PASSWORD}'"), written);
+        assertTrue(written.contains("redis://:${HAWKEYE_REDIS_PASSWORD}@localhost:6379"), "the comment's example");
+        assertInstanceOf(ReloadResult.Reloaded.class, provider.reloadConfig());
+        assertEquals(written, Files.readString(file), "a reload writes the references back unchanged");
+        assertEquals(new StorageSettings(), provider.get().storage());
+    }
+
+    @Test
+    public void anUnsetVariableFailsTheReloadByName() {
+        TestPlugins.writeConfig(plugin, "storage:\n  type: POSTGRESQL\n  host: db\n");
+        HawkeyeConfigProvider bare = new HawkeyeConfigProvider(plugin, name -> Optional.empty());
+        ReloadResult.Failed failed = assertInstanceOf(ReloadResult.Failed.class, bare.reloadConfig());
+        assertTrue(failed.reason().contains("storage.username: the environment variable HAWKEYE_DB_USERNAME is not set"),
+                failed.reason());
+        assertTrue(failed.reason().contains("storage.password: the environment variable HAWKEYE_DB_PASSWORD is not set"),
+                failed.reason());
+
+        Environment set = name -> Optional.ofNullable(Map.of(StorageSettings.USERNAME_VARIABLE, "alex",
+                StorageSettings.PASSWORD_VARIABLE, "s3cr3t").get(name));
+        HawkeyeConfigProvider configured = new HawkeyeConfigProvider(plugin, set);
+        assertInstanceOf(ReloadResult.Reloaded.class, configured.reloadConfig());
+        StorageLogin login = configured.get().storage().login(set);
+        assertEquals("alex", login.username());
+        assertEquals("s3cr3t", login.password());
+    }
+
+    @Test
+    public void aYamlErrorOnThePasswordLineDoesNotShowIt() {
+        TestPlugins.writeConfig(plugin, "storage:\n  type: POSTGRESQL\n  password: \"hunter2-secret\n"
+                + "  pool-size: 6\n");
+        ReloadResult.Failed failed = assertInstanceOf(ReloadResult.Failed.class, provider.reloadConfig());
+        assertFalse(failed.reason().contains("hunter2"), failed.reason());
+        assertTrue(failed.reason().contains("YAML"), failed.reason());
+    }
+
+    @Test
+    public void aNumericPasswordIsText() {
+        TestPlugins.writeConfig(plugin, "storage:\n  type: POSTGRESQL\n  username: 4711\n  password: 123456\n"
+                + "  parameters:\n    connectTimeout: 5\n");
+        assertInstanceOf(ReloadResult.Reloaded.class, provider.reloadConfig());
+        StorageLogin login = provider.get().storage().login(name -> Optional.empty());
+        assertEquals("4711", login.username());
+        assertEquals("123456", login.password());
+        assertEquals(Map.of("connectTimeout", "5"), login.parameters());
+    }
+
+    @Test
+    public void aWronglyTypedCredentialIsNamedNotQuoted() {
+        TestPlugins.writeConfig(plugin, "storage:\n  type: POSTGRESQL\n  password: [alpha-secret, beta-secret]\n");
+        ReloadResult.Failed failed = assertInstanceOf(ReloadResult.Failed.class, provider.reloadConfig());
+        assertTrue(failed.reason().contains("storage.password"), failed.reason());
+        assertFalse(failed.reason().contains("secret"), failed.reason());
+
+        TestPlugins.writeConfig(plugin, "network:\n  redis-uri: {host: hunter2-secret}\n");
+        failed = assertInstanceOf(ReloadResult.Failed.class, provider.reloadConfig());
+        assertTrue(failed.reason().contains("network.redis-uri"), failed.reason());
+        assertFalse(failed.reason().contains("hunter2"), failed.reason());
+    }
+
+    @Test
+    public void aWrongTypeNextToACredentialDoesNotShowTheSection() {
+        TestPlugins.writeConfig(plugin, "storage:\n  type: POSTGRESQL\n  username: alexander\n"
+                + "  password: hunter2-secret\n  pool-size: many\n");
+        ReloadResult.Failed failed = assertInstanceOf(ReloadResult.Failed.class, provider.reloadConfig());
+        assertTrue(failed.reason().contains("storage.pool-size"), failed.reason());
+        assertFalse(failed.reason().contains("hunter2") || failed.reason().contains("alexander"), failed.reason());
+
+        TestPlugins.writeConfig(plugin, "network:\n  shards:\n  - name: eu\n    storage:\n"
+                + "      password: shard-secret\n  - 5\n");
+        failed = assertInstanceOf(ReloadResult.Failed.class, provider.reloadConfig());
+        assertTrue(failed.reason().contains("network.shards"), failed.reason());
+        assertFalse(failed.reason().contains("shard-secret"), failed.reason());
+    }
+
+    @Test
+    public void otherErrorsKeepTheirDetail() {
+        TestPlugins.writeConfig(plugin, "storage:\n  type: ORACLE\n  password: hunter2-secret\n");
+        ReloadResult.Failed failed = assertInstanceOf(ReloadResult.Failed.class, provider.reloadConfig());
+        assertTrue(failed.reason().contains("storage.type") && failed.reason().contains("ORACLE")
+                && failed.reason().contains("POSTGRESQL"), failed.reason());
+        assertFalse(failed.reason().contains("hunter2"), failed.reason());
     }
 }

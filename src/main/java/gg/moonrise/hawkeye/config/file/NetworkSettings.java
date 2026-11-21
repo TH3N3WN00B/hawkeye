@@ -2,10 +2,15 @@ package gg.moonrise.hawkeye.config.file;
 
 import de.exlll.configlib.Comment;
 import de.exlll.configlib.Configuration;
+import gg.moonrise.hawkeye.config.env.EnvReferences;
+import gg.moonrise.hawkeye.config.env.EnvValue;
+import gg.moonrise.hawkeye.config.env.Environment;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
+import lombok.AccessLevel;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
@@ -13,7 +18,9 @@ import lombok.experimental.Accessors;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * The {@code network} section.
+ * The {@code network} section. {@code redis-uri} may hold {@code ${NAME}} references to environment
+ * variables ({@link EnvReferences}); it is resolved only when the bus connects ({@link #redisUri}) and is
+ * never shown by {@link #toString()}.
  */
 @Getter
 @Accessors(fluent = true)
@@ -26,6 +33,10 @@ public final class NetworkSettings {
             "Redis pub/sub (the database stays the source of truth and polling still runs as a fallback)."})
     private BusType bus = BusType.NONE;
 
+    @Comment({"The Redis server. Put a password in an environment variable rather than here:",
+            "redis://:${HAWKEYE_REDIS_PASSWORD}@localhost:6379 (${NAME} is replaced by the variable NAME)."})
+    @Getter(AccessLevel.NONE)
+    @ToString.Exclude
     private String redisUri = "redis://localhost:6379";
 
     @Comment("Redis channel prefix; every server of one network uses the same.")
@@ -42,14 +53,36 @@ public final class NetworkSettings {
     private List<ShardSettings> shards = List.of();
 
     /**
-     * Validation problems.
+     * The Redis URI with every {@code ${NAME}} reference resolved. Validation ({@link #problems}) makes sure
+     * every referenced variable is set when the bus is {@link BusType#REDIS}.
      *
+     * @param environment where variables are looked up
+     * @return the URI; it may carry a password, so never log it
+     * @throws IllegalStateException when a referenced variable is not set; the message names the variable
+     */
+    public @NotNull String redisUri(@NotNull Environment environment) {
+        return EnvReferences.require(Objects.requireNonNullElse(redisUri, ""), environment, "network.redis-uri")
+                .value();
+    }
+
+    /**
+     * Validation problems. A problem names an unset variable, never the URI or a password.
+     *
+     * @param environment where variables are looked up
      * @return one message per problem
      */
-    public @NotNull List<String> problems() {
+    public @NotNull List<String> problems(@NotNull Environment environment) {
         List<String> problems = new ArrayList<>();
-        if (bus == BusType.REDIS && !redisUri.startsWith("redis")) {
-            problems.add("network.redis-uri must be a redis:// or rediss:// URI");
+        if (bus == BusType.REDIS) {
+            switch (EnvReferences.resolve(Objects.requireNonNullElse(redisUri, ""), environment)) {
+                case EnvValue.Resolved uri when !uri.value().startsWith("redis") ->
+                        problems.add("network.redis-uri must be a redis:// or rediss:// URI");
+                case EnvValue.Resolved uri -> {
+                    // A valid URI.
+                }
+                case EnvValue.Unset unset -> unset.variables().forEach(variable ->
+                        problems.add(EnvReferences.unsetMessage("network.redis-uri", variable)));
+            }
         }
         if (!ServerSettings.NAME.matcher(channel).matches()) {
             problems.add("network.channel must be 1-32 of a-z, 0-9, _ and -");
@@ -69,7 +102,7 @@ public final class NetworkSettings {
             } else if (!names.add(shard.name()) || shard.name().equals(ShardSettings.HOME)) {
                 problems.add(path + ".name '" + shard.name() + "' is used twice (or is the reserved 'home')");
             }
-            problems.addAll(shard.storage().problems(path + ".storage"));
+            problems.addAll(shard.storage().problems(path + ".storage", environment));
         }
         return problems;
     }

@@ -15,6 +15,7 @@ import gg.moonrise.hawkeye.entity.importer.source.SourceRow;
 import gg.moonrise.hawkeye.entity.importer.source.SourceSettings;
 import gg.moonrise.hawkeye.entity.importer.source.SourceTable;
 import gg.moonrise.hawkeye.entity.importer.source.SourceType;
+import gg.moonrise.hawkeye.util.redact.RedactedErrors;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -263,7 +264,8 @@ public final class CoreProtectSource implements AutoCloseable {
         try {
             connection.close();
         } catch (SQLException e) {
-            log.warn("Could not close the CoreProtect connection to {}", settings.describe(), e);
+            log.warn("Could not close the CoreProtect connection to {}", settings.describe(),
+                    RedactedErrors.safe(e, settings.redactor()));
         }
     }
 

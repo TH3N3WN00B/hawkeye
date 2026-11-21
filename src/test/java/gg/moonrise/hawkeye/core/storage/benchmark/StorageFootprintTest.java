@@ -30,6 +30,7 @@ import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
@@ -101,7 +102,7 @@ public class StorageFootprintTest {
     }
 
     private double coreProtectBytesPerEvent(List<Sample> workload) throws SQLException {
-        Database database = new DatabaseFactory().open("coreprotect",
+        Database database = new DatabaseFactory(name -> Optional.empty()).open("coreprotect",
                 new StorageSettings().withSqliteFile("coreprotect.db"), folder);
         try {
             database.transaction(connection -> {

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -50,8 +51,11 @@ import gg.moonrise.hawkeye.entity.query.ShardScope;
 import gg.moonrise.hawkeye.entity.query.TimeWindow;
 import gg.moonrise.hawkeye.entity.server.ServerNode;
 import gg.moonrise.hawkeye.entity.storage.SegmentTotals;
-import gg.moonrise.hawkeye.util.position.BlockPositions;
 import gg.moonrise.hawkeye.util.event.EventIds;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.lang.reflect.Field;
 import java.net.URI;
 import java.nio.file.Path;
 import java.sql.ResultSet;
@@ -90,11 +94,51 @@ public class ServerDatabaseIntegrationTest {
         String url = System.getenv(variable);
         assumeTrue(url != null && !url.isBlank(), variable + " is not set");
         String prefix = "hk" + Long.toHexString(System.nanoTime()).substring(0, 6) + "_";
-        Database database = new DatabaseFactory().open("it", settings(URI.create(url), prefix), folder);
+        Database database = new DatabaseFactory(name -> Optional.empty()).open("it", settings(URI.create(url), prefix),
+                folder);
         try {
             run(database);
         } finally {
             drop(database);
+            database.close();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"HAWKEYE_TEST_MYSQL", "HAWKEYE_TEST_POSTGRES"})
+    public void aRefusedLoginShowsNoCredential(String variable) throws Exception {
+        String url = System.getenv(variable);
+        assumeTrue(url != null && !url.isBlank(), variable + " is not set");
+        URI uri = URI.create(url);
+        String user = "hk_nobody_" + Long.toHexString(System.nanoTime());
+        String password = "hk-wrong-password-4711";
+        StorageSettings base = settings(uri, "hk_");
+        StorageSettings settings = StorageSettings.server(base.type(), uri.getHost(), uri.getPort(),
+                uri.getPath().substring(1), "${HK_TEST_USER}", "${HK_TEST_PASSWORD}", "hk_");
+        Map<String, String> environment = Map.of("HK_TEST_USER", user, "HK_TEST_PASSWORD", password);
+        // A short pool timeout: the login is refused at once, the pool then gives up after a second.
+        Field timeout = StorageSettings.class.getDeclaredField("connectionTimeoutMillis");
+        timeout.setAccessible(true);
+        timeout.setLong(settings, 1_000);
+        Database database = new DatabaseFactory(name -> Optional.ofNullable(environment.get(name)))
+                .open("it", settings, folder);
+        try {
+            SQLException failure = assertThrows(SQLException.class,
+                    () -> database.read(connection -> connection.isValid(1)));
+            StringWriter printed = new StringWriter();
+            failure.printStackTrace(new PrintWriter(printed));
+            StringBuilder text = new StringBuilder(printed.toString());
+            for (Throwable next : failure) {
+                text.append('\n').append(next);
+            }
+            String all = text.toString();
+            // The server did answer: MariaDB "Access denied for user", PostgreSQL "authentication failed" or
+            // "role ... does not exist" (trust authentication refuses an unknown role).
+            assertTrue(all.contains("Access denied") || all.contains("authentication failed")
+                    || all.contains("does not exist"), all);
+            assertFalse(all.contains(user), all);
+            assertFalse(all.contains(password), all);
+        } finally {
             database.close();
         }
     }

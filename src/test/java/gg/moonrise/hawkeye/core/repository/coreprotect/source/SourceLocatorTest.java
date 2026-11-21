@@ -1,6 +1,7 @@
 package gg.moonrise.hawkeye.core.repository.coreprotect.source;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -123,6 +124,10 @@ public class SourceLocatorTest {
         assertTrue(reason().contains("port"), reason());
         config(coreProtect, "database-type: [unclosed\n");
         assertTrue(reason().contains("cannot read"), reason());
+        config(coreProtect, "database-type: mysql\nmysql-username: alexander\nmysql-password: \"hunter2-pw\n"
+                + "mysql-port: 3306\n");
+        assertTrue(reason().contains("not valid YAML (line "), reason());
+        assertFalse(reason().contains("hunter2") || reason().contains("alexander"), reason());
         Path yaml = Files.writeString(server.resolve("other.yaml"), "database-type: clickhouse\nclickhouse-host: ''\n");
         assertInstanceOf(SourceLocation.Invalid.class, locator.locate(yaml.toString(), coreProtect, server));
     }

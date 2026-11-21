@@ -147,7 +147,7 @@ previous configuration.
 | Section | Highlights |
 |---|---|
 | `server` | `name` (unique per database), `world-scope` (shared by servers that share world files, e.g. MultiPaper) |
-| `storage` | `type` (`SQLITE`, `MYSQL`, `MARIADB`, `POSTGRESQL`), connection, `table-prefix`, `pool-size` |
+| `storage` | `type` (`SQLITE`, `MYSQL`, `MARIADB`, `POSTGRESQL`), connection (`username` and `password` from environment variables by default), `parameters`, `table-prefix`, `pool-size` |
 | `writer` | `flush-interval-millis` (500), `batch-size`, `queue-capacity`, `shutdown-timeout-seconds` |
 | `logging` | One switch per category, `crop-growth-stages`, `liquid-tracking`, `attached-blocks`, `disabled-worlds`, `redacted-commands` (logged without arguments) |
 | `lookup` | `page-size`, `near-radius`, `max-radius`, session and timeout limits |
@@ -155,6 +155,25 @@ previous configuration.
 | `purge` | `retention-days` (automatic purge, 0 = keep everything), `player-minimum-days` |
 | `network` | `bus` (`NONE` or `REDIS`), `redis-uri`, `poll-interval-seconds`, `shards` |
 | `archive` | `enabled`, `segment-events` (262144 events per segment, 16384 to 1048576), `settle-seconds` (60: newer events stay hot), `after-hours` (24: older events are packed even when fewer than a segment are waiting), `interval-minutes` (1) |
+
+### Database credentials
+
+Keep database and Redis credentials in environment variables; that is the default. `storage.username`
+and `storage.password` are `${HAWKEYE_DB_USERNAME}` and `${HAWKEYE_DB_PASSWORD}` out of the box, so a
+MySQL, MariaDB or PostgreSQL server only needs those two variables set in the server's environment
+(SQLite needs neither). `${NAME}` stands for the environment variable `NAME` and can appear anywhere in
+the value of `username`, `password`, each value of `parameters` (in `storage` and in every
+`network.shards` entry) and `network.redis-uri`, for example
+`redis-uri: redis://:${HAWKEYE_REDIS_PASSWORD}@localhost:6379`. Give each shard its own variables, such as
+`${HAWKEYE_SHARD_EU_PASSWORD}`. A value without `${...}` is used as it is, so a literal password still
+works; a literal value that itself contains `${NAME}` has to come from a variable. Variables are read when
+Hawkeye connects and are never written into `config.yml`.
+
+A referenced variable that is not set makes the file invalid, and the error names the variable, for
+example `storage.password: the environment variable HAWKEYE_DB_PASSWORD is not set`. Hawkeye never logs
+or shows a username, password, parameter value read from a variable or the Redis URI's user info: they
+are passed to the driver as connection properties only, and a driver error that would quote them (MariaDB
+says `Access denied for user 'name'@'host'`) is logged and shown with them replaced by `<redacted>`.
 
 Every player-facing text is a MiniMessage template in `messages.yml`. `lookup.unknown-total` (`?`)
 stands in for `<total>` and `<pages>` when a lookup could not be counted and `lookup.at-least`
@@ -200,8 +219,8 @@ how it goes about every 30 seconds; `/he import status` shows the same at any ti
 
 - **Every CoreProtect database type.** SQLite, MySQL/MariaDB, DuckDB and ClickHouse. The connection
   comes from CoreProtect's own `config.yml` (`database-type`, or `use-mysql`, `table-prefix`,
-  `mysql-*`, `clickhouse-*`), so no host or password is ever typed into a command, and none is shown
-  or logged. The host must be a host name or an IP address and the database name may hold only
+  `mysql-*`, `clickhouse-*`), so no host or password is ever typed into a command, and no username or
+  password is shown or logged (the host and database are). The host must be a host name or an IP address and the database name may hold only
   letters, digits, `_`, `-` and `$`, so a value cannot add connection parameters. A folder without a
   `config.yml` is read as SQLite (`database.db`), then DuckDB (`database.duckdb`). A database without
   CoreProtect's `block`, `user` and `world` tables is refused before anything is written.

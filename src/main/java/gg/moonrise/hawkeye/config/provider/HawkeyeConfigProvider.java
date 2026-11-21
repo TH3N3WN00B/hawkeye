@@ -4,6 +4,7 @@ import de.exlll.configlib.NameFormatters;
 import de.exlll.configlib.YamlConfigurationProperties;
 import gg.moonrise.engine.config.Configuration;
 import gg.moonrise.engine.state.Reloadable;
+import gg.moonrise.hawkeye.config.env.Environment;
 import gg.moonrise.hawkeye.config.file.HawkeyeConfig;
 import gg.moonrise.hawkeye.config.message.MessagesConfig;
 import gg.moonrise.moss.spring.SpringComponent;
@@ -24,7 +25,8 @@ import org.jetbrains.annotations.NotNull;
  * Owns the {@code config.yml} and {@code messages.yml} snapshot. Both files are read through the
  * plugin-engine {@link Configuration} (ConfigLib), which writes every default on first start and adds
  * keys missing from an older file. A reload publishes both files or neither: a file that fails to
- * load or validate keeps the previous snapshot.
+ * load or validate keeps the previous snapshot. Validation checks that every environment variable the
+ * credentials reference is set; a failure's reason never contains a credential ({@link ConfigFailures}).
  */
 @Slf4j
 @SpringComponent
@@ -40,6 +42,7 @@ public final class HawkeyeConfigProvider implements Reloadable {
     private static final String CONFIG_HEADER = """
             Hawkeye configuration. /hawkeye reload applies the logging, lookup, rollback and purge sections;
             server, storage, writer and network changes need a restart.
+            Database and Redis credentials are best read from environment variables: ${NAME} in a value.
             """;
 
     private static final String MESSAGES_HEADER = """
@@ -48,6 +51,7 @@ public final class HawkeyeConfigProvider implements Reloadable {
             """;
 
     private final @NotNull JavaPlugin plugin;
+    private final @NotNull Environment environment;
     private final AtomicReference<Snapshot> current = new AtomicReference<>();
 
     /** Reads the files at startup; broken files leave the defaults active until a reload succeeds. */
@@ -98,14 +102,14 @@ public final class HawkeyeConfigProvider implements Reloadable {
                     builder -> properties(builder, CONFIG_HEADER)).get();
             MessagesConfig messages = Configuration.config(folder.resolve(MESSAGES_FILE).toFile(),
                     MessagesConfig.class, builder -> properties(builder, MESSAGES_HEADER)).get();
-            List<String> problems = config.problems();
+            List<String> problems = config.problems(environment);
             if (!problems.isEmpty()) {
                 return new ReloadResult.Failed(CONFIG_FILE + ": " + String.join("; ", problems));
             }
             Snapshot previous = current.getAndSet(new Snapshot(config, messages));
             return new ReloadResult.Reloaded(previous == null ? List.of() : restartOnly(previous.config(), config));
         } catch (IOException | RuntimeException e) {
-            return new ReloadResult.Failed(Objects.requireNonNullElse(e.getMessage(), e.getClass().getSimpleName()));
+            return new ReloadResult.Failed(ConfigFailures.reason(e));
         }
     }
 

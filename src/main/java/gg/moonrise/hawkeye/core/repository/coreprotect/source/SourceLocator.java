@@ -13,6 +13,7 @@ import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.yaml.snakeyaml.error.MarkedYAMLException;
 
 /**
  * Turns the operator's argument into a CoreProtect database. A folder with a {@code config.yml} is read
@@ -78,8 +79,11 @@ public final class SourceLocator {
         YamlConfiguration yaml = new YamlConfiguration();
         try {
             yaml.load(file.toFile());
-        } catch (IOException | InvalidConfigurationException e) {
+        } catch (IOException e) {
             return new SourceLocation.Invalid("cannot read " + file + ": " + e.getMessage());
+        } catch (InvalidConfigurationException e) {
+            // SnakeYAML's message quotes the broken line, which may be the mysql-password line.
+            return new SourceLocation.Invalid("cannot read " + file + ": it is not valid YAML" + where(e));
         }
         String type = yaml.getString("database-type");
         if (type == null || type.isBlank()) {
@@ -156,6 +160,20 @@ public final class SourceLocator {
         } catch (NumberFormatException e) {
             return 0;
         }
+    }
+
+    /** Where a YAML error is, without the text of the line: {@code  (line 4, column 17)}, or nothing. */
+    private static @NotNull String where(@NotNull InvalidConfigurationException error) {
+        for (Throwable cause = error.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof MarkedYAMLException marked && marked.getProblemMark() != null) {
+                return " (line " + (marked.getProblemMark().getLine() + 1) + ", column "
+                        + (marked.getProblemMark().getColumn() + 1) + ")";
+            }
+            if (cause.getCause() == cause) {
+                break;
+            }
+        }
+        return "";
     }
 
     private static @NotNull SourceLocation found(@NotNull SourceSettings settings) {

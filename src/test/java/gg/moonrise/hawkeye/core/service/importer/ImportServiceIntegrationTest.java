@@ -2,6 +2,7 @@ package gg.moonrise.hawkeye.core.service.importer;
 
 import static gg.moonrise.hawkeye.core.repository.coreprotect.source.CoreProtectFixture.at;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -81,12 +82,27 @@ public class ImportServiceIntegrationTest {
                         "mysql-host: " + uri.getHost(), "mysql-port: " + uri.getPort(),
                         "mysql-database: " + uri.getPath().substring(1), "mysql-username: " + user[0],
                         "mysql-password: '" + user[1] + "'");
-                importAndVerify(config, "mysql " + user[0] + "@" + uri.getHost());
+                importAndVerify(config, "mysql " + uri.getHost());
                 horizon(config, db, false);
             } finally {
                 db.drop();
             }
         }
+    }
+
+    @Test
+    public void wrongMysqlCredentialsAreNeitherShownNorLogged() throws Exception {
+        URI uri = uri("HAWKEYE_TEST_COREPROTECT_MYSQL");
+        String user = "hk_nobody_" + Long.toHexString(System.nanoTime());
+        String password = "hk-wrong-password-4711";
+        Path config = config("database-type: mysql", "mysql-host: " + uri.getHost(), "mysql-port: " + uri.getPort(),
+                "mysql-database: " + uri.getPath().substring(1), "mysql-username: " + user,
+                "mysql-password: '" + password + "'");
+        ImportOutcome.Failed failed = assertInstanceOf(ImportOutcome.Failed.class,
+                service.start(config.toString(), ImportListener.NONE).get(120, TimeUnit.SECONDS));
+        // MariaDB answers "Access denied for user '<user>'@'<host>'"; the reason is what the sender and the log see.
+        assertTrue(failed.reason().contains("Access denied"), failed.reason());
+        assertFalse(failed.reason().contains(user) || failed.reason().contains(password), failed.reason());
     }
 
     @Test
@@ -119,7 +135,7 @@ public class ImportServiceIntegrationTest {
                         "clickhouse-host: " + uri.getHost(), "clickhouse-port: " + uri.getPort(),
                         "clickhouse-database: " + uri.getPath().substring(1), "clickhouse-username: " + user[0],
                         "clickhouse-password: '" + user[1] + "'", "clickhouse-tls: " + settings.tls());
-                importAndVerify(config, "clickhouse " + user[0] + "@" + uri.getHost());
+                importAndVerify(config, "clickhouse " + uri.getHost());
                 horizon(config, db, true);
             } finally {
                 db.drop();

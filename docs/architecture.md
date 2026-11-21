@@ -502,5 +502,11 @@ Every executor is owned by a bean with a `Disableable` shutdown path. Shutdown f
   pub/sub. The database stays the source of truth: every server also polls its pending jobs every
   `network.poll-interval`, so a lost message only costs latency, and `bus: none` works with polling
   alone.
+- **Credentials.** `storage`, each shard's `storage` and `network.redis-uri` may read their secrets
+  from environment variables (`${NAME}`, `config.env.EnvReferences`); the configuration object keeps
+  the text as written and resolves it only where a connection opens (`StorageSettings.login`,
+  `NetworkSettings.redisUri`). MySQL/MariaDB and PostgreSQL pools get a `core.sql.RedactingDataSource`:
+  the user, password and parameters are its driver properties only, and every driver exception passes
+  through `util.redact.Redactor` (`util.redact.RedactedErrors` rebuilds a graph that names a credential).
 - **Leases.** Maintenance that must run once per shard (auto-purge, archiving) takes the `lease`
   row; the holder renews it, and another server takes over when it expires.

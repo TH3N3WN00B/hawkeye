@@ -103,9 +103,11 @@ update them in the same change when you learn something durable or an entry stop
   count` and `exact count` apart; three players chosen from the headers: the fewest, the median and the
   most segments) and `placeProfile` (plan time, candidate count, body reads of one page).
 - Embedded servers for `ServerDatabaseIntegrationTest` live in `~/.cache/hawkeye-ref/dbs`: MariaDB
-  (`mariadb/bin/mariadbd --no-defaults --datadir=$PWD/mdata --basedir=$PWD/mariadb --port=33069`,
-  `HAWKEYE_TEST_MYSQL=mariadb://root:@127.0.0.1:33069/hawkeye`) and PostgreSQL (`pg/bin/pg_ctl -D pgdata`
-  on port 54329, trust auth, role `hawkeye`, database `postgres`:
+  (`mariadb/bin/mariadbd --no-defaults --datadir=$PWD/mdata --basedir=$PWD/mariadb --port=33069
+  --bind-address=127.0.0.1 --socket=$PWD/mariadb.sock`,
+  `HAWKEYE_TEST_MYSQL=mariadb://root:@127.0.0.1:33069/hawkeye`) and PostgreSQL
+  (`pg/bin/pg_ctl -D pgdata -l pg.log -o "-p 54329 -k $PWD" start`: the port is not in `pgdata`, a plain
+  `start` listens on 5432 with its socket in `/tmp`; trust auth, role `hawkeye`, database `postgres`:
   `HAWKEYE_TEST_POSTGRES=postgresql://hawkeye:@127.0.0.1:54329/postgres`).
 - That reference database was copied while its server ran: the file is one page shorter than its header
   says (the last page was in the write-ahead log) and SQLite calls it malformed. Appending one page of
@@ -245,6 +247,44 @@ update them in the same change when you learn something durable or an entry stop
     `EntityPlaceEvent` and `BlockDestroyEvent` have their own and never reach a parent's handler;
     `EntityBlockFormEvent`, `BlockMultiPlaceEvent`, `EntityBreakDoorEvent`, `PlayerDeathEvent` and
     `HangingBreakByEntityEvent` share their parent's.
+
+## Credential facts (verified 2026-11-21)
+
+- ConfigLib 4.8.1 rejects a number or boolean for a `String` field (`password: 123456`) unless the
+  `NUMBER_TO_STRING`/`BOOLEAN_TO_STRING` coercion is configured, with `Number '123456' cannot be
+  deserialized to type String ...`. Every enclosing section wraps a failure in `Deserialization of value
+  '<the section as a map>' with type ... for field '...HawkeyeConfig.storage' failed.`, and that outer
+  message is what `getMessage()` returns: before `ConfigFailures`, any wrong type in `storage`
+  (`pool-size: many`) printed the whole section, password included. A YAML syntax error's own message is
+  only `The configuration file at <path> does not contain valid YAML.`; its SnakeYAML Engine cause
+  quotes the broken line. The credential fields use `TextValueSerializer` (any scalar is text).
+- SnakeYAML writes `${HAWKEYE_DB_USERNAME}` back single-quoted (`username: '${HAWKEYE_DB_USERNAME}'`) and
+  reads it back unchanged.
+- Bukkit's `YamlConfiguration` (CoreProtect's `config.yml`) throws `InvalidConfigurationException` whose
+  message quotes the broken line (`mysql-password: "hunter2...`); `SourceLocator` reports line and column
+  only (`MarkedYAMLException#getProblemMark`).
+- Driver messages that quote credentials, from the embedded servers: MariaDB Connector/J 3.5.1 `(conn=12)
+  Access denied for user 'name'@'localhost' (using password: YES)` (SQLState 28000); pgJDBC 42.7.13
+  `FATAL: role "name" does not exist` under trust auth (`password authentication failed for user "name"`
+  under password auth). Both quote a bad property value: `error parsing url : Optional parameter
+  connectTimeout must be Integer, was '...'` and `connectTimeout parameter value must be an integer but
+  was: ...`. Neither connection's `toString()` shows anything (plain `Object.toString`), and Hikari logs
+  `Added connection` at INFO only when `initializationFailTimeout >= 0` (Hawkeye uses -1).
+- Properties against URL parameters (driver sources): Connector/J 3.5 copies the URL's query into the
+  `Properties` it is given (it writes into the caller's object, so `RedactingDataSource` passes a copy)
+  and maps both the same way, URL last; pgJDBC's `Driver.parseURL` lets URL parameters override
+  properties and percent-decodes URL values, while a property is taken as it is.
+- HikariCP 7.0.2 with `jdbcUrl` builds a `DriverDataSource` and calls its `setLoginTimeout(max(1,
+  (connectionTimeout + 500) / 1000))`, which sets the JVM-wide `DriverManager.setLoginTimeout`. Connector/J
+  takes its default `connectTimeout` (ms, else 30 s) from it and pgJDBC its `loginTimeout` (s, default 0).
+  With `setDataSource` Hikari calls `setLoginTimeout` on that data source instead, so `DatabaseFactory`
+  sets `connectTimeout` (ms) and `loginTimeout` (s) to the same value unless `parameters` names the key.
+  pgJDBC's own `connectTimeout` (socket connect, 10 s) is unchanged.
+- Lettuce 6.5.1 `RedisClient.create(String)` goes through `URI.create`, whose `IllegalArgumentException`
+  quotes the whole URI (password included) for a malformed one; `RedisURI#toString()` masks credentials,
+  and connect failures read `Unable to connect to host:port`.
+- Spring registers a singleton named `systemEnvironment` (the environment map) in every context, so the
+  bean that reads environment variables is `config.env.ProcessEnvironment`, not `SystemEnvironment`.
 
 ## CoreProtect import facts (verified 2026-11-21)
 

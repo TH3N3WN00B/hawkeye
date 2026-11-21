@@ -13,6 +13,7 @@ import gg.moonrise.hawkeye.entity.importer.source.SourceRow;
 import gg.moonrise.hawkeye.entity.importer.source.SourceSettings;
 import gg.moonrise.hawkeye.entity.importer.source.SourceTable;
 import gg.moonrise.hawkeye.entity.importer.source.SourceType;
+import gg.moonrise.hawkeye.util.redact.Redactor;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -277,13 +278,15 @@ public class CoreProtectSourceTest {
     }
 
     @Test
-    public void settingsNeverShowThePassword() {
+    public void settingsNeverShowTheCredentials() {
         SourceSettings settings = SourceSettings.ofServer(SourceType.MYSQL, "127.0.0.1", 3306, "minecraft", "root",
                 "hunter2", "co_", false);
-        assertEquals("mysql root@127.0.0.1:3306/minecraft", settings.describe());
+        assertEquals("mysql 127.0.0.1:3306/minecraft", settings.describe());
         assertEquals(settings.describe(), settings.toString());
         assertFalse(settings.toString().contains("hunter2"));
-        assertEquals("clickhouse default@ch:8123/default prefix cp_ tls", SourceSettings.ofServer(SourceType.CLICKHOUSE,
+        assertEquals("Access denied for user '" + Redactor.MASK + "'@'10.0.0.5' (" + Redactor.MASK + ") on co_block",
+                settings.redactor().scrub("Access denied for user 'root'@'10.0.0.5' (hunter2) on co_block"));
+        assertEquals("clickhouse ch:8123/default prefix cp_ tls", SourceSettings.ofServer(SourceType.CLICKHOUSE,
                 "ch", 8123, "default", "default", "", "cp_", true).describe());
         assertEquals("sqlite " + folder.resolve("database.db"), SourceSettings.ofFile(SourceType.SQLITE,
                 folder.resolve("database.db")).describe());

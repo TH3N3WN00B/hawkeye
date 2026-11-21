@@ -1,6 +1,8 @@
 package gg.moonrise.hawkeye.entity.importer.source;
 
+import gg.moonrise.hawkeye.util.redact.Redactor;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import org.jetbrains.annotations.NotNull;
@@ -9,8 +11,9 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Where a CoreProtect database is and how to open it. {@code file} is used by {@link SourceType#SQLITE}
  * and {@link SourceType#DUCKDB}; host, port, database, username, password and tls by
- * {@link SourceType#MYSQL} and {@link SourceType#CLICKHOUSE}. The password never reaches a log or a
- * message: {@link #toString()} is {@link #describe()}.
+ * {@link SourceType#MYSQL} and {@link SourceType#CLICKHOUSE}. Neither the username nor the password
+ * reaches a log or a message: {@link #toString()} is {@link #describe()}, and a driver's message passes
+ * through {@link #redactor()}.
  *
  * @param type     the engine
  * @param file     the database file, or {@code null} for a server engine
@@ -85,16 +88,26 @@ public record SourceSettings(
     }
 
     /**
-     * A description for messages and logs, without the password: {@code sqlite /srv/plugins/CoreProtect/database.db},
-     * {@code mysql root@127.0.0.1:3306/minecraft}.
+     * A description for messages and logs, without the username and the password:
+     * {@code sqlite /srv/plugins/CoreProtect/database.db}, {@code mysql 127.0.0.1:3306/minecraft}.
      *
      * @return the description
      */
     public @NotNull String describe() {
         String engine = type.name().toLowerCase(Locale.ROOT);
-        String where = file != null ? file.toString() : username + "@" + host + ":" + port + "/" + database;
+        String where = file != null ? file.toString() : host + ":" + port + "/" + database;
         String extras = (prefix.equals(DEFAULT_PREFIX) ? "" : " prefix " + prefix) + (tls ? " tls" : "");
         return engine + " " + where + extras;
+    }
+
+    /**
+     * What a driver's message about this source must not show: the password anywhere, the username where
+     * it stands on its own ({@code Access denied for user 'root'@'10.0.0.5'}).
+     *
+     * @return the redactor
+     */
+    public @NotNull Redactor redactor() {
+        return Redactor.of(List.of(password), List.of(username));
     }
 
     @Override

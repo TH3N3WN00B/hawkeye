@@ -9,6 +9,7 @@ import gg.moonrise.hawkeye.core.storage.shard.Shard;
 import gg.moonrise.hawkeye.entity.server.ServerNode;
 import java.nio.file.Path;
 import java.sql.SQLException;
+import java.util.Optional;
 import org.jetbrains.annotations.NotNull;
 
 /**
@@ -35,8 +36,8 @@ public final class SqliteHarness implements AutoCloseable {
      * @throws SQLException when migrating fails
      */
     public static @NotNull SqliteHarness open(@NotNull Path folder) throws SQLException {
-        Database database = new DatabaseFactory().open("home", new StorageSettings().withSqliteFile("hawkeye.db"),
-                folder);
+        Database database = new DatabaseFactory(name -> Optional.empty()).open("home",
+                new StorageSettings().withSqliteFile("hawkeye.db"), folder);
         database.read(connection -> Migrations.apply(connection, database.dialect(), database.tables()));
         return new SqliteHarness(database);
     }
