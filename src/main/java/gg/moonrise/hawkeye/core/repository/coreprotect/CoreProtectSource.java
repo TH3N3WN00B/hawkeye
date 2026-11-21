@@ -34,6 +34,9 @@ public final class CoreProtectSource implements AutoCloseable {
     /** CoreProtect's {@code database_lock.status} while a migration is incomplete. */
     public static final int MIGRATING = 2;
 
+    /** The tables every CoreProtect database has; without them it is something else. */
+    public static final List<String> REQUIRED_TABLES = List.of("block", "user", "world");
+
     private final @NotNull SourceSettings settings;
     private final @NotNull Connection connection;
     private final @NotNull SourceSchema schema;
@@ -62,7 +65,8 @@ public final class CoreProtectSource implements AutoCloseable {
      * @param settings the source
      * @param driver   the engine's driver ({@link SourceDrivers})
      * @return the open source
-     * @throws SQLException when the prefix is invalid or the connection cannot be opened
+     * @throws SQLException when the prefix, host or database is invalid, the connection cannot be opened, or
+     *                      the database lacks a table of {@link #REQUIRED_TABLES} (it is not CoreProtect's)
      */
     public static @NotNull CoreProtectSource open(@NotNull SourceSettings settings, @NotNull Driver driver)
             throws SQLException {
@@ -82,11 +86,13 @@ public final class CoreProtectSource implements AutoCloseable {
         }
         try {
             dialect.prepare(connection);
+            CoreProtectSource source = new CoreProtectSource(effective, connection);
+            source.requireTables();
+            return source;
         } catch (SQLException | RuntimeException e) {
             closeQuietly(connection, e);
             throw e;
         }
-        return new CoreProtectSource(effective, connection);
     }
 
     /**
@@ -210,6 +216,15 @@ public final class CoreProtectSource implements AutoCloseable {
             connection.close();
         } catch (SQLException e) {
             log.warn("Could not close the CoreProtect connection to {}", settings.describe(), e);
+        }
+    }
+
+    private void requireTables() throws SQLException {
+        for (String table : REQUIRED_TABLES) {
+            if (!schema.exists(table)) {
+                throw new SQLException("not a CoreProtect database: no table " + settings.prefix() + table + " in "
+                        + settings.describe());
+            }
         }
     }
 

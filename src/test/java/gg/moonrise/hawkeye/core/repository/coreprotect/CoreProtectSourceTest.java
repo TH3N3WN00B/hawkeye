@@ -13,12 +13,16 @@ import gg.moonrise.hawkeye.entity.importer.SourceRow;
 import gg.moonrise.hawkeye.entity.importer.SourceSettings;
 import gg.moonrise.hawkeye.entity.importer.SourceTable;
 import gg.moonrise.hawkeye.entity.importer.SourceType;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -177,6 +181,40 @@ public class CoreProtectSourceTest {
     }
 
     @Test
+    public void aDatabaseWithoutCoreProtectsTablesIsRefused() throws SQLException, IOException {
+        Path empty = Files.createFile(folder.resolve("empty.db"));
+        SQLException failure = assertThrows(SQLException.class, () -> open(empty).close());
+        assertTrue(failure.getMessage().startsWith("not a CoreProtect database: no table co_block"),
+                failure.getMessage());
+
+        Path other = folder.resolve("other.db");
+        sql(other, "CREATE TABLE co_block (time INTEGER)", "CREATE TABLE co_user (id INTEGER PRIMARY KEY, user TEXT)");
+        failure = assertThrows(SQLException.class, () -> open(other).close());
+        assertTrue(failure.getMessage().startsWith("not a CoreProtect database: no table co_world"),
+                failure.getMessage());
+
+        Path garbage = Files.writeString(folder.resolve("garbage.db"), "not a database, only text. ".repeat(200));
+        assertThrows(SQLException.class, () -> open(garbage).close());
+    }
+
+    @Test
+    public void aTableTheCatalogListsButThatCannotBeReadIsAnErrorNotAbsent() throws SQLException {
+        Path file = folder.resolve("database.db");
+        CoreProtectFixture.sqlite(file, Layout.CURRENT).close();
+        sql(file, "DROP TABLE co_chat", "CREATE VIEW co_chat AS SELECT * FROM co_gone", "DROP TABLE co_session");
+        try (CoreProtectSource source = open(file)) {
+            assertThrows(SQLException.class, source::tables, "a broken table must not be skipped silently");
+        }
+        sql(file, "DROP VIEW co_chat");
+        try (CoreProtectSource source = open(file)) {
+            Set<SourceTable> tables = source.tables();
+            assertFalse(tables.contains(SourceTable.CHAT), "a missing table is simply absent");
+            assertFalse(tables.contains(SourceTable.SESSION));
+            assertTrue(tables.contains(SourceTable.BLOCK));
+        }
+    }
+
+    @Test
     public void anInvalidServerPrefixIsRefusedBeforeConnecting() {
         SourceSettings bad = SourceSettings.ofServer(SourceType.MYSQL, "127.0.0.1", 1, "db", "u", "secret",
                 "co_; DROP", false);
@@ -199,6 +237,15 @@ public class CoreProtectSourceTest {
                 "ch", 8123, "default", "default", "", "cp_", true).describe());
         assertEquals("sqlite " + folder.resolve("database.db"), SourceSettings.ofFile(SourceType.SQLITE,
                 folder.resolve("database.db")).describe());
+    }
+
+    private static void sql(Path file, String... statements) throws SQLException {
+        try (Connection connection = new JDBC().connect("jdbc:sqlite:" + file, new Properties());
+                Statement statement = connection.createStatement()) {
+            for (String sql : statements) {
+                statement.execute(sql);
+            }
+        }
     }
 
     private static CoreProtectSource open(Path file) throws SQLException {

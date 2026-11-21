@@ -388,6 +388,11 @@ one `server` row and one `import_state` row per source.
   in windows of row ids (`WHERE rowid > ? AND rowid <= ?`; an empty window is jumped with `MIN(rowid)`),
   ClickHouse by `(time, rowid)` keyset pages bounded to a month above the cursor (rowids are reserved in
   blocks per writer there). Columns and optional tables an older CoreProtect lacks read as NULL or absent.
+  Whether a table exists comes from the engine's catalog (`sqlite_master`; `information_schema.tables` of
+  the current database on MySQL and ClickHouse, where CoreProtect's tables are views, and of schema `main`
+  on DuckDB); any other failed query is an error, never a missing table. A source without `block`, `user`
+  and `world` is refused when it is opened ("not a CoreProtect database"), before the import registers
+  anything.
   SQLite and MySQL/MariaDB use the drivers Hawkeye loads anyway; DuckDB and ClickHouse drivers are fetched
   on first use into `<plugin data folder>/drivers` from Maven Central, checked against a pinned SHA-256 and
   loaded in their own class loader (`SourceDrivers`, `DriverResolver`).

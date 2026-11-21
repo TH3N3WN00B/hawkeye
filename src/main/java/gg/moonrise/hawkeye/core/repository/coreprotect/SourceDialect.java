@@ -126,6 +126,26 @@ public enum SourceDialect {
     }
 
     /**
+     * The catalog query that tells whether a table (or a view: ClickHouse's CoreProtect tables are views)
+     * exists where the source's unqualified names resolve: {@code sqlite_master} on SQLite,
+     * {@code information_schema.tables} of the connection's current database on MySQL and ClickHouse and
+     * of the {@code main} schema on DuckDB. Its one parameter is the prefixed table name; it returns a
+     * row when the table exists.
+     *
+     * @return the query
+     */
+    public @NotNull String tableExists() {
+        return switch (this) {
+            case SQLITE -> "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?";
+            case MYSQL -> "SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?";
+            case DUCKDB -> "SELECT 1 FROM information_schema.tables WHERE table_catalog = current_database() "
+                    + "AND table_schema = 'main' AND table_name = ?";
+            case CLICKHOUSE -> "SELECT 1 FROM information_schema.tables WHERE table_schema = currentDatabase() "
+                    + "AND table_name = ?";
+        };
+    }
+
+    /**
      * The JDBC URL of a source.
      *
      * @param settings the source

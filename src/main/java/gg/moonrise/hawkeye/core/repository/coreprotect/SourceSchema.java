@@ -15,14 +15,14 @@ import java.util.Set;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * What one CoreProtect database's tables look like: which exist and which columns they have, detected
- * once per table from the metadata of {@code SELECT * FROM t WHERE 1 = 0}. An older CoreProtect lacks
- * some optional tables and columns; readers project a missing column as {@code NULL}
- * ({@link #column(String, String)}). Not thread-safe: one per source connection.
+ * What one CoreProtect database's tables look like: which exist, from the engine's catalog
+ * ({@link SourceDialect#tableExists()}), and which columns they have, from the metadata of
+ * {@code SELECT * FROM t WHERE 1 = 0}; both detected once per table. An older CoreProtect lacks some
+ * optional tables and columns; readers project a missing column as {@code NULL}
+ * ({@link #column(String, String)}). Any failed query is an error, never taken for a missing table. Not
+ * thread-safe: one per source connection.
  */
 public final class SourceSchema {
-
-    private static final int VALID_SECONDS = 10;
 
     private final @NotNull Connection connection;
     private final @NotNull SourceSettings settings;
@@ -66,8 +66,8 @@ public final class SourceSchema {
      * Whether a table exists.
      *
      * @param table the name without prefix
-     * @return {@code true} when it can be read
-     * @throws SQLException when the connection itself fails
+     * @return {@code true} when the catalog lists it
+     * @throws SQLException when a query fails
      */
     public boolean exists(@NotNull String table) throws SQLException {
         return columns(table).isPresent();
@@ -79,7 +79,7 @@ public final class SourceSchema {
      * @param table  the name without prefix
      * @param column the column, any case
      * @return {@code true} when the table exists and has it
-     * @throws SQLException when the connection itself fails
+     * @throws SQLException when a query fails
      */
     public boolean has(@NotNull String table, @NotNull String column) throws SQLException {
         return columns(table).map(names -> names.contains(column.toLowerCase(Locale.ROOT))).orElse(false);
@@ -91,7 +91,7 @@ public final class SourceSchema {
      * @param table  the name without prefix
      * @param column the column
      * @return the SQL expression
-     * @throws SQLException when the connection itself fails
+     * @throws SQLException when a query fails
      */
     public @NotNull String column(@NotNull String table, @NotNull String column) throws SQLException {
         return has(table, column) ? dialect.quote(column) : "NULL";
@@ -108,6 +108,9 @@ public final class SourceSchema {
     }
 
     private @NotNull Optional<Set<String>> detect(@NotNull String table) throws SQLException {
+        if (!listed(table)) {
+            return Optional.empty();
+        }
         try (PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + table(table)
                 + " WHERE 1 = 0");
                 ResultSet rows = statement.executeQuery()) {
@@ -117,12 +120,15 @@ public final class SourceSchema {
                 names.add(meta.getColumnLabel(column).toLowerCase(Locale.ROOT));
             }
             return Optional.of(Set.copyOf(names));
-        } catch (SQLException e) {
-            if (!connection.isValid(VALID_SECONDS)) {
-                throw e;
+        }
+    }
+
+    private boolean listed(@NotNull String table) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(dialect.tableExists())) {
+            statement.setString(1, settings.prefix() + table);
+            try (ResultSet rows = statement.executeQuery()) {
+                return rows.next();
             }
-            // The table does not exist (an older CoreProtect, or an optional table).
-            return Optional.empty();
         }
     }
 }

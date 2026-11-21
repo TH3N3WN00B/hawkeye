@@ -121,6 +121,9 @@ All notable changes to this project are documented in this file. The format is b
 - The CoreProtect import refuses a MySQL or ClickHouse host from CoreProtect's `config.yml` that is not a
   host name or IP address, and a database name with anything but letters, digits, `_`, `-` and `$`,
   so neither can add parameters to the JDBC URL.
+- The CoreProtect import tells a missing table from a failed query by the engine's catalog: a table it
+  cannot read fails the import instead of being skipped as absent, and a database without CoreProtect's
+  `block`, `user` and `world` tables is refused before an import node or checkpoint is created.
 
 ### Tests
 

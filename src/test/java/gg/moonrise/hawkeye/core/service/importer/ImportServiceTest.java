@@ -29,9 +29,15 @@ import gg.moonrise.hawkeye.util.EventIds;
 import java.io.Serial;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -45,6 +51,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockbukkit.mockbukkit.MockBukkit;
+import org.sqlite.JDBC;
 
 /** The import end to end: a SQLite CoreProtect database into the plugin's own SQLite storage, on MockBukkit. */
 public class ImportServiceTest {
@@ -337,6 +344,27 @@ public class ImportServiceTest {
     }
 
     @Test
+    public void aFileThatIsNotACoreProtectDatabaseCreatesNothing() throws Exception {
+        Path empty = Files.createFile(folder.resolve("empty.db"));
+        Path other = folder.resolve("other.db");
+        try (Connection connection = new JDBC().connect("jdbc:sqlite:" + other, new Properties());
+                Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE players (id INTEGER PRIMARY KEY, name TEXT)");
+        }
+
+        for (Path file : List.of(empty, other)) {
+            ImportOutcome.Failed failed = assertInstanceOf(ImportOutcome.Failed.class, run(file.toString(),
+                    ImportListener.NONE));
+            assertTrue(failed.reason().startsWith("not a CoreProtect database: no table co_block"), failed.reason());
+        }
+
+        assertEquals(0, count("SELECT COUNT(*) FROM " + ready.home().database().tables().importState()));
+        assertEquals(0, count("SELECT COUNT(*) FROM " + ready.home().database().tables().server()
+                + " WHERE name LIKE '%" + ImportStore.NODE_SUFFIX + "%'"));
+        assertTrue(ImportScenario.all().isEmpty());
+    }
+
+    @Test
     public void aMigratingSourceIsRefused() throws Exception {
         Path file = folder.resolve("database.db");
         try (CoreProtectFixture db = CoreProtectFixture.sqlite(file, Layout.CURRENT)) {
@@ -395,6 +423,16 @@ public class ImportServiceTest {
 
     private static @NotNull String withoutNode(@NotNull StoredEvent event) {
         return EventIds.slot(event.id()) + "/" + EventIds.rank(event.id()) + " " + ImportScenario.describe(event);
+    }
+
+    private long count(@NotNull String sql) throws SQLException {
+        return ready.home().database().read(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(sql);
+                    ResultSet rows = statement.executeQuery()) {
+                rows.next();
+                return rows.getLong(1);
+            }
+        });
     }
 
     private static long importThreads() {
