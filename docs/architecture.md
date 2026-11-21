@@ -411,8 +411,13 @@ one `server` row and one `import_state` row per source.
   rows, ties in `SourceTable` order (block, sign, container, entity container, item, entity
   interaction, chat, command, session). Rows are therefore only as time-ordered as each table is;
   the assigner absorbs small disorder.
+- **Horizon.** A run imports what the source held when it began. When the next row in merge order is
+  stamped after that moment (a CoreProtect that is still logging), the run is complete and the row stays
+  unread: every table stops at the same time, so the next run's rows are all newer than what is stored
+  and none has to be displaced. A row stamped more than a week past the start is a wrong clock, not a new
+  row: the merge returns it first and it is skipped, so it cannot hold back the rows behind it.
 - **Mapping.** `RowMapper` turns each row into one event stamped at its second, or a skip counted by
-  reason (older than 2025-01-01 or later than the start of the run, no equivalent action, folded into
+  reason (older than 2025-01-01 or stamped in the far future, no equivalent action, folded into
   another event, unknown world/material/entity/position). When a row names an id missing from its
   snapshot of the source's dictionaries, the snapshot is re-read, at most once per batch. Block states
   are rebuilt from `blockdata_map` tokens and normalised through `Bukkit.createBlockData` (cached), so

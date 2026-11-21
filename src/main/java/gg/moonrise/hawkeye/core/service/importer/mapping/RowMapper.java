@@ -16,7 +16,8 @@ import org.jetbrains.annotations.NotNull;
  * Turns CoreProtect rows into Hawkeye events (docs/architecture.md, "Imports"). Every event is stamped at
  * its row's second ({@code EventIds.stamp(time * 1000, 0)}): the import's id assigner breaks ties by the
  * order events are added, which is the source order. A row is skipped, never an error, when it is older
- * than Hawkeye's epoch or later than the moment the import began ({@link SkipReason#BEFORE_EPOCH}), when
+ * than Hawkeye's epoch or later than the moment the import began ({@link SkipReason#BEFORE_EPOCH}; the run
+ * only hands over such a row when it is stamped too far ahead to be a row CoreProtect just logged), when
  * its world, material, entity or position cannot be resolved or stored
  * ({@link SkipReason#UNKNOWN_REFERENCE}), when Hawkeye has no event for its action
  * ({@link SkipReason#NO_EQUIVALENT}) or when another event carries it ({@link SkipReason#FOLDED}).

@@ -206,11 +206,12 @@ how it goes about every 30 seconds; `/he import status` shows the same at any ti
   Imported events appear in ordinary lookups, the inspector, rollbacks and restores of this server's
   worlds.
 - **Cancel, resume, catch up.** `/he import cancel` stops after the current batch; running the
-  command again continues where it stopped, also after a crash or restart. Running it again later
-  imports only the rows CoreProtect added since, so a server can import while CoreProtect still runs
-  and catch up after removing it. No row is ever imported twice: each batch is written in one
-  transaction with its checkpoint, and a second server importing the same database at the same time
-  is stopped.
+  command again continues where it stopped, also after a crash or restart. A run imports what the
+  database held when it began; rows CoreProtect logs after that are left for the next run. So a
+  server can import while CoreProtect still runs and catch up after removing it: run the command once
+  more and only the new rows are imported. No row is ever imported twice: each batch is written in
+  one transaction with its checkpoint, and a second server importing the same database at the same
+  time is stopped.
 - **What is carried:** block breaks, places and interactions with their full block states,
   container and item transactions (with names, enchantments and other components when the item data
   can be read), sign text, kills, entity spawns, paintings, item frames, armour stands and end
@@ -219,7 +220,8 @@ how it goes about every 30 seconds; `/he import status` shows the same at any ti
 - **What is not:** a killed entity's data (CoreProtect's own format), so an imported kill cannot be
   respawned by a rollback; block-entity extras (command-block commands, banner patterns of placed
   banners, shulker contents, skull owners); sign colours, glow and wax; the username log; rows older
-  than 2025-01-01, which Hawkeye's ids cannot express; and actions without a Hawkeye equivalent
+  than 2025-01-01, which Hawkeye's ids cannot express (and rows stamped more than a week in the future);
+  and actions without a Hawkeye equivalent
   (crafting ingredients, items given to villagers, plain entity clicks). The final reply counts every
   skipped row by reason.
 - **Drivers.** SQLite and MySQL/MariaDB use the drivers Hawkeye already loads. The DuckDB (80 MB) and

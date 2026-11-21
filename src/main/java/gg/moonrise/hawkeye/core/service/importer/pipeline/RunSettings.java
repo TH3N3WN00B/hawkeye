@@ -17,7 +17,7 @@ import org.jetbrains.annotations.Nullable;
  * @param pageRows           rows read from one table at a time
  * @param progressMillis     how often the listener hears about progress
  * @param coreProtectEnabled whether a plugin named CoreProtect is enabled on this server
- * @param startedMillis      when the run began; rows stamped later are skipped
+ * @param startedMillis      when the run began; rows stamped later are left for the next run
  */
 public record RunSettings(
         @Nullable String argument,

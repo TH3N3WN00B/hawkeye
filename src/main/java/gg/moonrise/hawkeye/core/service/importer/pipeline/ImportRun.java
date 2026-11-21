@@ -38,8 +38,15 @@ import org.jetbrains.annotations.NotNull;
  * ({@link SegmentWriter}). A batch closes when it holds {@link RunSettings#batchEvents()} events, when
  * {@link RunSettings#checkpointRows()} rows were consumed without filling one, when the source is read to
  * its end, or on cancel; except at the end it closes only between two seconds, so no second of the source
- * is split over two runs. Runs on one thread; {@link #cancel()} and {@link #progress()} may be called from
- * any thread.
+ * is split over two runs.
+ *
+ * <p>A run imports what the source held when it began. Rows stamped after that moment (a CoreProtect
+ * that is still logging) are left unread for the next run: every table then stops at the same time, so
+ * the next run's rows are all newer than what is stored and none has to be displaced. Only a row
+ * stamped more than {@link #FUTURE_SECONDS} ahead (a clock that ran ahead) is consumed and skipped,
+ * because waiting for its time would hold back the rows behind it.
+ *
+ * <p>Runs on one thread; {@link #cancel()} and {@link #progress()} may be called from any thread.
  */
 @Slf4j
 public final class ImportRun {
@@ -49,6 +56,9 @@ public final class ImportRun {
 
     /** How many consumed rows pass between progress checks. */
     public static final int CHECK_ROWS = 4096;
+
+    /** How far past the start of a run a row's time may lie before it counts as wrong, not as new. */
+    public static final long FUTURE_SECONDS = 7L * 24 * 60 * 60;
 
     private final @NotNull RunSettings settings;
     private final @NotNull CoreProtectSources sources;
@@ -153,7 +163,8 @@ public final class ImportRun {
         RunTally tally = new RunTally(start);
         Set<SourceTable> tables = source.tables();
         RowMapper mapper = new RowMapper(source.names(), blockStates, items, settings.startedMillis());
-        SourceMerge merge = new SourceMerge(source::read, tables, tally::cursor, settings.pageRows());
+        SourceMerge merge = new SourceMerge(source::read, tables, tally::cursor, settings.pageRows(),
+                settings.startedMillis() / 1000 + FUTURE_SECONDS);
         if (resumed) {
             log.info("Resuming the CoreProtect import from {} into node {}: {} event(s) imported before",
                     description, node.name(), start.imported());
@@ -195,7 +206,7 @@ public final class ImportRun {
         long lastTime = Long.MIN_VALUE;
         while (true) {
             Optional<SourceRow> head = merge.peek();
-            if (head.isEmpty()) {
+            if (head.isEmpty() || writtenSinceStart(head.get())) {
                 return new Batch(events, true);
             }
             if (overfull(events, tally) || closing(events, tally) && head.get().time() != lastTime) {
@@ -216,6 +227,16 @@ public final class ImportRun {
                 reporter.check();
             }
         }
+    }
+
+    /**
+     * Whether a row was logged after this run began. The merge returns rows by time, so every row still
+     * unread is then at least as new, and the run is complete; rows beyond the merge's ceiling come
+     * first and never get here as the newest.
+     */
+    private boolean writtenSinceStart(@NotNull SourceRow row) {
+        long millis = row.time() * 1000L;
+        return millis > settings.startedMillis() && row.time() <= settings.startedMillis() / 1000 + FUTURE_SECONDS;
     }
 
     /** Twice the events or rows that close a batch: it closes even inside a second (never in practice). */

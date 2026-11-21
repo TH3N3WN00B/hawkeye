@@ -17,6 +17,9 @@ import org.junit.jupiter.api.Test;
 
 public class SourceMergeTest {
 
+    /** Later than any sensible row of these tests. */
+    private static final long CEILING = 1_000;
+
     private final Map<SourceTable, List<SourceRow>> tables = new EnumMap<>(SourceTable.class);
     private final List<String> reads = new ArrayList<>();
 
@@ -70,6 +73,23 @@ public class SourceMergeTest {
     }
 
     @Test
+    public void rowsBeyondTheCeilingComeFirstSoTheyHoldNothingBack() throws SQLException {
+        rows(SourceTable.BLOCK, 10, CEILING + 500, 20);
+        rows(SourceTable.CHAT, 15, 30);
+
+        assertEquals(List.of("block@10", "block@" + (CEILING + 500), "chat@15", "block@20", "chat@30"),
+                drain(merge(Map.of(), 1)));
+    }
+
+    @Test
+    public void aRowAtTheCeilingKeepsItsPlace() throws SQLException {
+        rows(SourceTable.BLOCK, 10, CEILING, 20);
+        rows(SourceTable.CHAT, 15);
+
+        assertEquals(List.of("block@10", "chat@15", "block@" + CEILING, "block@20"), drain(merge(Map.of(), 1)));
+    }
+
+    @Test
     public void peekDoesNotConsume() throws SQLException {
         rows(SourceTable.BLOCK, 10);
         SourceMerge merge = merge(Map.of(), 5);
@@ -106,7 +126,7 @@ public class SourceMergeTest {
         return new SourceMerge((table, after, limit) -> {
             reads.add(table.tableName() + ">" + after.rowId());
             return tables.get(table).stream().filter(row -> row.rowId() > after.rowId()).limit(limit).toList();
-        }, present, table -> cursors.getOrDefault(table, SourceCursor.START), page);
+        }, present, table -> cursors.getOrDefault(table, SourceCursor.START), page, CEILING);
     }
 
     private static List<String> drain(SourceMerge merge) throws SQLException {

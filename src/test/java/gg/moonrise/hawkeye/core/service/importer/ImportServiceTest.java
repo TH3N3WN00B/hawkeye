@@ -18,6 +18,7 @@ import gg.moonrise.hawkeye.entity.actor.Actor;
 import gg.moonrise.hawkeye.entity.event.PendingEvent;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
 import gg.moonrise.hawkeye.entity.importer.ImportState;
+import gg.moonrise.hawkeye.entity.importer.SkipReason;
 import gg.moonrise.hawkeye.entity.query.Area;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import gg.moonrise.hawkeye.entity.query.ShardScope;
@@ -176,6 +177,52 @@ public class ImportServiceTest {
         assertEquals(List.of(Action.CHAT, Action.QUIT), events.subList(events.size() - 2, events.size()).stream()
                 .map(StoredEvent::action).toList());
         assertEquals(events.size(), events.stream().map(StoredEvent::id).distinct().count());
+    }
+
+    @Test
+    public void rowsLoggedAfterTheRunBeganAreLeftForTheNextRun() throws Exception {
+        Path file = folder.resolve("cp").resolve("database.db");
+        Files.createDirectories(file.getParent());
+        try (CoreProtectFixture db = CoreProtectFixture.sqlite(file, Layout.CURRENT)) {
+            ImportScenario.populate(db, "25.0");
+            // CoreProtect is still logging: a row stamped later than the start of the run, and behind it in
+            // the table a row the consumer wrote late.
+            long soon = System.currentTimeMillis() / 1000 + 3_600;
+            db.chat(soon, 1, at(1, 0, 70, 0), "written during the import");
+            db.chat(ImportScenario.T + 50, 1, at(1, 0, 70, 0), "queued late");
+
+            ImportOutcome.Finished first = assertInstanceOf(ImportOutcome.Finished.class,
+                    run(file.toString(), ImportListener.NONE));
+            assertEquals(ImportScenario.EVENTS, first.totals().imported());
+            assertEquals(ImportScenario.SKIPPED, ImportScenario.skipped(first.totals()), "left unread, not skipped");
+
+            ImportOutcome.Finished again = assertInstanceOf(ImportOutcome.Finished.class,
+                    run(file.toString(), ImportListener.NONE));
+            assertEquals(0, again.totals().rowsRead(), "still newer than this run: neither read nor skipped");
+        }
+        assertEquals(ImportScenario.EVENTS, ImportScenario.of(NODE).size());
+    }
+
+    @Test
+    public void aRowStampedFarInTheFutureIsSkippedWithoutHoldingItsTableBack() throws Exception {
+        Path file = folder.resolve("cp").resolve("database.db");
+        Files.createDirectories(file.getParent());
+        try (CoreProtectFixture db = CoreProtectFixture.sqlite(file, Layout.CURRENT)) {
+            ImportScenario.populate(db, "25.0");
+            long wrongClock = System.currentTimeMillis() / 1000 + 30L * 24 * 3_600;
+            db.chat(wrongClock, 1, at(1, 0, 70, 0), "from a clock that ran ahead");
+            db.chat(ImportScenario.T + 50, 1, at(1, 0, 70, 0), "behind it");
+
+            ImportOutcome.Finished done = assertInstanceOf(ImportOutcome.Finished.class,
+                    run(file.toString(), ImportListener.NONE));
+            assertEquals(ImportScenario.EVENTS + 1, done.totals().imported());
+            assertEquals(ImportScenario.SKIPPED.get(SkipReason.BEFORE_EPOCH) + 1,
+                    done.totals().skipped(SkipReason.BEFORE_EPOCH));
+        }
+        List<StoredEvent> events = ImportScenario.of(NODE);
+        assertEquals(ImportScenario.EVENTS + 1, events.size());
+        assertTrue(events.stream().allMatch(event -> event.epochMillis() <= System.currentTimeMillis()),
+                "nothing is stored in the future");
     }
 
     @Test

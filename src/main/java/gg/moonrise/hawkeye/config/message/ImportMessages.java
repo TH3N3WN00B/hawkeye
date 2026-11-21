@@ -33,7 +33,7 @@ public final class ImportMessages {
             + "<source> in <duration> (<total> from this database in all).";
 
     @Comment({"Sent after an import that skipped rows (only then). Placeholders: <skipped> (all), <old> (before",
-            "2025-01-01 or after the import began), <no-equivalent>, <folded> (sign snapshots another event",
+            "2025-01-01, or stamped in the future), <no-equivalent>, <folded> (sign snapshots another event",
             "carries), <unknown> (an unknown world, material, entity or position)."})
     private String skipped = "<gray>Skipped <white><skipped></white> row(s): <white><old></white> older than "
             + "2025-01-01, which Hawkeye cannot store; <white><no-equivalent></white> with no Hawkeye equivalent; "

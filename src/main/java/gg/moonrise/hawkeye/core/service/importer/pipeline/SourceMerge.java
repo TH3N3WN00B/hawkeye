@@ -18,19 +18,19 @@ import org.jetbrains.annotations.NotNull;
  * A k-way merge of a source's event tables by time: one stream per table, each read in pages in the
  * table's own scan order from its cursor, and always the stream whose next row has the smallest
  * {@code time} next (ties by {@link SourceTable} order). A stream ends when a read returns no rows.
+ * Rows stamped later than the merge's ceiling (a clock that ran far ahead) come first instead of last, so
+ * such a row never holds back the rows behind it in its table.
  * Each table is read in its cheap physical order, so the merged rows are only as time-ordered as the
  * tables are; the import's id assigner absorbs rows that are a little out of order.
  */
 public final class SourceMerge {
 
-    /** Of two heads, the one read first. */
-    private static final Comparator<Stream> ORDER = Comparator
-            .comparingLong((Stream stream) -> stream.rows.getFirst().time())
-            .thenComparing(stream -> stream.table);
-
     private final @NotNull Reader reader;
     private final int page;
-    private final PriorityQueue<Stream> heads = new PriorityQueue<>(ORDER);
+    private final long ceiling;
+    private final PriorityQueue<Stream> heads = new PriorityQueue<>(Comparator
+            .comparingLong(this::order)
+            .thenComparing(stream -> stream.table));
 
     /**
      * Reads the first page of every table.
@@ -39,15 +39,17 @@ public final class SourceMerge {
      * @param tables  the tables to merge
      * @param cursors where each table continues
      * @param page    the most rows one read returns
+     * @param ceiling the latest time (Unix seconds) a row can sensibly have; later rows are returned first
      * @throws SQLException when a read fails
      */
     public SourceMerge(@NotNull Reader reader, @NotNull Collection<SourceTable> tables,
-            @NotNull Function<SourceTable, SourceCursor> cursors, int page) throws SQLException {
+            @NotNull Function<SourceTable, SourceCursor> cursors, int page, long ceiling) throws SQLException {
         if (page < 1) {
             throw new IllegalArgumentException("a page holds at least one row");
         }
         this.reader = reader;
         this.page = page;
+        this.ceiling = ceiling;
         for (SourceTable table : tables) {
             Stream stream = new Stream(table, cursors.apply(table));
             if (stream.fill(reader, page)) {
@@ -83,6 +85,12 @@ public final class SourceMerge {
             heads.add(head);
         }
         return row;
+    }
+
+    /** Where a stream's head sorts: by its time, or before everything when that lies beyond the ceiling. */
+    private long order(@NotNull Stream stream) {
+        long time = stream.rows.getFirst().time();
+        return time > ceiling ? Long.MIN_VALUE : time;
     }
 
     /** Reads a page of one table. */
