@@ -1,0 +1,62 @@
+name: Release
+
+# Builds the jar of a published GitHub release and attaches it to the release. Every other build, with the
+# tests, runs on Jenkins (Jenkinsfile, ci.moonrise.gg). Nothing is published to the Moonrise Nexus from here.
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Attach the plugin jar to the release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # The tag is the version without a leading v: year.quarter (26.4), or year.quarter.patch (26.4.1) for a
+      # second release in the same quarter.
+      - name: Check the tag
+        id: version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          if ! [[ "${RELEASE_TAG}" =~ ^v?[0-9]{2}\.[1-4](\.[0-9]+)?$ ]]; then
+            echo "::error title=Invalid release tag::'${RELEASE_TAG}' is not year.quarter (26.4) or year.quarter.patch (26.4.1)"
+            exit 1
+          fi
+          echo "version=${RELEASE_TAG#v}" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      # The jar and its check (verifyPluginJar); Jenkins has already run the tests on this commit.
+      - name: Build the jar
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: ./gradlew shadowJar verifyPluginJar -Pversion="${VERSION}"
+
+      # The jar carries the version in its name (Hawkeye-26.4.jar).
+      - name: Upload release asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          gh release upload "${TAG}" build/libs/*.jar --clobber --repo "${GITHUB_REPOSITORY}"
