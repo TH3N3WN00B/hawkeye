@@ -182,6 +182,10 @@ public class CoreProtectSourceTest {
                 "co_; DROP", false);
         SQLException failure = assertThrows(SQLException.class, () -> CoreProtectSource.open(bad, new JDBC()));
         assertTrue(failure.getMessage().contains("prefix"), failure.getMessage());
+        SourceSettings parameters = SourceSettings.ofServer(SourceType.MYSQL, "127.0.0.1", 1,
+                "db?allowLoadLocalInfile=true", "u", "secret", "co_", false);
+        failure = assertThrows(SQLException.class, () -> CoreProtectSource.open(parameters, new JDBC()));
+        assertTrue(failure.getMessage().contains("host or database"), failure.getMessage());
     }
 
     @Test

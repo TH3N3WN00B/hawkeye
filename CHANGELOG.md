@@ -118,6 +118,9 @@ All notable changes to this project are documented in this file. The format is b
   statements that had run, so an import segment could be stored without its checkpoint.
 - An `Error` on the import thread ends the import as failed and frees it; it used to leave the
   import marked as running until a restart.
+- The CoreProtect import refuses a MySQL or ClickHouse host from CoreProtect's `config.yml` that is not a
+  host name or IP address, and a database name with anything but letters, digits, `_`, `-` and `$`,
+  so neither can add parameters to the JDBC URL.
 
 ### Tests
 

@@ -127,6 +127,30 @@ public class SourceLocatorTest {
         assertInstanceOf(SourceLocation.Invalid.class, locator.locate(yaml.toString(), coreProtect, server));
     }
 
+    @Test
+    public void hostsAndDatabasesThatCouldAddUrlParametersAreInvalid() throws IOException {
+        for (String host : new String[] {"db.internal?allowLoadLocalInfile=true", "db/other", "user@db", "db host",
+                "db,other", "[::1]x", "db#frag"}) {
+            config(coreProtect, "database-type: mysql\nmysql-host: '" + host + "'\n");
+            assertTrue(reason().contains("host"), host + ": " + reason());
+        }
+        for (String database : new String[] {"minecraft?sslMode=disable", "mine/craft", "mine&x=1", "a b", "db;x",
+                ""}) {
+            config(coreProtect, "database-type: clickhouse\nclickhouse-host: ch\nclickhouse-database: '" + database
+                    + "'\n");
+            assertTrue(reason().contains("database"), database + ": " + reason());
+        }
+    }
+
+    @Test
+    public void hostNamesAndIpLiteralsAreAccepted() throws IOException {
+        for (String host : new String[] {"db.internal", "mysql-1", "10.0.0.2", "::1", "[fe80::1]", "DB.Example.COM"}) {
+            config(coreProtect, "database-type: mysql\nmysql-host: '" + host + "'\nmysql-database: mc_db-1$\n");
+            assertEquals(found(SourceSettings.ofServer(SourceType.MYSQL, host, 3306, "mc_db-1$", "root", "", "co_",
+                    false)), locator.locate(null, coreProtect, server), host);
+        }
+    }
+
     private String reason() {
         return assertInstanceOf(SourceLocation.Invalid.class, locator.locate(null, coreProtect, server)).reason();
     }

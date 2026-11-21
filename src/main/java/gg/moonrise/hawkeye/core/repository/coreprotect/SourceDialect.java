@@ -30,6 +30,12 @@ public enum SourceDialect {
     /** A CoreProtect {@code table-prefix}: what CoreProtect itself accepts. */
     private static final Pattern PREFIX = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
+    /** A host name or IP literal, IPv6 bare or in brackets: nothing that could add to a JDBC URL. */
+    private static final Pattern HOST = Pattern.compile("[A-Za-z0-9.:-]+|\\[[A-Za-z0-9.:-]+]");
+
+    /** A database name as it may stand in a JDBC URL's path. */
+    private static final Pattern DATABASE = Pattern.compile("[A-Za-z0-9_$-]+");
+
     private final char quote;
     private final ScanOrder order;
 
@@ -61,6 +67,27 @@ public enum SourceDialect {
      */
     public static boolean validPrefix(@NotNull String prefix) {
         return PREFIX.matcher(prefix).matches();
+    }
+
+    /**
+     * Whether a server engine's host can be put into a JDBC URL as it is.
+     *
+     * @param host the host from CoreProtect's config
+     * @return {@code true} for a host name or an IP literal (letters, digits, {@code .}, {@code -},
+     *         {@code :}, and {@code []} around an IPv6 address)
+     */
+    public static boolean validHost(@NotNull String host) {
+        return HOST.matcher(host).matches();
+    }
+
+    /**
+     * Whether a server engine's database name can be put into a JDBC URL as it is.
+     *
+     * @param database the database from CoreProtect's config
+     * @return {@code true} when it is not empty and holds only letters, digits, {@code _}, {@code -} and {@code $}
+     */
+    public static boolean validDatabase(@NotNull String database) {
+        return DATABASE.matcher(database).matches();
     }
 
     /**

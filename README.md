@@ -197,8 +197,9 @@ how it goes about every 30 seconds; `/he import status` shows the same at any ti
 - **Every CoreProtect database type.** SQLite, MySQL/MariaDB, DuckDB and ClickHouse. The connection
   comes from CoreProtect's own `config.yml` (`database-type`, or `use-mysql`, `table-prefix`,
   `mysql-*`, `clickhouse-*`), so no host or password is ever typed into a command, and none is shown
-  or logged. A folder without a `config.yml` is read as SQLite (`database.db`), then DuckDB
-  (`database.duckdb`).
+  or logged. The host must be a host name or an IP address and the database name may hold only
+  letters, digits, `_`, `-` and `$`, so a value cannot add connection parameters. A folder without a
+  `config.yml` is read as SQLite (`database.db`), then DuckDB (`database.duckdb`).
 - **It only adds.** The CoreProtect database is opened read-only, and nothing in Hawkeye or
   CoreProtect is deleted or changed: the import writes archive segments, dictionary entries, one
   server row (the import node `<server.name>-coreprotect`, which never shows in `/he network`) and

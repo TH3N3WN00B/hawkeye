@@ -71,6 +71,10 @@ public final class CoreProtectSource implements AutoCloseable {
         if (!SourceDialect.validPrefix(effective.prefix())) {
             throw new SQLException("invalid CoreProtect table prefix \"" + effective.prefix() + "\"");
         }
+        if (!fileEngine(effective.type()) && (!SourceDialect.validHost(effective.host())
+                || !SourceDialect.validDatabase(effective.database()))) {
+            throw new SQLException("invalid CoreProtect host or database in " + effective.describe());
+        }
         SourceDialect dialect = SourceDialect.of(effective.type());
         Connection connection = driver.connect(dialect.url(effective), dialect.properties(effective));
         if (connection == null) {

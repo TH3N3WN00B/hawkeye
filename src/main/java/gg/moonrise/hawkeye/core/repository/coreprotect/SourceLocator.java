@@ -121,14 +121,24 @@ public final class SourceLocator {
             return new SourceLocation.Invalid("invalid table-prefix \"" + tablePrefix
                     + "\": it must match [A-Za-z_][A-Za-z0-9_]*");
         }
+        String engine = type.name().toLowerCase(Locale.ROOT);
         if (host == null || host.isBlank()) {
-            return new SourceLocation.Invalid("no " + type.name().toLowerCase(Locale.ROOT) + " host is configured");
+            return new SourceLocation.Invalid("no " + engine + " host is configured");
+        }
+        if (!SourceDialect.validHost(host.strip())) {
+            return new SourceLocation.Invalid("invalid " + engine + " host \"" + host.strip()
+                    + "\": it must be a host name or an IP address");
         }
         if (port < 1 || port > 65_535) {
-            return new SourceLocation.Invalid("invalid " + type.name().toLowerCase(Locale.ROOT) + " port " + port);
+            return new SourceLocation.Invalid("invalid " + engine + " port " + port);
         }
-        return found(SourceSettings.ofServer(type, host.strip(), port, Objects.requireNonNullElse(database, "").strip(),
-                Objects.requireNonNullElse(username, ""), Objects.requireNonNullElse(password, ""), tablePrefix, tls));
+        String name = Objects.requireNonNullElse(database, "").strip();
+        if (!SourceDialect.validDatabase(name)) {
+            return new SourceLocation.Invalid("invalid " + engine + " database \"" + name
+                    + "\": it must match [A-Za-z0-9_$-]+");
+        }
+        return found(SourceSettings.ofServer(type, host.strip(), port, name, Objects.requireNonNullElse(username, ""),
+                Objects.requireNonNullElse(password, ""), tablePrefix, tls));
     }
 
     /** A port written as a number or as a quoted number; 0 when it is neither. */
