@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.sql.Types;
 import java.util.Objects;
 import java.util.Properties;
@@ -143,6 +144,9 @@ public enum SourceDialect {
                 properties.setProperty("ssl", Boolean.toString(settings.tls()));
                 // String columns hold CoreProtect's blobs; read them as raw bytes, as CoreProtect does.
                 properties.setProperty("binary_string_support", "true");
+                // CoreProtect's setting too: without it a newer server answers in a compression the driver
+                // cannot read ("Invalid LZ4 magic byte").
+                properties.setProperty("clickhouse_setting_network_compression_method", "LZ4");
                 properties.setProperty("connection_timeout", "10000");
                 properties.setProperty("socket_timeout", "300000");
             }
@@ -151,7 +155,9 @@ public enum SourceDialect {
     }
 
     /**
-     * Prepares a fresh connection: marks a MySQL session read-only.
+     * Prepares a fresh connection: makes a MySQL session read-only. MariaDB Connector/J's
+     * {@code setReadOnly(true)} alone sends nothing to a single server (only with {@code assureReadOnly}),
+     * so the session's access mode is set explicitly as well.
      *
      * @param connection the connection
      * @throws SQLException when the engine refuses
@@ -159,6 +165,9 @@ public enum SourceDialect {
     public void prepare(@NotNull Connection connection) throws SQLException {
         if (this == MYSQL) {
             connection.setReadOnly(true);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("SET SESSION TRANSACTION READ ONLY");
+            }
         }
     }
 

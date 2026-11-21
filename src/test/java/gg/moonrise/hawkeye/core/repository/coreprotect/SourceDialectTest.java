@@ -43,6 +43,7 @@ public class SourceDialectTest {
         Properties clickhouse = SourceDialect.CLICKHOUSE.properties(CLICKHOUSE);
         assertEquals("true", clickhouse.getProperty("binary_string_support"));
         assertEquals("true", clickhouse.getProperty("ssl"));
+        assertEquals("LZ4", clickhouse.getProperty("clickhouse_setting_network_compression_method"));
         int mode = Integer.parseInt(SourceDialect.SQLITE.properties(SourceSettings.ofFile(SourceType.SQLITE,
                 Path.of("x.db"))).getProperty("open_mode"));
         assertEquals(1, mode & 1, "SQLITE_OPEN_READONLY");
