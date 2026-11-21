@@ -34,7 +34,8 @@ public final class NetworkService {
     private final @NotNull Clock clock;
 
     /**
-     * Reads every shard's server registry.
+     * Reads every shard's server registry. Import nodes ({@link ServerNode#imported()}) are left out: they
+     * never run.
      *
      * @return the servers and the shards that could not be read
      */
@@ -54,6 +55,9 @@ public final class NetworkService {
         for (Shard shard : storage.shards()) {
             try {
                 for (ServerNode node : store.servers(shard)) {
+                    if (node.imported()) {
+                        continue;
+                    }
                     servers.add(new NetworkServer(shard.name(), node.name(), node.node(), now - node.lastSeen(),
                             now - node.lastSeen() <= offlineAfter));
                 }

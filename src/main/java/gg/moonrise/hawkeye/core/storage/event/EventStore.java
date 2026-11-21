@@ -5,6 +5,7 @@ import gg.moonrise.hawkeye.core.repository.event.EventRepository;
 import gg.moonrise.hawkeye.core.repository.event.EventRow;
 import gg.moonrise.hawkeye.core.sql.Database;
 import gg.moonrise.hawkeye.core.sql.Sql;
+import gg.moonrise.hawkeye.core.sql.SqlWork;
 import gg.moonrise.hawkeye.core.storage.archive.Archive;
 import gg.moonrise.hawkeye.core.storage.shard.Dictionaries;
 import gg.moonrise.hawkeye.core.storage.shard.Shard;
@@ -74,7 +75,7 @@ public final class EventStore {
         }
         Database database = home.database();
         Sql sql = database.sql();
-        List<EventRow> rows = resolve(home, node, scope, events);
+        List<EventRow> rows = resolve(home, node, scope, events, true);
         return database.transaction(connection -> eventRepository.insert(connection, sql, rows));
     }
 
@@ -96,8 +97,40 @@ public final class EventStore {
         if (events.isEmpty()) {
             return 0;
         }
-        List<EventRow> rows = resolve(home, node, scope, events);
+        List<EventRow> rows = resolve(home, node, scope, events, true);
         home.database().transaction(connection -> archive.pack(connection, home, rows, executor));
+        return rows.size();
+    }
+
+    /**
+     * Writes imported history straight into the archive as one segment, like {@link #writeArchived},
+     * with two differences: actors are interned without renaming one the shard already knows (the
+     * source's name of a player may be older than the one this shard has seen), and {@code alongside}
+     * runs on the same connection inside the segment's transaction, after the segment is packed. When
+     * {@code alongside} throws, the segment is rolled back with it, so a checkpoint written there and
+     * the segment always agree.
+     *
+     * @param home      the home shard
+     * @param node      the import node the events belong to
+     * @param scope     the world scope the events are stored under
+     * @param events    the batch, in any order, with distinct stamps
+     * @param executor  where the segment's frames are compressed
+     * @param alongside work committed with the segment (the import checkpoint)
+     * @return the number of events archived
+     * @throws SQLException when interning, writing or {@code alongside} fails
+     */
+    public int writeImported(@NotNull Shard home, @NotNull ServerNode node, @NotNull String scope,
+            @NotNull List<PendingEvent> events, @NotNull Executor executor, @NotNull SqlWork<?> alongside)
+            throws SQLException {
+        if (events.isEmpty()) {
+            home.database().transaction(alongside);
+            return 0;
+        }
+        List<EventRow> rows = resolve(home, node, scope, events, false);
+        home.database().transaction(connection -> {
+            archive.pack(connection, home, rows, executor);
+            return alongside.run(connection);
+        });
         return rows.size();
     }
 
@@ -256,14 +289,19 @@ public final class EventStore {
                 shard.database().sql()));
     }
 
-    /** Interns the batch's dictionary values in auto-commit mode and builds its rows. */
+    /**
+     * Interns the batch's dictionary values in auto-commit mode and builds its rows.
+     *
+     * @param rename whether a known player's stored name follows the batch ({@code false} for imports)
+     */
     private static @NotNull List<EventRow> resolve(@NotNull Shard home, @NotNull ServerNode node,
-            @NotNull String scope, @NotNull List<PendingEvent> events) throws SQLException {
-        return home.database().read(connection -> rows(connection, home, node, scope, events));
+            @NotNull String scope, @NotNull List<PendingEvent> events, boolean rename) throws SQLException {
+        return home.database().read(connection -> rows(connection, home, node, scope, events, rename));
     }
 
     private static @NotNull List<EventRow> rows(@NotNull Connection connection, @NotNull Shard home,
-            @NotNull ServerNode node, @NotNull String scope, @NotNull List<PendingEvent> events) throws SQLException {
+            @NotNull ServerNode node, @NotNull String scope, @NotNull List<PendingEvent> events, boolean rename)
+            throws SQLException {
         Sql sql = home.database().sql();
         Dictionaries dictionaries = home.dictionaries();
         Set<String> worldNames = new HashSet<>();
@@ -280,7 +318,8 @@ public final class EventStore {
             }
         }
         Map<String, Integer> worldIds = dictionaries.internWorlds(connection, sql, scope, worldNames);
-        Map<String, Integer> actorIds = dictionaries.internActors(connection, sql, actors.values());
+        Map<String, Integer> actorIds = rename ? dictionaries.internActors(connection, sql, actors.values())
+                : dictionaries.internActorsKeepingNames(connection, sql, actors.values());
         Map<String, Integer> typeIds = dictionaries.internTypes(connection, sql, types);
         List<EventRow> rows = new ArrayList<>(events.size());
         for (PendingEvent event : events) {
@@ -292,7 +331,7 @@ public final class EventStore {
                     event.subject().isEmpty() ? 0 : require(typeIds, event.subject(), "type"),
                     event.secondary() == null ? 0 : require(typeIds, event.secondary(), "type"),
                     Math.max(0, event.amount()),
-                    0,
+                    event.rolledBack() ? EventRow.ROLLED_BACK : 0,
                     event.data()));
         }
         return rows;

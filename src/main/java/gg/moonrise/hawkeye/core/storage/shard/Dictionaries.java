@@ -21,9 +21,9 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * One shard's dictionary cache. Dictionary rows never change once written (an actor's name is the
- * only exception, and the cache notices a new name and writes it), so entries never need
- * invalidation; a miss reads or interns through the repositories on the caller's connection.
- * Thread-safe.
+ * only exception: the live write path notices a new name and writes it, an import never renames), so
+ * entries never need invalidation; a miss reads or interns through the repositories on the caller's
+ * connection. Thread-safe.
  */
 public final class Dictionaries {
 
@@ -257,6 +257,36 @@ public final class Dictionaries {
                     ids.put(actor.key(), id);
                 }
             }
+        }
+        return ids;
+    }
+
+    /**
+     * Actor ids for an import, interning missing actors but leaving the stored name of a known one alone
+     * ({@link ActorRepository#internKeepingNames}). A cached actor is used whatever name the batch gives
+     * it. Actors that were missing are not cached here: the name the batch gives a player that already
+     * existed is not the stored one, and the read cache must only hold stored names.
+     *
+     * @param connection a connection in auto-commit mode
+     * @param sql        the shard's SQL context
+     * @param actorList  the actors
+     * @return actor key to id, for every actor
+     * @throws SQLException when interning fails
+     */
+    public @NotNull Map<String, Integer> internActorsKeepingNames(@NotNull Connection connection, @NotNull Sql sql,
+            @NotNull Collection<Actor> actorList) throws SQLException {
+        Map<String, Integer> ids = new HashMap<>();
+        List<Actor> missing = new ArrayList<>();
+        for (Actor actor : actorList) {
+            KnownActor known = actorIds.getIfPresent(actor.key());
+            if (known != null) {
+                ids.put(actor.key(), known.id());
+            } else {
+                missing.add(actor);
+            }
+        }
+        if (!missing.isEmpty()) {
+            ids.putAll(actorRepository.internKeepingNames(connection, sql, missing));
         }
         return ids;
     }

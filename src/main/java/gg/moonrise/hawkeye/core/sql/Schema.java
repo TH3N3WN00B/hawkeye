@@ -12,7 +12,7 @@ import org.jetbrains.annotations.NotNull;
 public final class Schema {
 
     /** The schema version this build writes. */
-    public static final int CURRENT = 5;
+    public static final int CURRENT = 6;
 
     private Schema() {
     }
@@ -51,6 +51,11 @@ public final class Schema {
                 case SQLITE -> sqliteV5(tables);
                 case MYSQL -> mysqlV5(tables);
                 case POSTGRESQL -> postgresV5(tables);
+            };
+            case 6 -> switch (dialect) {
+                case SQLITE -> sqliteV6(tables);
+                case MYSQL -> mysqlV6(tables);
+                case POSTGRESQL -> postgresV6(tables);
             };
             default -> throw new IllegalArgumentException("unknown schema version " + version);
         };
@@ -345,5 +350,30 @@ public final class Schema {
                         + "indexed_from BIGINT NOT NULL)",
                 "INSERT INTO " + t.segmentIndex() + " (id, indexed_from) SELECT 1, COALESCE(MAX(id), 0) + 1 FROM "
                         + t.segment() + " ON CONFLICT (id) DO NOTHING");
+    }
+
+    /**
+     * Version 6: {@code import_state}, one checkpoint row per imported source (a CoreProtect database):
+     * the readable state text ({@code util.codec.ImportStateCodec}) and its {@code revision}, which every
+     * update compares and raises in the transaction that writes the imported segment. The source key is
+     * at most 191 characters, the longest utf8mb4 key InnoDB indexes in every row format.
+     */
+    private static @NotNull List<String> sqliteV6(@NotNull Tables t) {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS " + t.importState() + " (source TEXT PRIMARY KEY, "
+                        + "revision INTEGER NOT NULL, state TEXT NOT NULL, updated INTEGER NOT NULL)");
+    }
+
+    private static @NotNull List<String> mysqlV6(@NotNull Tables t) {
+        String options = " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin";
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS " + t.importState() + " (source VARCHAR(191) NOT NULL PRIMARY KEY, "
+                        + "revision BIGINT NOT NULL, state MEDIUMTEXT NOT NULL, updated BIGINT NOT NULL)" + options);
+    }
+
+    private static @NotNull List<String> postgresV6(@NotNull Tables t) {
+        return List.of(
+                "CREATE TABLE IF NOT EXISTS " + t.importState() + " (source VARCHAR(191) COLLATE \"C\" PRIMARY KEY, "
+                        + "revision BIGINT NOT NULL, state TEXT NOT NULL, updated BIGINT NOT NULL)");
     }
 }

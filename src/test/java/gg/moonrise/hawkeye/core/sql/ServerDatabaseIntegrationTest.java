@@ -324,7 +324,7 @@ public class ServerDatabaseIntegrationTest {
         Tables t = database.tables();
         database.read(connection -> {
             try (Statement statement = connection.createStatement()) {
-                for (String table : List.of(t.regionSegment(), t.blockSegment(), t.actorSegment(), t.segmentIndex(), t.legacyPlaceRegion(), t.legacyPlaceChunk(), t.legacyPlaceState(), t.segmentFlag(), t.segment(), t.lease(), t.job(), t.event(), t.type(),
+                for (String table : List.of(t.importState(), t.regionSegment(), t.blockSegment(), t.actorSegment(), t.segmentIndex(), t.legacyPlaceRegion(), t.legacyPlaceChunk(), t.legacyPlaceState(), t.segmentFlag(), t.segment(), t.lease(), t.job(), t.event(), t.type(),
                         t.actor(), t.world(), t.server(), t.schemaVersion())) {
                     statement.execute("DROP TABLE IF EXISTS " + table);
                 }

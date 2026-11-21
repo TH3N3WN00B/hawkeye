@@ -88,6 +88,24 @@ public class NetworkJobServiceTest {
     }
 
     @Test
+    public void anImportNodeIsNeitherShownNorGivenJobs() throws Exception {
+        Shard home = ready.home();
+        home.database().read(connection -> new ServerRepository().registerImport(connection, home.database().sql(),
+                "server-coreprotect", "server"));
+
+        DispatchOutcome outcome = service.dispatch(JobKind.ROLLBACK, query(new ServerScope.Network()), "Alex",
+                (server, result) -> { }).get(10, TimeUnit.SECONDS);
+        assertEquals(new DispatchOutcome.Dispatched(List.of("server", "creative")), outcome);
+        assertEquals(new DispatchOutcome.NoServers(), service.dispatch(JobKind.ROLLBACK,
+                query(new ServerScope.Named(Set.of("server-coreprotect"))), "Alex", (server, result) -> { })
+                .get(10, TimeUnit.SECONDS));
+
+        NetworkService.NetworkView view = TestPlugins.bean(NetworkService.class).view().get(10, TimeUnit.SECONDS);
+        assertEquals(List.of("server", "creative"), view.servers().stream()
+                .map(NetworkService.NetworkServer::name).toList());
+    }
+
+    @Test
     public void anUnknownServerHasNoJob() throws Exception {
         assertEquals(new DispatchOutcome.NoServers(), service.dispatch(JobKind.ROLLBACK,
                 query(new ServerScope.Named(Set.of("nowhere"))), "Alex", (server, result) -> { })

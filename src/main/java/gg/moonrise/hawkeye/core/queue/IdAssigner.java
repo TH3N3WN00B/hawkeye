@@ -104,10 +104,7 @@ public final class IdAssigner {
                 if (rank > maxRank) {
                     break;
                 }
-                PendingEvent event = entry.event();
-                out.add(new PendingEvent(EventIds.slotStamp(slot, rank++), event.world(), event.position(),
-                        event.actor(), event.action(), event.subject(), event.secondary(), event.amount(),
-                        event.data()));
+                out.add(entry.event().withStamp(EventIds.slotStamp(slot, rank++)));
                 numbered++;
             }
             counters.put(slot, rank);
@@ -132,6 +129,16 @@ public final class IdAssigner {
             floor = slot;
             rebase();
         }
+    }
+
+    /**
+     * The current floor: events stamped for an earlier slot are numbered in this one. A caller that
+     * feeds events in time order compares their slots with it to count the events it moves forward.
+     *
+     * @return the smallest slot ranks are issued in
+     */
+    public long floorSlot() {
+        return floor;
     }
 
     /**

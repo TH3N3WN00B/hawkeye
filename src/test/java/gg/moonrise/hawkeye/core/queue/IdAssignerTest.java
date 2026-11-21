@@ -1,6 +1,7 @@
 package gg.moonrise.hawkeye.core.queue;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import gg.moonrise.hawkeye.entity.action.Action;
@@ -55,6 +56,33 @@ public class IdAssignerTest {
 
         assertEquals(new PendingEvent(EventIds.slotStamp(SLOT, 0), event.world(), event.position(), event.actor(),
                 event.action(), event.subject(), event.secondary(), event.amount(), event.data()), taken);
+    }
+
+    @Test
+    public void theRolledBackFlagIsCarried() {
+        IdAssigner assigner = new IdAssigner();
+        PendingEvent imported = new PendingEvent(stamp(SLOT, 3, 0), "world", 42, ACTOR, Action.BLOCK_BREAK,
+                "minecraft:dirt", "minecraft:air", 0, null, true);
+        assigner.add(List.of(imported, placed("live", 1, "world", 43)));
+
+        List<PendingEvent> taken = assigner.take(closedAt(SLOT), false);
+
+        assertEquals(imported.withStamp(EventIds.slotStamp(SLOT, 0)), taken.getFirst());
+        assertTrue(taken.getFirst().rolledBack());
+        assertFalse(taken.get(1).rolledBack());
+    }
+
+    @Test
+    public void theFloorSlotIsReadable() {
+        IdAssigner assigner = new IdAssigner();
+        assertEquals(0, assigner.floorSlot());
+        assigner.floor(SLOT);
+        assertEquals(SLOT, assigner.floorSlot());
+        assigner.floor(SLOT - 5);
+        assertEquals(SLOT, assigner.floorSlot(), "the floor never moves down");
+        assigner.add(List.of(placed("old", 0, "world", 0)));
+        assertEquals(EventIds.slotStamp(SLOT, 0), assigner.take(Long.MAX_VALUE / 2, true).getFirst().stamp(),
+                "an event below the floor is numbered in the floor slot");
     }
 
     @Test
