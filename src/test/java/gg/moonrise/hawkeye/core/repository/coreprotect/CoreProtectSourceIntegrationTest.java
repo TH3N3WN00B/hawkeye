@@ -78,7 +78,11 @@ public class CoreProtectSourceIntegrationTest {
                     driver)) {
                 assertEquals("rowid", source.order());
                 ReaderScenario.verify(source, expected);
+                assertAnchor(source, false);
             }
+            Path empty = folder.resolve("empty.duckdb");
+            Objects.requireNonNull(driver.connect("jdbc:duckdb:" + empty, new Properties())).close();
+            assertNotCoreProtect(SourceSettings.ofFile(SourceType.DUCKDB, empty), driver);
             Path legacy = folder.resolve("legacy.duckdb");
             try (CoreProtectFixture db = CoreProtectFixture.duckdb(legacy, driver, Layout.LEGACY)) {
                 legacyRows(db);
@@ -116,9 +120,14 @@ public class CoreProtectSourceIntegrationTest {
             try (CoreProtectSource source = CoreProtectSource.open(settings, driver)) {
                 assertEquals(engine == SourceType.CLICKHOUSE ? "time" : "rowid", source.order());
                 ReaderScenario.verify(source, expected);
+                assertAnchor(source, engine == SourceType.CLICKHOUSE);
                 if (engine == SourceType.CLICKHOUSE) {
                     assertTimeOrder(db, source);
                 }
+            }
+            assertNotCoreProtect(withPrefix(settings, prefix + "none_"), driver);
+            if (engine == SourceType.CLICKHOUSE) {
+                assertViewsAreTables(db, settings, driver, prefix);
             }
             legacyRows(legacy);
             SourceSettings old = SourceSettings.ofServer(engine, settings.host(), settings.port(), settings.database(),
@@ -133,6 +142,57 @@ public class CoreProtectSourceIntegrationTest {
             db.drop();
             legacy.drop();
         }
+    }
+
+    /**
+     * The scenario's two session rows: a cursor whose row is there with its time is kept; one whose row
+     * has another time is re-anchored (rowid order); one whose row was deleted is kept, since a purge on
+     * these engines keeps row ids. In time order every cursor is kept.
+     */
+    private static void assertAnchor(CoreProtectSource source, boolean timeOrder) throws SQLException {
+        List<SourceRow> sessions = source.read(SourceTable.SESSION, SourceCursor.START, 10);
+        assertEquals(2, sessions.size());
+        SourceCursor first = sessions.getFirst().cursor();
+        SourceCursor last = sessions.getLast().cursor();
+        assertEquals(last, source.anchor(SourceTable.SESSION, last));
+        SourceCursor shifted = new SourceCursor(first.time(), last.rowId());
+        assertEquals(timeOrder ? shifted : first, source.anchor(SourceTable.SESSION, shifted),
+                "the row at the cursor's rowid has another time");
+        SourceCursor deleted = new SourceCursor(last.time(), last.rowId() + 1_000_000);
+        assertEquals(deleted, source.anchor(SourceTable.SESSION, deleted));
+        assertEquals(SourceCursor.START, source.anchor(SourceTable.SESSION, SourceCursor.START));
+    }
+
+    /** A database without CoreProtect's tables is refused when it is opened. */
+    private static void assertNotCoreProtect(SourceSettings settings, Driver driver) {
+        SQLException failure = assertThrows(SQLException.class, () -> CoreProtectSource.open(settings, driver).close());
+        assertTrue(failure.getMessage().startsWith("not a CoreProtect database: no table " + settings.prefix()
+                + "block"), failure.getMessage());
+    }
+
+    /** CoreProtect's ClickHouse tables are views: the catalog finds those as well. */
+    private static void assertViewsAreTables(CoreProtectFixture db, SourceSettings settings, Driver driver,
+            String prefix) throws SQLException {
+        String views = prefix + "v_";
+        try {
+            for (CoreProtectTables.Table table : CoreProtectTables.tables(Layout.CURRENT)) {
+                db.execute("CREATE VIEW `" + views + table.name() + "` AS SELECT * FROM `{prefix}" + table.name()
+                        + "`");
+            }
+            try (CoreProtectSource source = CoreProtectSource.open(withPrefix(settings, views), driver)) {
+                assertEquals(EnumSet.allOf(SourceTable.class), source.tables());
+                assertEquals(ReaderScenario.INSTALLED + ":25.0", source.fingerprint());
+            }
+        } finally {
+            for (CoreProtectTables.Table table : CoreProtectTables.tables(Layout.CURRENT)) {
+                db.execute("DROP VIEW IF EXISTS `" + views + table.name() + "`");
+            }
+        }
+    }
+
+    private static SourceSettings withPrefix(SourceSettings settings, String prefix) {
+        return SourceSettings.ofServer(settings.type(), settings.host(), settings.port(), settings.database(),
+                settings.username(), settings.password(), prefix, settings.tls());
     }
 
     /** ClickHouse reads by (time, rowid): a row with a lower rowid but a later time comes after. */

@@ -274,6 +274,13 @@ update them in the same change when you learn something durable or an entry stop
   `~/.cache/hawkeye-ref/drivers`), `HAWKEYE_TEST_COREPROTECT_CLICKHOUSE=http://default:@127.0.0.1:18123/default`.
   Verified on MariaDB 11.4.5, DuckDB 1.4.5.0 and ClickHouse 26.12.1; the import checkpoint scenario of
   `ServerDatabaseIntegrationTest` on MariaDB 11.4.5 and PostgreSQL 18.6.
+- Table existence from the catalog (verified 2026-11-21 on SQLite, MariaDB 11.4.5, DuckDB 1.4.5.0 and
+  ClickHouse 26.12.1 by the source tests): SQLite `sqlite_master` (`type IN ('table', 'view')`); MariaDB
+  `information_schema.tables WHERE table_schema = DATABASE()`; DuckDB `information_schema.tables WHERE
+  table_catalog = current_database() AND table_schema = 'main'`; ClickHouse `information_schema.tables
+  WHERE table_schema = currentDatabase()`, which lists views too (CoreProtect's ClickHouse tables are
+  views). On SQLite a view over a missing table is listed but fails on `SELECT`, which the import now
+  reports instead of treating the table as absent.
 - A local ClickHouse without Docker: the official single binary
   (`curl -fsSL https://builds.clickhouse.com/master/amd64/clickhouse`) in `~/.cache/hawkeye-ref/clickhouse`,
   started with `./clickhouse server -- --path=$PWD/data/ --tmp_path=$PWD/tmp/ --http_port=18123

@@ -1,5 +1,6 @@
 package gg.moonrise.hawkeye.core.service.importer;
 
+import static gg.moonrise.hawkeye.core.repository.coreprotect.CoreProtectFixture.at;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -10,6 +11,7 @@ import gg.moonrise.hawkeye.core.repository.coreprotect.CoreProtectFixture.Layout
 import gg.moonrise.hawkeye.core.repository.coreprotect.DriverArtifact;
 import gg.moonrise.hawkeye.core.repository.coreprotect.SourceDialect;
 import gg.moonrise.hawkeye.core.repository.coreprotect.SourceDrivers;
+import gg.moonrise.hawkeye.entity.importer.SkipReason;
 import gg.moonrise.hawkeye.entity.importer.SourceSettings;
 import gg.moonrise.hawkeye.entity.importer.SourceType;
 import gg.moonrise.hawkeye.support.TestPlugins;
@@ -80,6 +82,7 @@ public class ImportServiceIntegrationTest {
                         "mysql-database: " + uri.getPath().substring(1), "mysql-username: " + user[0],
                         "mysql-password: '" + user[1] + "'");
                 importAndVerify(config, "mysql " + user[0] + "@" + uri.getHost());
+                horizon(config, db, false);
             } finally {
                 db.drop();
             }
@@ -117,6 +120,7 @@ public class ImportServiceIntegrationTest {
                         "clickhouse-database: " + uri.getPath().substring(1), "clickhouse-username: " + user[0],
                         "clickhouse-password: '" + user[1] + "'", "clickhouse-tls: " + settings.tls());
                 importAndVerify(config, "clickhouse " + user[0] + "@" + uri.getHost());
+                horizon(config, db, true);
             } finally {
                 db.drop();
             }
@@ -136,6 +140,33 @@ public class ImportServiceIntegrationTest {
                 service.start(source.toString(), ImportListener.NONE).get(120, TimeUnit.SECONDS));
         assertEquals(0, again.totals().imported());
         assertEquals(ImportScenario.EVENTS, ImportScenario.all().size());
+    }
+
+    /**
+     * Rows CoreProtect logs after the scenario was imported: one settled, one within the server engine's
+     * settle time and one from a clock far ahead. In rowid order the far one is consumed first and skipped;
+     * in time order it is never consumed, so a row logged later with an earlier time is still imported.
+     */
+    private void horizon(@NotNull Path source, @NotNull CoreProtectFixture db, boolean timeOrder) throws Exception {
+        long now = System.currentTimeMillis() / 1000;
+        db.chat(now + 30L * 24 * 3_600, 1, at(1, 0, 70, 0), "from a clock far ahead");
+        db.chat(now - 600, 1, at(1, 0, 70, 0), "settled");
+        db.chat(now + 60, 1, at(1, 0, 70, 0), "within the settle time");
+
+        ImportOutcome.Finished first = assertInstanceOf(ImportOutcome.Finished.class,
+                service.start(source.toString(), ImportListener.NONE).get(120, TimeUnit.SECONDS));
+        assertEquals(1, first.totals().imported(), "only the settled row");
+        assertEquals(timeOrder ? 0 : 1, first.totals().skipped(SkipReason.BEFORE_EPOCH),
+                "the far row is skipped in rowid order and never read in time order");
+        assertEquals(timeOrder ? 2 : 1, first.totals().rowsRemaining());
+
+        db.chat(now - 300, 1, at(1, 0, 70, 0), "logged late with an earlier time");
+        ImportOutcome.Finished second = assertInstanceOf(ImportOutcome.Finished.class,
+                service.start(source.toString(), ImportListener.NONE).get(120, TimeUnit.SECONDS));
+        assertEquals(timeOrder ? 1 : 0, second.totals().imported(),
+                "time order reads it; rowid order stops at the unsettled row before it");
+        assertEquals(0, second.totals().skippedTotal());
+        assertEquals(ImportScenario.EVENTS + 1 + (timeOrder ? 1 : 0), ImportScenario.all().size());
     }
 
     /** The plugin's driver for an engine, its jar linked or copied from the cache when the cache has it. */
