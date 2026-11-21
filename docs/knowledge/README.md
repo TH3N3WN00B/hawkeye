@@ -262,7 +262,9 @@ update them in the same change when you learn something durable or an entry stop
   (DuckDB about 4 s for 80 MB): both drivers load under Paper's plugin class loader. Not checked: a DuckDB
   or ClickHouse database written by CoreProtect 25 itself (no released build runs on 26.3 yet). On this
   host the two server folders are `~/.cache/hawkeye-ref/coreprotect-gen` (Paper 26.2, CoreProtect) and
-  `~/.cache/hawkeye-ref/import-smoke` (Paper 26.3, Hawkeye); both may be cleared.
+  `~/.cache/hawkeye-ref/import-smoke` (Paper 26.3, Hawkeye); both may be cleared. Re-run after cursor
+  anchoring, the settle horizon and the catalog existence check were added: same 19 events, and the
+  second run anchored nothing (no "renumbered" warning).
 - CoreProtect 24.1 stores the version row as `2.24.1`, a non-player cause as a user with a NULL uuid
   (`#tnt`, `#hopper`, `#kill`), `/kill` as a kill by `#kill`, and a block whose state is the default
   without block data.
