@@ -445,6 +445,15 @@ one `server` row and one `import_state` row per source.
   earlier run) is stored in the floor's second and counted as displaced. When every table is read to
   its end the checkpoint is marked complete; a later run continues from the cursors and imports only
   newer rows.
+- **After a CoreProtect purge.** Before the merge starts, every stored rowid-order cursor is checked
+  (`CoreProtectSource.anchor`): CoreProtect's `/co purge` on SQLite rebuilds every table but `block` with
+  `INSERT ... SELECT`, renumbering its rows from 1 in the same order. When the cursor's row is there with
+  another time, or missing from a SQLite table other than `block`, the table was renumbered and the run
+  continues after `MAX(rowid)` of the rows stamped at or before the cursor's time (a WARN names the table
+  and both rowids). A missing row anywhere else (MySQL, DuckDB, SQLite `block`) was deleted by a purge that
+  keeps row ids, and reading continues after it. So the import continues by time after a purge, exact
+  except for rows of the cursor's own second that were stored out of order. Time-order cursors
+  (ClickHouse) do not depend on row ids alone and are kept.
 - **Cancel and shutdown.** `/hawkeye import cancel` closes the current batch at the next second and
   writes it; shutdown cancels and waits up to 10 s. Progress is published as a snapshot after every
   checkpoint and every 4,096 rows, and sent to the command about every 30 s (with a fresh estimate

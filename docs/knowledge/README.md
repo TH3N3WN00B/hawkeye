@@ -295,6 +295,10 @@ update them in the same change when you learn something durable or an entry stop
   CoreProtect's `enable-ssl` does not check certificates, so the import uses `sslMode=trust`.
 - sqlite-jdbc's read-only `open_mode` is 65 (read-only plus the URI flag); opening a missing file read-only
   fails and creates nothing.
+- CoreProtect's `/co purge` (`command/PurgeCommand.java`, 24.x/25.x) on SQLite copies each table into a
+  new one with `INSERT INTO ... SELECT`; only `block` copies `rowid` as well, so every other table is
+  renumbered from 1 in the same order and an import cursor's rowid then names a later row or none. On
+  MySQL and DuckDB a purge deletes rows in place and row ids are kept. `RowidScan.anchor` handles both.
 - CoreProtect's SQLite event tables have no declared key (the implicit `rowid` is the row id); `user` and
   `entity_spawn` declare `id INTEGER PRIMARY KEY`, an alias of the rowid, so `rowid` works on every table.
   DuckDB's explicit `rowid` column (CoreProtect's, fed by a sequence) is what `rowid` names in SQL there.

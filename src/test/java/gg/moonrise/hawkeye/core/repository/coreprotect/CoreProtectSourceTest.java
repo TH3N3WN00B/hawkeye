@@ -31,6 +31,8 @@ import org.sqlite.JDBC;
 /** Reading CoreProtect's SQLite layout: always runs (the other engines run in the integration test). */
 public class CoreProtectSourceTest {
 
+    private static final long T = ReaderScenario.INSTALLED;
+
     @TempDir
     private Path folder;
 
@@ -112,6 +114,54 @@ public class CoreProtectSourceTest {
         try (CoreProtectSource source = open(file)) {
             assertEquals(List.of(1_767_225_600L, 1_767_225_595L), source.read(SourceTable.SIGN, SourceCursor.START, 10)
                     .stream().map(SourceRow::time).toList());
+        }
+    }
+
+    @Test
+    public void aCursorIsKeptWhileItsRowIdStillMeansTheSameRow() throws SQLException {
+        Path file = folder.resolve("database.db");
+        try (CoreProtectFixture db = CoreProtectFixture.sqlite(file, Layout.CURRENT)) {
+            for (int i = 0; i < 5; i++) {
+                db.chat(T + i, 1, at(1, 0, 0, 0), "a" + i);
+                db.block(T + i, 1, at(1, i, 0, 0), 1, 0, null, 1, 0);
+            }
+            db.execute("DELETE FROM {prefix}block WHERE rowid <= 4");
+        }
+        try (CoreProtectSource source = open(file)) {
+            assertEquals(SourceCursor.START, source.anchor(SourceTable.CHAT, SourceCursor.START));
+            SourceCursor third = new SourceCursor(T + 2, 3);
+            assertEquals(third, source.anchor(SourceTable.CHAT, third), "the row is there with the same time");
+            SourceCursor purged = new SourceCursor(T + 3, 4);
+            assertEquals(purged, source.anchor(SourceTable.BLOCK, purged),
+                    "a purge keeps block's row ids: a deleted cursor row is simply passed");
+        }
+    }
+
+    @Test
+    public void aRenumberedTableIsReanchoredByTime() throws SQLException {
+        Path file = folder.resolve("database.db");
+        try (CoreProtectFixture db = CoreProtectFixture.sqlite(file, Layout.CURRENT)) {
+            for (int i = 0; i < 10; i++) {
+                db.chat(T + i, 1, at(1, 0, 0, 0), "a" + i);
+                db.command(T + i, 1, at(1, 0, 0, 0), "/c" + i);
+            }
+            // What /co purge does on SQLite: the rows from T + 6 on, rebuilt and numbered from 1.
+            renumber(db, "chat", T + 6);
+            renumber(db, "command", T + 6);
+            db.execute("INSERT INTO {prefix}command (time, user, wid, x, y, z, message) VALUES (" + (T + 20)
+                    + ", 1, 1, 0, 0, 0, '/later')");
+        }
+        try (CoreProtectSource source = open(file)) {
+            assertEquals(new SourceCursor(T + 9, 4), source.anchor(SourceTable.CHAT, new SourceCursor(T + 9, 10)),
+                    "the cursor row is gone: after the last row stamped up to its time");
+            assertEquals(new SourceCursor(T + 7, 2), source.anchor(SourceTable.CHAT, new SourceCursor(T + 7, 3)),
+                    "rowid 3 holds another row now");
+            assertEquals(new SourceCursor(T + 3, 0), source.anchor(SourceTable.CHAT, new SourceCursor(T + 3, 4)),
+                    "nothing left at or before the cursor: from the start");
+            assertEquals(new SourceCursor(T + 9, 4), source.anchor(SourceTable.COMMAND,
+                    new SourceCursor(T + 9, 5)), "rowid 5 holds a newer row");
+            assertEquals(List.of(T + 20), source.read(SourceTable.COMMAND, new SourceCursor(T + 9, 4), 10).stream()
+                    .map(SourceRow::time).toList());
         }
     }
 
@@ -237,6 +287,18 @@ public class CoreProtectSourceTest {
                 "ch", 8123, "default", "default", "", "cp_", true).describe());
         assertEquals("sqlite " + folder.resolve("database.db"), SourceSettings.ofFile(SourceType.SQLITE,
                 folder.resolve("database.db")).describe());
+    }
+
+    /**
+     * Rebuilds a table as CoreProtect's SQLite purge does: the rows stamped from {@code keepFrom} on, in
+     * their order, numbered from 1.
+     */
+    private static void renumber(CoreProtectFixture db, String table, long keepFrom) throws SQLException {
+        db.execute("CREATE TABLE {prefix}kept AS SELECT * FROM {prefix}" + table + " WHERE time >= " + keepFrom
+                + " ORDER BY rowid");
+        db.execute("DELETE FROM {prefix}" + table);
+        db.execute("INSERT INTO {prefix}" + table + " SELECT * FROM {prefix}kept ORDER BY rowid");
+        db.execute("DROP TABLE {prefix}kept");
     }
 
     private static void sql(Path file, String... statements) throws SQLException {

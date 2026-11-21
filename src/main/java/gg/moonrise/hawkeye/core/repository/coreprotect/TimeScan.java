@@ -79,6 +79,12 @@ public final class TimeScan implements TableScan {
         }
     }
 
+    /** A time-order cursor does not depend on row ids alone: it is kept as it is. */
+    @Override
+    public @NotNull SourceCursor anchor(@NotNull SourceTable table, @NotNull SourceCursor cursor) {
+        return cursor;
+    }
+
     private @NotNull List<SourceRow> page(@NotNull SourceTable table, @NotNull String sql,
             @NotNull SourceCursor after, int limit) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(sql)) {

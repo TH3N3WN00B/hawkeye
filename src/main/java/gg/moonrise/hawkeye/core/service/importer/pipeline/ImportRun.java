@@ -14,6 +14,7 @@ import gg.moonrise.hawkeye.core.storage.shard.Shard;
 import gg.moonrise.hawkeye.entity.event.PendingEvent;
 import gg.moonrise.hawkeye.entity.importer.CheckpointResult;
 import gg.moonrise.hawkeye.entity.importer.ImportState;
+import gg.moonrise.hawkeye.entity.importer.SourceCursor;
 import gg.moonrise.hawkeye.entity.importer.SourceLocation;
 import gg.moonrise.hawkeye.entity.importer.SourceRow;
 import gg.moonrise.hawkeye.entity.importer.SourceSettings;
@@ -162,6 +163,7 @@ public final class ImportRun {
         String description = source.settings().describe();
         RunTally tally = new RunTally(start);
         Set<SourceTable> tables = source.tables();
+        anchor(source, tables, tally, description);
         RowMapper mapper = new RowMapper(source.names(), blockStates, items, settings.startedMillis());
         SourceMerge merge = new SourceMerge(source::read, tables, tally::cursor, settings.pageRows(),
                 settings.startedMillis() / 1000 + FUTURE_SECONDS);
@@ -195,6 +197,25 @@ public final class ImportRun {
                 return new ImportOutcome.Cancelled(totals);
             }
             report(source, tables, tally, description, resumed);
+        }
+    }
+
+    /**
+     * Checks every stored cursor against the source before reading starts: a table renumbered since the
+     * checkpoint (a SQLite {@code /co purge}) continues by time instead of from a row id that now names
+     * another row.
+     */
+    private static void anchor(@NotNull CoreProtectSource source, @NotNull Set<SourceTable> tables,
+            @NotNull RunTally tally, @NotNull String description) throws SQLException {
+        for (SourceTable table : tables) {
+            SourceCursor stored = tally.cursor(table);
+            SourceCursor anchored = source.anchor(table, stored);
+            if (!anchored.equals(stored)) {
+                log.warn("The {} table of {} was renumbered since the last import (a CoreProtect purge): continuing "
+                                + "by time after rowid {} instead of {}", table.tableName(), description,
+                        anchored.rowId(), stored.rowId());
+                tally.reanchor(table, anchored);
+            }
         }
     }
 

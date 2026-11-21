@@ -124,6 +124,9 @@ All notable changes to this project are documented in this file. The format is b
 - The CoreProtect import tells a missing table from a failed query by the engine's catalog: a table it
   cannot read fails the import instead of being skipped as absent, and a database without CoreProtect's
   `block`, `user` and `world` tables is refused before an import node or checkpoint is created.
+- A CoreProtect import run again after a `/co purge` of a SQLite database no longer misses rows: the
+  purge renumbers every table but `block`, so a stored cursor whose row id now names another row (or none)
+  is re-anchored by time, with a warning in the log.
 
 ### Tests
 

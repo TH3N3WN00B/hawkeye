@@ -19,6 +19,11 @@ import org.jetbrains.annotations.NotNull;
  * same however far the table has been read. An empty window (rows deleted by a purge) is jumped with
  * {@code SELECT MIN(rowid) ... WHERE rowid > ?}. The remaining count is {@code MAX(rowid)} minus the
  * cursor: never a full count.
+ *
+ * <p>A stored cursor is checked before a run continues from it ({@link #anchor}): CoreProtect's
+ * {@code /co purge} on SQLite rebuilds every table but {@code block} with {@code INSERT ... SELECT},
+ * renumbering its rows from 1 in the same order, so an old rowid then names a later row or none. Such a
+ * cursor is re-anchored by time: to the last row stamped at or before the cursor's time.
  */
 public final class RowidScan implements TableScan {
 
@@ -72,6 +77,30 @@ public final class RowidScan implements TableScan {
         }
     }
 
+    /**
+     * Keeps the cursor while its row is still there with the same time. Its row with another time means
+     * the table was renumbered, as does a missing row on SQLite for any table but {@code block}; a missing
+     * row anywhere else was deleted by a purge that keeps row ids, and reading simply continues after it.
+     * A renumbered table continues after the last row stamped at or before the cursor's time.
+     */
+    @Override
+    public @NotNull SourceCursor anchor(@NotNull SourceTable table, @NotNull SourceCursor cursor)
+            throws SQLException {
+        if (cursor.equals(SourceCursor.START)) {
+            return cursor;
+        }
+        String name = schema.table(table.tableName());
+        String time = schema.dialect().quote("time");
+        OptionalLong stored = single("SELECT " + time + " FROM " + name + " WHERE rowid = ?", cursor.rowId());
+        boolean renumbered = stored.isPresent() ? stored.getAsLong() != cursor.time()
+                : schema.dialect() == SourceDialect.SQLITE && table != SourceTable.BLOCK;
+        if (!renumbered) {
+            return cursor;
+        }
+        OptionalLong last = single("SELECT MAX(rowid) FROM " + name + " WHERE " + time + " <= ?", cursor.time());
+        return new SourceCursor(cursor.time(), last.orElse(0));
+    }
+
     private @NotNull List<SourceRow> window(@NotNull SourceTable table, @NotNull String sql, long from, long to)
             throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
@@ -88,15 +117,19 @@ public final class RowidScan implements TableScan {
     }
 
     private @NotNull OptionalLong next(@NotNull String table, long after) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("SELECT MIN(rowid) FROM " + table
-                + " WHERE rowid > ?")) {
-            statement.setLong(1, after);
+        return single("SELECT MIN(rowid) FROM " + table + " WHERE rowid > ?", after);
+    }
+
+    /** The first column of the first row of a query with one parameter; empty without a row or for NULL. */
+    private @NotNull OptionalLong single(@NotNull String sql, long parameter) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, parameter);
             try (ResultSet rows = statement.executeQuery()) {
                 if (!rows.next()) {
                     return OptionalLong.empty();
                 }
-                long next = rows.getLong(1);
-                return rows.wasNull() ? OptionalLong.empty() : OptionalLong.of(next);
+                long value = rows.getLong(1);
+                return rows.wasNull() ? OptionalLong.empty() : OptionalLong.of(value);
             }
         }
     }

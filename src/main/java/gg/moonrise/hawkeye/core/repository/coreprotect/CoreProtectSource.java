@@ -210,6 +210,25 @@ public final class CoreProtectSource implements AutoCloseable {
         return scan.remaining(table, after);
     }
 
+    /**
+     * Checks a cursor stored by an earlier run against the table as it is now. A time-order cursor and the
+     * start are kept. In rowid order the cursor is kept while its row is still there with the same time,
+     * or is missing because a purge deleted it (MySQL, DuckDB and SQLite's {@code block} keep row ids). Its
+     * row with another time, or a missing row in any other SQLite table, means the table was renumbered (a
+     * SQLite {@code /co purge} rebuilds every table but {@code block}); reading then continues after the
+     * last row stamped at or before the cursor's time.
+     *
+     * @param table  a table from {@link #tables()}
+     * @param cursor the stored cursor
+     * @return the cursor, or the re-anchored one: {@code (cursor.time, MAX(rowid) of the rows stamped at
+     *         or before it, or 0)}
+     * @throws SQLException when reading fails
+     */
+    public @NotNull SourceCursor anchor(@NotNull SourceTable table, @NotNull SourceCursor cursor)
+            throws SQLException {
+        return scan.anchor(table, cursor);
+    }
+
     @Override
     public void close() {
         try {

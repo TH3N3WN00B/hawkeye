@@ -31,4 +31,15 @@ public interface TableScan {
      * @throws SQLException when reading fails
      */
     long remaining(@NotNull SourceTable table, @NotNull SourceCursor after) throws SQLException;
+
+    /**
+     * A stored cursor, checked against the table as it is now: the same cursor while its row ids still
+     * mean what they meant, or one re-anchored by time when the table was renumbered.
+     *
+     * @param table  the table
+     * @param cursor the cursor of an earlier run
+     * @return where reading continues
+     * @throws SQLException when reading fails
+     */
+    @NotNull SourceCursor anchor(@NotNull SourceTable table, @NotNull SourceCursor cursor) throws SQLException;
 }

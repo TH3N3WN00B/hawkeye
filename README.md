@@ -213,7 +213,9 @@ how it goes about every 30 seconds; `/he import status` shows the same at any ti
   server can import while CoreProtect still runs and catch up after removing it: run the command once
   more and only the new rows are imported. No row is ever imported twice: each batch is written in
   one transaction with its checkpoint, and a second server importing the same database at the same
-  time is stopped.
+  time is stopped. After a CoreProtect `/co purge` (which renumbers the rows of a SQLite database) the
+  next run continues by time, exact except for rows of the second it stopped at that CoreProtect stored
+  out of order; the server log names each table this applied to.
 - **Import before or instead of logging side by side.** The import copies everything CoreProtect
   logged. If Hawkeye was already logging on the same server for part of that time, that period is
   then stored twice, once from each plugin, and a rollback of it would undo container changes twice.

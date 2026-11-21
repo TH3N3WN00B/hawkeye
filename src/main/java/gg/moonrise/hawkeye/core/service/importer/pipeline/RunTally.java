@@ -46,6 +46,17 @@ public final class RunTally {
     }
 
     /**
+     * Moves a table's cursor without consuming a row: the source was renumbered since the checkpoint
+     * ({@code CoreProtectSource#anchor}).
+     *
+     * @param table  the table
+     * @param cursor where it continues now
+     */
+    public void reanchor(@NotNull SourceTable table, @NotNull SourceCursor cursor) {
+        cursors.put(table, cursor);
+    }
+
+    /**
      * Counts a skipped row.
      *
      * @param reason why

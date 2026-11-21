@@ -234,6 +234,69 @@ public class ImportServiceTest {
     }
 
     @Test
+    public void aSqlitePurgeThatRenumberedATableLosesNoRows() throws Exception {
+        Path file = folder.resolve("cp").resolve("database.db");
+        Files.createDirectories(file.getParent());
+        try (CoreProtectFixture db = CoreProtectFixture.sqlite(file, Layout.CURRENT)) {
+            int world = minimal(db);
+            for (int i = 0; i < 10; i++) {
+                db.chat(ImportScenario.T + 10 + i, 1, at(world, 0, 64, 0), "old " + i);
+            }
+            assertEquals(10, assertInstanceOf(ImportOutcome.Finished.class, run(file.toString(),
+                    ImportListener.NONE)).totals().imported());
+
+            // /co purge on SQLite: chat rebuilt with its 7 newest rows, numbered 1 to 7; then 5 new rows (8 to
+            // 12), so the stored cursor's rowid 10 now names a new row.
+            db.execute("CREATE TABLE kept AS SELECT * FROM co_chat WHERE time >= " + (ImportScenario.T + 13)
+                    + " ORDER BY rowid");
+            db.execute("DELETE FROM co_chat");
+            db.execute("INSERT INTO co_chat SELECT * FROM kept ORDER BY rowid");
+            db.execute("DROP TABLE kept");
+            for (int i = 0; i < 5; i++) {
+                db.execute("INSERT INTO co_chat (time, user, wid, x, y, z, message) VALUES ("
+                        + (ImportScenario.T + 30 + i) + ", 1, " + world + ", 0, 64, 0, 'new " + i + "')");
+            }
+
+            ImportOutcome.Finished after = assertInstanceOf(ImportOutcome.Finished.class, run(file.toString(),
+                    ImportListener.NONE));
+            assertEquals(5, after.totals().rowsRead(), "exactly the new rows");
+            assertEquals(5, after.totals().imported());
+            assertEquals(0, after.totals().displaced());
+        }
+        List<StoredEvent> events = ImportScenario.of(NODE);
+        assertEquals(15, events.size());
+        assertEquals(15, events.stream().map(StoredEvent::epochMillis).distinct().count(), "none twice");
+    }
+
+    @Test
+    public void aPurgedBlockTableKeepsItsRowIdsAndContinuesFromItsCursor() throws Exception {
+        Path file = folder.resolve("cp").resolve("database.db");
+        Files.createDirectories(file.getParent());
+        try (CoreProtectFixture db = CoreProtectFixture.sqlite(file, Layout.CURRENT)) {
+            int world = minimal(db);
+            int stone = db.material("minecraft:stone");
+            for (int i = 0; i < 10; i++) {
+                // Row 8 was logged late, stamped after every other row.
+                long time = ImportScenario.T + (i == 7 ? 25 : 10 + i);
+                db.block(time, 1, at(world, i, 64, 0), stone, 0, null, 1, 0);
+            }
+            assertEquals(10, assertInstanceOf(ImportOutcome.Finished.class, run(file.toString(),
+                    ImportListener.NONE)).totals().imported());
+
+            // /co purge keeps block's rowids: everything before T + 20 goes, the cursor row 10 with it.
+            db.execute("DELETE FROM co_block WHERE time < " + (ImportScenario.T + 20));
+            db.block(ImportScenario.T + 30, 1, at(world, 20, 64, 0), stone, 0, null, 1, 0);
+            db.block(ImportScenario.T + 31, 1, at(world, 21, 64, 0), stone, 0, null, 1, 0);
+
+            ImportOutcome.Finished after = assertInstanceOf(ImportOutcome.Finished.class, run(file.toString(),
+                    ImportListener.NONE));
+            assertEquals(2, after.totals().rowsRead(), "row 8 is not read again");
+            assertEquals(2, after.totals().imported());
+        }
+        assertEquals(12, ImportScenario.of(NODE).size());
+    }
+
+    @Test
     public void aCancelledImportResumesToTheSameEvents() throws Exception {
         Path whole = busy("whole", "25.0");
         Path parts = busy("parts", "25.1");
@@ -410,6 +473,13 @@ public class ImportServiceTest {
             }
         }
         return file;
+    }
+
+    /** The install row, Alex as user 1 and the world; returns the world's id. */
+    private static int minimal(@NotNull CoreProtectFixture db) throws SQLException {
+        db.version(ImportScenario.T, "25.0");
+        db.user("Alex", ImportScenario.ALEX.toString());
+        return db.world("world");
     }
 
     private @NotNull ImportOutcome run(@Nullable String source, @NotNull ImportListener listener) throws Exception {
