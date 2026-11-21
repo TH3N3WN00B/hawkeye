@@ -185,8 +185,9 @@ public final class ImportService {
         ImportOutcome outcome;
         try {
             outcome = run.call();
-        } catch (RuntimeException | LinkageError e) {
-            log.warn("The CoreProtect import failed", e);
+        } catch (Throwable e) {
+            // Anything, an Error included: the outcome must complete and the next import must be able to start.
+            log.error("The CoreProtect import failed", e);
             outcome = new ImportOutcome.Failed(Objects.requireNonNullElse(e.getMessage(),
                     e.getClass().getSimpleName()));
         }

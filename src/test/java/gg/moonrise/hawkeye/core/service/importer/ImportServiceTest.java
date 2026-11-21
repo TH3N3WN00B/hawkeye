@@ -26,6 +26,7 @@ import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import gg.moonrise.hawkeye.util.BlockPositions;
 import gg.moonrise.hawkeye.util.EventIds;
+import java.io.Serial;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -286,6 +287,32 @@ public class ImportServiceTest {
     }
 
     @Test
+    public void anErrorOnTheImportThreadEndsTheRunAsFailed() throws Exception {
+        Path source = scenario("cp", "25.0");
+
+        // The listener's Error is not caught on its way up (ImportRun only catches exceptions), so it reaches
+        // the service's own guard as an Error would from anywhere in the run.
+        ImportOutcome.Failed failed = assertInstanceOf(ImportOutcome.Failed.class, run(source.toString(),
+                new ImportListener() {
+                    @Override
+                    public void started(@NotNull ImportProgress progress) {
+                        throw new Failure();
+                    }
+                }));
+
+        assertEquals("Failure", failed.reason());
+        assertFalse(service.running());
+        assertTrue(service.progress().isEmpty());
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (importThreads() > 0 && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
+        }
+        assertEquals(0, importThreads(), "both executors are shut down");
+        assertInstanceOf(ImportOutcome.Finished.class, run(source.toString(), ImportListener.NONE),
+                "the next import starts");
+    }
+
+    @Test
     public void duckDbIsRefusedWhileCoreProtectRuns() throws Exception {
         Path file = Files.createFile(folder.resolve("database.duckdb"));
         MockBukkit.createMockPlugin("CoreProtect");
@@ -368,6 +395,19 @@ public class ImportServiceTest {
 
     private static @NotNull String withoutNode(@NotNull StoredEvent event) {
         return EventIds.slot(event.id()) + "/" + EventIds.rank(event.id()) + " " + ImportScenario.describe(event);
+    }
+
+    private static long importThreads() {
+        return Thread.getAllStackTraces().keySet().stream()
+                .filter(thread -> thread.isAlive() && thread.getName().startsWith("Hawkeye-Import"))
+                .count();
+    }
+
+    /** An error such as running out of memory on the import thread. */
+    private static final class Failure extends Error {
+
+        @Serial
+        private static final long serialVersionUID = 1L;
     }
 
 }
