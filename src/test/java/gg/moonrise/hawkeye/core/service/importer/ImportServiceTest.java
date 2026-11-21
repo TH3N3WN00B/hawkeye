@@ -1,0 +1,326 @@
+package gg.moonrise.hawkeye.core.service.importer;
+
+import static gg.moonrise.hawkeye.core.repository.coreprotect.CoreProtectFixture.at;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import gg.moonrise.hawkeye.core.repository.coreprotect.CoreProtectFixture;
+import gg.moonrise.hawkeye.core.repository.coreprotect.CoreProtectFixture.Layout;
+import gg.moonrise.hawkeye.core.service.network.NetworkService;
+import gg.moonrise.hawkeye.core.storage.event.EventStore;
+import gg.moonrise.hawkeye.core.storage.importer.ImportStore;
+import gg.moonrise.hawkeye.core.storage.shard.StorageManager;
+import gg.moonrise.hawkeye.core.storage.shard.StorageState;
+import gg.moonrise.hawkeye.entity.action.Action;
+import gg.moonrise.hawkeye.entity.actor.Actor;
+import gg.moonrise.hawkeye.entity.event.PendingEvent;
+import gg.moonrise.hawkeye.entity.event.StoredEvent;
+import gg.moonrise.hawkeye.entity.importer.ImportState;
+import gg.moonrise.hawkeye.entity.query.Area;
+import gg.moonrise.hawkeye.entity.query.LookupQuery;
+import gg.moonrise.hawkeye.entity.query.ShardScope;
+import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
+import gg.moonrise.hawkeye.support.TestPlugins;
+import gg.moonrise.hawkeye.util.BlockPositions;
+import gg.moonrise.hawkeye.util.EventIds;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.mockbukkit.mockbukkit.MockBukkit;
+
+/** The import end to end: a SQLite CoreProtect database into the plugin's own SQLite storage, on MockBukkit. */
+public class ImportServiceTest {
+
+    private static final String NODE = "server-coreprotect";
+
+    @TempDir
+    private Path folder;
+
+    private TestHawkeyePlugin plugin;
+    private ImportService service;
+    private StorageState.Ready ready;
+
+    @BeforeEach
+    public void setUp() {
+        MockBukkit.mock();
+        plugin = TestPlugins.load();
+        ready = TestPlugins.awaitStorage();
+        service = TestPlugins.bean(ImportService.class);
+        service.tune(0, ImportService.PROGRESS_INTERVAL.toMillis());
+    }
+
+    @AfterEach
+    public void tearDown() {
+        MockBukkit.unmock();
+    }
+
+    @Test
+    public void everyRowKindIsImportedIntoItsOwnNode() throws Exception {
+        Path source = scenario("cp", "25.0");
+        List<ImportProgress> started = new ArrayList<>();
+
+        ImportOutcome outcome = run(source.toString(), new ImportListener() {
+            @Override
+            public void started(@NotNull ImportProgress progress) {
+                started.add(progress);
+            }
+        });
+
+        ImportOutcome.Finished finished = assertInstanceOf(ImportOutcome.Finished.class, outcome);
+        assertEquals(ImportScenario.EVENTS, finished.totals().imported());
+        assertEquals(ImportScenario.EVENTS, finished.totals().importedTotal());
+        assertEquals(ImportScenario.SKIPPED, ImportScenario.skipped(finished.totals()));
+        assertEquals(21, finished.totals().rowsRead());
+        assertEquals(100, finished.totals().percent());
+        assertEquals(1, started.size());
+        assertFalse(started.getFirst().resumed());
+        assertTrue(started.getFirst().source().startsWith("sqlite "), started.getFirst().source());
+
+        ImportScenario.verify(ImportScenario.of(NODE));
+        assertEquals(ImportScenario.EVENTS, ImportScenario.all().size(), "nothing else was written");
+
+        ImportState state = TestPlugins.bean(ImportStore.class).load(ready.home(), "coreprotect:server:"
+                + (ImportScenario.T - 100) + ":25.0").orElseThrow();
+        assertTrue(state.complete());
+        assertEquals(ImportScenario.EVENTS, state.imported());
+        assertEquals(ImportScenario.SKIPPED, state.skipped().entrySet().stream().filter(entry -> entry.getValue() > 0)
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+    }
+
+    @Test
+    public void importedEventsAreFoundByOrdinaryLookups() throws Exception {
+        run(scenario("cp", "25.0").toString(), ImportListener.NONE);
+
+        List<StoredEvent> atSign = TestPlugins.bean(EventStore.class).find(ready.home(),
+                LookupQuery.at(new Area.Block("world", ImportScenario.SIGN_X, 64, 7)), new ShardScope.Scopes(
+                        Set.of(TestPlugins.bean(StorageManager.class).worldScope())), 0, 10, true);
+        assertEquals(List.of(Action.BLOCK_BREAK, Action.SIGN_EDIT, Action.BLOCK_PLACE),
+                atSign.stream().map(StoredEvent::action).toList());
+        long shears = TestPlugins.bean(EventStore.class).count(ready.home(), LookupQuery.at(new Area.Everywhere())
+                .withActions(Set.of(Action.ENTITY_SHEAR)), new ShardScope.All());
+        assertEquals(1, shears);
+    }
+
+    @Test
+    public void existingEventsAndNamesAreLeftAlone() throws Exception {
+        Actor renamed = Actor.player(ImportScenario.ALEX, "Alexander");
+        List<PendingEvent> live = new ArrayList<>();
+        for (int i = 1; i <= 5; i++) {
+            live.add(new PendingEvent(EventIds.stamp((ImportScenario.T + i) * 1000L, 0), "world",
+                    BlockPositions.pack(1, 64, 1), renamed, Action.BLOCK_BREAK, "minecraft:dirt", "minecraft:air", 0,
+                    new byte[] {(byte) i}));
+        }
+        TestPlugins.bean(EventStore.class).write(ready.home(), ready.node(),
+                TestPlugins.bean(StorageManager.class).worldScope(), live);
+        Map<Long, String> before = described(ImportScenario.all());
+
+        assertInstanceOf(ImportOutcome.Finished.class, run(scenario("cp", "25.0").toString(), ImportListener.NONE));
+
+        List<StoredEvent> after = ImportScenario.all();
+        assertEquals(5 + ImportScenario.EVENTS, after.size());
+        Map<Long, String> kept = described(after.stream().filter(event -> before.containsKey(event.id())).toList());
+        assertEquals(before, kept, "the live events are untouched");
+        assertTrue(after.stream().filter(event -> event.actor().uuid().isPresent())
+                .allMatch(event -> event.actor().name().equals("Alexander")), "the newer name is kept");
+        assertEquals(ImportScenario.EVENTS, ImportScenario.of(NODE).size());
+    }
+
+    @Test
+    public void aSecondRunImportsOnlyNewRows() throws Exception {
+        Path file = folder.resolve("cp").resolve("database.db");
+        Files.createDirectories(file.getParent());
+        try (CoreProtectFixture db = CoreProtectFixture.sqlite(file, Layout.CURRENT)) {
+            ImportScenario.populate(db, "25.0");
+            assertInstanceOf(ImportOutcome.Finished.class, run(file.toString(), ImportListener.NONE));
+
+            ImportOutcome.Finished again = assertInstanceOf(ImportOutcome.Finished.class,
+                    run(file.toString(), ImportListener.NONE));
+            assertEquals(0, again.totals().imported());
+            assertEquals(0, again.totals().rowsRead());
+            assertEquals(ImportScenario.EVENTS, again.totals().importedTotal());
+            assertEquals(ImportScenario.EVENTS, ImportScenario.of(NODE).size());
+
+            db.chat(ImportScenario.T + 100, 1, at(1, 0, 70, 0), "later");
+            db.session(ImportScenario.T + 101, 1, at(1, 0, 70, 0), 0);
+            List<ImportProgress> started = new ArrayList<>();
+            ImportOutcome.Finished caughtUp = assertInstanceOf(ImportOutcome.Finished.class, run(file.toString(),
+                    new ImportListener() {
+                        @Override
+                        public void started(@NotNull ImportProgress progress) {
+                            started.add(progress);
+                        }
+                    }));
+            assertTrue(started.getFirst().resumed());
+            assertEquals(2, caughtUp.totals().imported());
+            assertEquals(2, caughtUp.totals().rowsRead());
+            assertEquals(ImportScenario.EVENTS + 2, caughtUp.totals().importedTotal());
+        }
+        List<StoredEvent> events = ImportScenario.of(NODE);
+        assertEquals(ImportScenario.EVENTS + 2, events.size());
+        assertEquals(List.of(Action.CHAT, Action.QUIT), events.subList(events.size() - 2, events.size()).stream()
+                .map(StoredEvent::action).toList());
+        assertEquals(events.size(), events.stream().map(StoredEvent::id).distinct().count());
+    }
+
+    @Test
+    public void aCancelledImportResumesToTheSameEvents() throws Exception {
+        Path whole = busy("whole", "25.0");
+        Path parts = busy("parts", "25.1");
+        service.tune(20, 0);
+
+        ImportOutcome.Finished uninterrupted = assertInstanceOf(ImportOutcome.Finished.class,
+                run(whole.toString(), ImportListener.NONE));
+        AtomicInteger reports = new AtomicInteger();
+        ImportOutcome.Cancelled cancelled = assertInstanceOf(ImportOutcome.Cancelled.class, run(parts.toString(),
+                new ImportListener() {
+                    @Override
+                    public void progress(@NotNull ImportProgress progress) {
+                        reports.incrementAndGet();
+                        assertTrue(service.cancel());
+                    }
+                }));
+        assertEquals(1, reports.get());
+        assertTrue(cancelled.totals().imported() > 0 && cancelled.totals().imported() < 300,
+                cancelled.totals().toString());
+        ImportOutcome.Finished resumed = assertInstanceOf(ImportOutcome.Finished.class,
+                run(parts.toString(), ImportListener.NONE));
+
+        assertEquals(300, uninterrupted.totals().imported());
+        assertEquals(300, cancelled.totals().imported() + resumed.totals().imported());
+        assertEquals(300, resumed.totals().importedTotal());
+        assertEquals(cancelled.totals().rowsRead() + resumed.totals().rowsRead(), uninterrupted.totals().rowsRead());
+        List<String> first = ImportScenario.of(NODE).stream().map(ImportServiceTest::withoutNode).toList();
+        List<String> second = ImportScenario.of(NODE + "-2").stream().map(ImportServiceTest::withoutNode).toList();
+        assertEquals(300, first.size());
+        assertEquals(first, second);
+    }
+
+    @Test
+    public void aSecondImportIsRefusedWhileOneRuns() throws Exception {
+        Path source = scenario("cp", "25.0");
+        CountDownLatch hold = new CountDownLatch(1);
+        CompletableFuture<ImportOutcome> first = service.start(source.toString(), new ImportListener() {
+            @Override
+            public void started(@NotNull ImportProgress progress) {
+                try {
+                    hold.await(20, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        });
+        try {
+            assertTrue(service.running());
+            assertEquals(new ImportOutcome.AlreadyRunning(), service.start(source.toString(), ImportListener.NONE)
+                    .get(5, TimeUnit.SECONDS));
+        } finally {
+            hold.countDown();
+        }
+        assertInstanceOf(ImportOutcome.Finished.class, first.get(20, TimeUnit.SECONDS));
+        assertFalse(service.running());
+        assertTrue(service.progress().isEmpty());
+        assertFalse(service.cancel());
+    }
+
+    @Test
+    public void duckDbIsRefusedWhileCoreProtectRuns() throws Exception {
+        Path file = Files.createFile(folder.resolve("database.duckdb"));
+        MockBukkit.createMockPlugin("CoreProtect");
+
+        assertEquals(new ImportOutcome.CoreProtectRunning(), run(file.toString(), ImportListener.NONE));
+    }
+
+    @Test
+    public void missingAndInvalidSourcesAreReported() throws Exception {
+        Path nowhere = folder.resolve("nowhere");
+        assertEquals(new ImportOutcome.SourceMissing(nowhere.toString()), run(nowhere.toString(),
+                ImportListener.NONE));
+        Path plugins = plugin.getDataPath().toAbsolutePath().getParent();
+        assertEquals(new ImportOutcome.SourceMissing(plugins.resolve("CoreProtect").toString()),
+                run(null, ImportListener.NONE));
+
+        Path config = folder.resolve("config.yml");
+        Files.writeString(config, "database-type: oracle\n");
+        ImportOutcome.SourceInvalid invalid = assertInstanceOf(ImportOutcome.SourceInvalid.class,
+                run(config.toString(), ImportListener.NONE));
+        assertTrue(invalid.reason().contains("oracle"), invalid.reason());
+    }
+
+    @Test
+    public void aMigratingSourceIsRefused() throws Exception {
+        Path file = folder.resolve("database.db");
+        try (CoreProtectFixture db = CoreProtectFixture.sqlite(file, Layout.CURRENT)) {
+            ImportScenario.populate(db, "25.0");
+            db.lockStatus(2);
+        }
+        assertEquals(new ImportOutcome.SourceMigrating(), run(file.toString(), ImportListener.NONE));
+        assertTrue(ImportScenario.all().isEmpty());
+    }
+
+    @Test
+    public void theImportNodeIsHiddenFromTheNetworkView() throws Exception {
+        run(scenario("cp", "25.0").toString(), ImportListener.NONE);
+
+        List<String> servers = TestPlugins.bean(NetworkService.class).view().get(20, TimeUnit.SECONDS).servers()
+                .stream().map(NetworkService.NetworkServer::name).toList();
+        assertEquals(List.of(ready.node().name()), servers);
+        assertTrue(ImportScenario.all().stream().allMatch(event -> event.server().equals(NODE)));
+    }
+
+    /** A folder holding the scenario as {@code database.db}. */
+    private @NotNull Path scenario(@NotNull String name, @NotNull String version) throws Exception {
+        Path dir = Files.createDirectories(folder.resolve(name));
+        try (CoreProtectFixture db = CoreProtectFixture.sqlite(dir.resolve("database.db"), Layout.CURRENT)) {
+            ImportScenario.populate(db, version);
+        }
+        return dir;
+    }
+
+    /** 300 rows in 100 seconds, three tables, three rows a second, in time order. */
+    private @NotNull Path busy(@NotNull String name, @NotNull String version) throws Exception {
+        Path file = Files.createDirectories(folder.resolve(name)).resolve("database.db");
+        try (CoreProtectFixture db = CoreProtectFixture.sqlite(file, Layout.CURRENT)) {
+            db.version(ImportScenario.T, version);
+            int alex = db.user("Alex", ImportScenario.ALEX.toString());
+            int world = db.world("world");
+            int stone = db.material("minecraft:stone");
+            for (int second = 0; second < 100; second++) {
+                long time = ImportScenario.T + 10 + second;
+                db.block(time, alex, at(world, second, 64, 0), stone, 0, null, second % 2, 0);
+                db.chat(time, alex, at(world, 0, 64, 0), "line " + second);
+                db.block(time, alex, at(world, 0, 64, second), stone, 0, null, 1, 0);
+            }
+        }
+        return file;
+    }
+
+    private @NotNull ImportOutcome run(@Nullable String source, @NotNull ImportListener listener) throws Exception {
+        return service.start(source, listener).get(30, TimeUnit.SECONDS);
+    }
+
+    private static @NotNull Map<Long, String> described(@NotNull List<StoredEvent> events) {
+        return events.stream().collect(Collectors.toMap(StoredEvent::id, event -> event.server() + " "
+                + ImportScenario.describe(event)));
+    }
+
+    private static @NotNull String withoutNode(@NotNull StoredEvent event) {
+        return EventIds.slot(event.id()) + "/" + EventIds.rank(event.id()) + " " + ImportScenario.describe(event);
+    }
+
+}

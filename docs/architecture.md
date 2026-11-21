@@ -400,6 +400,45 @@ one `server` row and one `import_state` row per source.
   (`core.storage.importer.ImportStore`); when no row matches, another run moved the checkpoint and the
   segment rolls back with it. A crash, a cancel or a restart resumes from the last commit and imports
   nothing twice.
+- **The run** (`core.service.importer`: `ImportService`, the run in `run`, the row mapping in
+  `mapping`). One import runs per server, on its own `Hawkeye-Import` thread. It locates and opens the
+  source, refuses a DuckDB file while a plugin named CoreProtect is enabled (one process cannot open a
+  DuckDB file twice) and a source whose CoreProtect migration is incomplete, takes the checkpoint
+  (`ImportStore.begin`) and refuses one taken in another scan order (the database moved to or from
+  ClickHouse).
+- **Merge order.** `SourceMerge` reads every event table in pages of 4,096 rows from its cursor, in the
+  table's own scan order, and always consumes the row with the smallest `time` among the tables' next
+  rows, ties in `SourceTable` order (block, sign, container, entity container, item, entity
+  interaction, chat, command, session). Rows are therefore only as time-ordered as each table is;
+  the assigner absorbs small disorder.
+- **Mapping.** `RowMapper` turns each row into one event stamped at its second, or a skip counted by
+  reason (older than 2025-01-01 or later than the start of the run, no equivalent action, folded into
+  another event, unknown world/material/entity/position). When a row names an id missing from its
+  snapshot of the source's dictionaries, the snapshot is re-read, at most once per batch. Block states
+  are rebuilt from `blockdata_map` tokens and normalised through `Bukkit.createBlockData` (cached), so
+  imported and captured events share `type` rows. Sign rows carry no material: the mapper remembers
+  each sign block's state per position, folds the "before" snapshot into the next edit and a broken
+  sign's text into its block break. Item blobs are read with `BukkitObjectInputStream` behind an
+  `ObjectInputFilter` that allows only `java.lang`, `java.util`, Guava collections and `org.bukkit`
+  classes, at most 4 MB; one that does not decode leaves the event without a payload.
+- **Batching.** Mapped events collect into a batch that closes when it holds `archive.segment-events`
+  events, when a million rows were consumed without filling one, when every table is read to its end,
+  or on cancel. Except at the end it closes only between two seconds of the source (it never splits a
+  second; a batch twice the size closes regardless), so a cancelled and resumed import numbers every
+  event exactly as an uninterrupted one.
+- **Checkpoint and resume floor.** Closing a batch adds it to the run's private `IdAssigner` and takes
+  it whole, then writes the segment and the next checkpoint (per table the last row consumed, the
+  newest slot written, the counters) in one transaction; a batch that mapped to no event writes the
+  checkpoint alone. A resumed run raises the assigner's floor to the slot after the newest one
+  written, so no id is issued twice. An event older than the floor (a row out of order by more than
+  the assigner's 120 retained seconds, or one that arrives after its second was written by an
+  earlier run) is stored in the floor's second and counted as displaced. When every table is read to
+  its end the checkpoint is marked complete; a later run continues from the cursors and imports only
+  newer rows.
+- **Cancel and shutdown.** `/hawkeye import cancel` closes the current batch at the next second and
+  writes it; shutdown cancels and waits up to 10 s. Progress is published as a snapshot after every
+  checkpoint and every 4,096 rows, and sent to the command about every 30 s (with a fresh estimate
+  of the rows left, from `CoreProtectSource.remaining`).
 
 ## Threading
 
@@ -410,6 +449,7 @@ one `server` row and one `import_state` row per source.
 | Writing | One `Hawkeye-Writer` thread: drains the queue every `flush-interval` or at `batch-size`, resolves dictionaries, writes one transaction per batch, retries with back-off |
 | Lookups, rollback planning, purge, jobs | The bounded `Hawkeye-Query` executor |
 | Applying a rollback/restore/preview | The region that owns each chunk (`core.service.thread.ServerThreads`), a bounded number of blocks per tick |
+| A CoreProtect import | One `Hawkeye-Import` thread per run (reading, mapping, writing) and a `Hawkeye-Import-Pack` pool of 3 that compresses segment frames; both end with the run |
 | Replies to a command sender | The sender's own thread |
 
 Every executor is owned by a bean with a `Disableable` shutdown path. Shutdown flushes the queue

@@ -279,6 +279,24 @@ update them in the same change when you learn something durable or an entry stop
 - CoreProtect's SQLite event tables have no declared key (the implicit `rowid` is the row id); `user` and
   `entity_spawn` declare `id INTEGER PRIMARY KEY`, an alias of the rowid, so `rowid` works on every table.
   DuckDB's explicit `rowid` column (CoreProtect's, fed by a sequence) is what `rowid` names in SQL there.
+- MockBukkit 4.120 for the import's item decoding (verified 2026-11-21): `getClassByAlias("ItemMeta")` is
+  MockBukkit's `SerializableMeta`, and `ConfigurationSerialization.deserializeObject` rebuilds plain,
+  potion, leather, stew, banner and map meta from `ItemMeta#serialize()` output. But `new ItemStack(type)
+  .hasItemMeta()` is `true` there (Paper: `false`), so "has components" is tested with
+  `isSimilar(new ItemStack(type))`; `serializeAsBytes` then `deserializeBytes` drops a potion's custom
+  colour; and `serializeAsBytes` of an item with attribute modifiers throws `ItemSerializationException`
+  (`AttributeMock` is not `Serializable`). Tests check those through `ServerItemDecoder.rebuild`, before
+  serializing.
+- MockBukkit's `Bukkit.createBlockData(String)` fills the defaults as Paper does
+  (`minecraft:oak_stairs[facing=east,half=bottom]` reads back with `shape=straight,waterlogged=false`) and
+  throws `IllegalArgumentException` for an unknown material. `MockBukkit.createMockPlugin("CoreProtect")`
+  makes `isPluginEnabled("CoreProtect")` true.
+- An `ObjectInputFilter` set on a `BukkitObjectInputStream` applies to everything it reads, wrapped
+  `ConfigurationSerializable` values included: a `java.io.File` in a blob is rejected with
+  `InvalidClassException` before it is constructed.
+- `ImportService.tune` (package-private, tests only) lowers the batch size below `archive.segment-events`'
+  minimum of 16,384 and the 30 s progress interval, so cancel and resume can be tested on a few hundred
+  rows.
 
 
 
