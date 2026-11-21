@@ -102,6 +102,23 @@ public class DriverResolverTest {
         }
     }
 
+    @Test
+    public void aParentThatFailsForUnknownClassesStillLetsTheJarLoad() throws IOException {
+        DriverArtifact artifact = artifact(sha256(JAR));
+        publish(artifact);
+        ClassLoader failing = new ClassLoader(getClass().getClassLoader()) {
+            @Override
+            protected Class<?> findClass(String name) {
+                throw new NullPointerException("No jar file selected");
+            }
+        };
+        try (DriverResolver resolver = new DriverResolver(drivers, repository.toUri(), failing)) {
+            SQLException failure = assertThrows(SQLException.class, () -> resolver.driver(artifact));
+            assertTrue(failure.getMessage().contains("does not contain the driver"), failure.getMessage());
+        }
+        assertTrue(Files.isRegularFile(drivers.resolve(artifact.fileName())), "the jar was used");
+    }
+
     private DriverResolver resolver() {
         return new DriverResolver(drivers, repository.toUri(), getClass().getClassLoader());
     }

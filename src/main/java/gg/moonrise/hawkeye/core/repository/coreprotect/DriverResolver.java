@@ -32,7 +32,9 @@ import org.jetbrains.annotations.NotNull;
  * (a temporary file, checked against the pinned SHA-256, then moved into place). A jar is always
  * checked against the checksum before it is loaded, and loaded in its own class loader whose parent is
  * the plugin's. The driver is instantiated directly and never registered with {@code DriverManager}.
- * Thread-safe; {@link #close()} closes the class loaders.
+ * A parent that fails with a runtime exception for a class it does not have (MockBukkit's plugin class
+ * loader throws {@code NullPointerException}) counts as not having it, like one that throws
+ * {@link ClassNotFoundException}. Thread-safe; {@link #close()} closes the class loaders.
  */
 @Slf4j
 public final class DriverResolver implements AutoCloseable {
@@ -55,7 +57,7 @@ public final class DriverResolver implements AutoCloseable {
     public DriverResolver(@NotNull Path folder, @NotNull URI repository, @NotNull ClassLoader parent) {
         this.folder = folder;
         this.repository = repository;
-        this.parent = parent;
+        this.parent = new NotFoundOnFailure(parent);
     }
 
     /**
@@ -191,6 +193,23 @@ public final class DriverResolver implements AutoCloseable {
             Files.deleteIfExists(file);
         } catch (IOException e) {
             log.debug("Could not delete {}", file, e);
+        }
+    }
+
+    /** Delegates to a class loader, reporting any failure to load a class as {@link ClassNotFoundException}. */
+    private static final class NotFoundOnFailure extends ClassLoader {
+
+        private NotFoundOnFailure(@NotNull ClassLoader parent) {
+            super(parent);
+        }
+
+        @Override
+        protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+            try {
+                return super.loadClass(name, resolve);
+            } catch (RuntimeException e) {
+                throw new ClassNotFoundException(name, e);
+            }
         }
     }
 
