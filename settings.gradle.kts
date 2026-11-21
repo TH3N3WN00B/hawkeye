@@ -9,17 +9,10 @@ rootProject.name = "hawkeye"
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        // Maven Central, including the Moonrise plugin-engine and Moss.
         mavenCentral()
 
         // PaperMC (paper-api and its dependencies)
         maven("https://repo.papermc.io/repository/maven-public/") { name = "papermc" }
-
-        // Moonrise (plugin-engine, Moss): anonymous read, asked only for gg.moonrise groups.
-        listOf("maven-releases", "maven-snapshots").forEach { repository ->
-            maven("https://repo.moonrise.gg/repository/$repository/") {
-                name = "moonrise-$repository"
-                content { includeGroupByRegex("gg\\.moonrise\\..*") }
-            }
-        }
     }
 }

@@ -371,9 +371,11 @@ update them in the same change when you learn something durable or an entry stop
   the default `java` is OpenJDK 26. Gradle 9.9.0 runs on JDK 26 and compiles with the Temurin 25
   toolchain. Its "restricted method System::load" and `sun.misc.Unsafe` warnings (Gradle's
   native-platform, Lombok, ByteBuddy in MockBukkit) are harmless.
-- `https://repo.moonrise.gg/repository/maven-releases/` and `.../maven-snapshots/` allow anonymous
-  read: no credentials are needed to build. Publishing needs `nexusUsername`/`nexusPassword`; no CI
-  publishes (`./gradlew publish -Pversion=26.4` by hand).
+- plugin-engine (`gg.moonrise.engine`, from 1.10.1) and Moss (`gg.moonrise.moss`, from 1.2.3) are on
+  Maven Central (verified 2026-11-21), so the build resolves from Maven Central and PaperMC only; no
+  credentials are needed. Moss 1.2.2 was never published there. Publishing Hawkeye itself still goes to
+  the Moonrise Nexus (`repo.moonrise.gg`) with `nexusUsername`/`nexusPassword`; no CI publishes
+  (`./gradlew publish -Pversion=26.4` by hand).
 - GitHub Actions in `moonrise-studios` refused to start any job on 2026-11-12 ("recent account
   payments have failed or your spending limit needs to be increased"); the run shows as failed with
   no steps. That is billing, not the workflow: build locally or on Jenkins until it is fixed.
@@ -396,7 +398,7 @@ update them in the same change when you learn something durable or an entry stop
 ## Build facts (verified 2026-11-12)
 
 - Pinned and resolved: Gradle 9.9.0, Shadow 9.6.1, paper-api `26.3.build.246-stable`, plugin-engine
-  `1.10.1`, moss-paper `1.2.2`, spring-context `6.2.13`, jakarta.annotation-api `3.0.0`, cloud-paper
+  `1.10.2`, moss-paper `1.2.3` (both 2026-11-21), spring-context `6.2.13`, jakarta.annotation-api `3.0.0`, cloud-paper
   `2.0.1`, cloud-annotations `2.0.0`, configlib-yaml `4.8.1`, Lombok `1.18.48`, JetBrains annotations
   `26.1.0`, JUnit `6.1.3` with platform launcher `6.1.3`, MockBukkit `mockbukkit-v26.3` `4.120.0`,
   ArchUnit `1.5.1`.
@@ -405,16 +407,16 @@ update them in the same change when you learn something durable or an entry stop
   `PaperPluginLoader` downloads exactly these versions at server start. When the engine version
   changes, read the new loader's defaults and move the catalog with it; Dependabot ignores these
   five for that reason.
-- Engine 1.10.1 `PaperPluginLoader.classloader(builder)` calls `onClassLoaderInit(builder)`, then reads
+- Engine 1.10.2 `PaperPluginLoader.classloader(builder)` calls `onClassLoaderInit(builder)`, then reads
   `libraries()` (`group:artifact:version` strings; an entry with the same `group:artifact` as an engine
-  default replaces it), then `addLibraries(resolver)`. It resolves from the Maven Central mirror plus
-  the Moonrise releases and snapshots repositories.
+  default replaces it), then `addLibraries(resolver)`. It resolves from the Maven Central mirror only
+  (1.10.1 also asked the Moonrise Nexus, and loaded Moss 1.2.2); 1.10.2 changes nothing else.
 - The shadow jar bundles our classes and the engine only (an include filter), relocates
   `gg.moonrise.engine` to `gg.moonrise.hawkeye.libs.engine` and excludes the engine's
   `PaperCommandRegistry`, which runs handlers on Cloud's async coordinator; `HawkeyeCommandRegistry`
   uses `simpleCoordinator` instead. `verifyPluginJar` checks all of it, plus the package directory
   entry Spring needs to list classes.
-- Moss 1.2.2 `MossPaper.disableComponents` ends with `Bukkit.getScheduler().cancelTasks(this)`, which
+- Moss 1.2.3 (as 1.2.2) `MossPaper.disableComponents` ends with `Bukkit.getScheduler().cancelTasks(this)`, which
   throws on Folia and skips the Spring context close; `HawkeyePlugin` overrides it with the global
   region and async schedulers.
 - Moss lifecycle: `Loadable` (after the context refresh in `onLoad`), `Enableable`, `Disableable` and
