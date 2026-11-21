@@ -18,6 +18,7 @@ permissions:
       hawkeye.teleport: true
       hawkeye.rollback: true
       hawkeye.purge: true
+      hawkeye.import: true
       hawkeye.network: true
       hawkeye.admin: true
   hawkeye.help:
@@ -37,6 +38,9 @@ permissions:
     default: op
   hawkeye.purge:
     description: /hawkeye purge
+    default: op
+  hawkeye.import:
+    description: /hawkeye import coreprotect, /hawkeye import status and /hawkeye import cancel
     default: op
   hawkeye.network:
     description: Lookups and rollbacks on other servers (s:<server>, s:#network) and /hawkeye network

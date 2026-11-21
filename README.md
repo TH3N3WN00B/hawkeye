@@ -51,6 +51,9 @@ The root command is `/hawkeye` with the alias `/he`.
 | `/he apply`, `/he cancel` | `hawkeye.rollback` | Applies or cancels your preview |
 | `/he undo` | `hawkeye.rollback` | Reverts your last rollback or restore |
 | `/he purge t:<age> [r:#world]` | `hawkeye.purge` | Deletes data older than the age |
+| `/he import coreprotect [source]` | `hawkeye.import` | Imports a CoreProtect database ([below](#importing-from-coreprotect)) |
+| `/he import status` | `hawkeye.import` | How the running import goes |
+| `/he import cancel` | `hawkeye.import` | Stops the running import after its current batch |
 | `/he status` | `hawkeye.admin` | Queue, writer and database health |
 | `/he network` | `hawkeye.network` | Every server of every shard and its heartbeat |
 | `/he reload` | `hawkeye.admin` | Reloads `config.yml` and `messages.yml` |
@@ -182,6 +185,52 @@ archive segment: immutable, stored column by column and compressed with zstd, ab
 event on real history. A lookup about one place reads only the segment's header and one or two small
 parts of it. Lookups, the inspector, rollbacks, restores and purges read both tiers transparently. `docs/architecture.md` describes the format, the threading model and the multi-server
 protocol in detail.
+
+## Importing from CoreProtect
+
+`/he import coreprotect [source]` copies the history of a CoreProtect database (upstream 25.x) into
+Hawkeye's own storage, on a background thread, while the server keeps running. `[source]` is
+CoreProtect's folder, its `config.yml`, or a `.db` (SQLite) or `.duckdb` file, absolute or relative to
+the server folder; without it `plugins/CoreProtect` is used. The command tells you when it starts and
+how it goes about every 30 seconds; `/he import status` shows the same at any time.
+
+- **Every CoreProtect database type.** SQLite, MySQL/MariaDB, DuckDB and ClickHouse. The connection
+  comes from CoreProtect's own `config.yml` (`database-type`, or `use-mysql`, `table-prefix`,
+  `mysql-*`, `clickhouse-*`), so no host or password is ever typed into a command, and none is shown
+  or logged. A folder without a `config.yml` is read as SQLite (`database.db`), then DuckDB
+  (`database.duckdb`).
+- **It only adds.** The CoreProtect database is opened read-only, and nothing in Hawkeye or
+  CoreProtect is deleted or changed: the import writes archive segments, dictionary entries, one
+  server row (the import node `<server.name>-coreprotect`, which never shows in `/he network`) and
+  one checkpoint per source. Players Hawkeye already knows keep the name Hawkeye has for them.
+  Imported events appear in ordinary lookups, the inspector, rollbacks and restores of this server's
+  worlds.
+- **Cancel, resume, catch up.** `/he import cancel` stops after the current batch; running the
+  command again continues where it stopped, also after a crash or restart. Running it again later
+  imports only the rows CoreProtect added since, so a server can import while CoreProtect still runs
+  and catch up after removing it. No row is ever imported twice: each batch is written in one
+  transaction with its checkpoint, and a second server importing the same database at the same time
+  is stopped.
+- **What is carried:** block breaks, places and interactions with their full block states,
+  container and item transactions (with names, enchantments and other components when the item data
+  can be read), sign text, kills, entity spawns, paintings, item frames, armour stands and end
+  crystals, chat, commands, sessions, shearing and leashing, and which rows CoreProtect had rolled
+  back.
+- **What is not:** a killed entity's data (CoreProtect's own format), so an imported kill cannot be
+  respawned by a rollback; block-entity extras (command-block commands, banner patterns of placed
+  banners, shulker contents, skull owners); sign colours, glow and wax; the username log; rows older
+  than 2025-01-01, which Hawkeye's ids cannot express; and actions without a Hawkeye equivalent
+  (crafting ingredients, items given to villagers, plain entity clicks). The final reply counts every
+  skipped row by reason.
+- **Drivers.** SQLite and MySQL/MariaDB use the drivers Hawkeye already loads. The DuckDB (80 MB) and
+  ClickHouse (12 MB) drivers are fetched from Maven Central on first use into
+  `plugins/Hawkeye/drivers/` and checked against a pinned SHA-256; on a server without internet
+  access, place them there by hand under exactly these names: `duckdb_jdbc-1.4.5.0.jar`
+  (`org.duckdb:duckdb_jdbc:1.4.5.0`) and `clickhouse-jdbc-0.10.0-all.jar`
+  (`com.clickhouse:clickhouse-jdbc:0.10.0`, classifier `all`).
+- **DuckDB needs CoreProtect off.** A DuckDB file can only be opened once per process, so import a
+  DuckDB database with CoreProtect removed or disabled on that server. SQLite, MySQL/MariaDB and
+  ClickHouse can be read while CoreProtect runs.
 
 ## API for other plugins
 

@@ -50,6 +50,18 @@ All notable changes to this project are documented in this file. The format is b
   history; `/hawkeye page` walks past a lower bound until the events end, and `#count` and
   `HawkeyeApi#count` stay exact.
 - The inspector (`/hawkeye inspect`): block history, container transactions, the adjacent block.
+- `/hawkeye import coreprotect [source]`, `import status` and `import cancel` (permission
+  `hawkeye.import`, default op; messages section `importing`): copies the history of a CoreProtect
+  database (SQLite, MySQL/MariaDB, DuckDB or ClickHouse, found through CoreProtect's own `config.yml`
+  and opened read-only) into Hawkeye's storage as archive segments numbered under an import node of
+  their own (`<server.name>-coreprotect`, left out of `/hawkeye network`). Each segment is written in
+  one transaction with a compare-and-set checkpoint (schema version 6, table `import_state`), so an
+  import can be cancelled, resumed after a crash and run again later for new rows without importing
+  anything twice. Existing events and player names are never changed; rows older than 2025-01-01 and
+  actions without a Hawkeye equivalent are skipped and counted. The DuckDB and ClickHouse drivers are
+  downloaded from Maven Central on first use into `plugins/Hawkeye/drivers/` and checked against a
+  pinned SHA-256. Existing `messages.yml` files keep their old `general.help` list; add the
+  `/he import coreprotect [source]` line by hand or delete the list to get the new default.
 - `/hawkeye rollback` and `restore` with chunk-by-chunk application on the owning region (blocks,
   container contents, sign text, container transactions, killed entities), `#preview` with `apply`
   and `cancel`, `undo`, network rollbacks with `s:`, and `/hawkeye purge` plus a lease-guarded

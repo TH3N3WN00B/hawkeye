@@ -27,6 +27,9 @@ public final class Permissions {
     /** {@code /hawkeye purge}. */
     public static final String PURGE = "hawkeye.purge";
 
+    /** {@code /hawkeye import coreprotect}, {@code import status} and {@code import cancel}. */
+    public static final String IMPORT = "hawkeye.import";
+
     /** Other servers in parameters ({@code s:}) and {@code /hawkeye network}. */
     public static final String NETWORK = "hawkeye.network";
 
