@@ -382,6 +382,15 @@ one `server` row and one `import_state` row per source.
   job destinations leave it out. Lookups filter by world scope, so imported events appear in ordinary
   lookups and rollbacks. The row is a plain insert (`ServerRepository.registerImport`): a taken name is
   rejected by the unique key on every engine and the next suffix is tried.
+- **Reading the source.** `core.repository.coreprotect`: `CoreProtectSources` finds the database from a
+  folder (its `config.yml`, else `database.db`, else `database.duckdb`), a config or a database file, and
+  opens one read-only connection (`CoreProtectSource`). SQLite, MySQL and DuckDB tables are walked by rowid
+  in windows of row ids (`WHERE rowid > ? AND rowid <= ?`; an empty window is jumped with `MIN(rowid)`),
+  ClickHouse by `(time, rowid)` keyset pages bounded to a month above the cursor (rowids are reserved in
+  blocks per writer there). Columns and optional tables an older CoreProtect lacks read as NULL or absent.
+  SQLite and MySQL/MariaDB use the drivers Hawkeye loads anyway; DuckDB and ClickHouse drivers are fetched
+  on first use into `<plugin data folder>/drivers` from Maven Central, checked against a pinned SHA-256 and
+  loaded in their own class loader (`SourceDrivers`, `DriverResolver`).
 - **Segments.** Events go straight into the archive (`EventStore.writeImported`, one segment of
   `archive.segment-events` per transaction), numbered by a private `IdAssigner` fed in time order.
 - **Checkpoint.** Schema version 6 adds `import_state`: per source (`coreprotect:<scope>:<fingerprint>`)

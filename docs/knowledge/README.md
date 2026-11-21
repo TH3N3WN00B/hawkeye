@@ -246,7 +246,41 @@ update them in the same change when you learn something durable or an entry stop
     `EntityBlockFormEvent`, `BlockMultiPlaceEvent`, `EntityBreakDoorEvent`, `PlayerDeathEvent` and
     `HangingBreakByEntityEvent` share their parent's.
 
-## Owner preferences
+## CoreProtect import facts (verified 2026-11-21)
+
+- `CoreProtectSourceIntegrationTest` runs the reader scenario on real engines when set:
+  `HAWKEYE_TEST_COREPROTECT_MYSQL=mariadb://root:@127.0.0.1:33069/coreprotect` (the embedded MariaDB,
+  database `coreprotect`), `HAWKEYE_TEST_COREPROTECT_DUCKDB=1` (with
+  `JAVA_TOOL_OPTIONS=-Djava.io.tmpdir=$HOME/.cache/hawkeye-ref/tmp`; the jar is cached in
+  `~/.cache/hawkeye-ref/drivers`), `HAWKEYE_TEST_COREPROTECT_CLICKHOUSE=http://default:@127.0.0.1:18123/default`.
+  Verified on MariaDB 11.4.5, DuckDB 1.4.5.0 and ClickHouse 26.12.1; the import checkpoint scenario of
+  `ServerDatabaseIntegrationTest` on MariaDB 11.4.5 and PostgreSQL 18.6.
+- A local ClickHouse without Docker: the official single binary
+  (`curl -fsSL https://builds.clickhouse.com/master/amd64/clickhouse`) in `~/.cache/hawkeye-ref/clickhouse`,
+  started with `./clickhouse server -- --path=$PWD/data/ --tmp_path=$PWD/tmp/ --http_port=18123
+  --tcp_port=19000 --mysql_port=0 --postgresql_port=0 --interserver_http_port=0 --listen_host=127.0.0.1`
+  (plus `--logger.log=...`); user `default`, no password. Up in under a minute.
+- Pinned on-demand drivers (`DriverArtifact`), SHA-256 of the Maven Central files (their published `.sha1`
+  matched): `org.duckdb:duckdb_jdbc:1.4.5.0` `5f11500c4fe8af47cfb15b36bb92e22597ad2109556c1564823e2db1a210072e`,
+  class `org.duckdb.DuckDBDriver`; `com.clickhouse:clickhouse-jdbc:0.10.0:all`
+  `d83736e24306e11929b0cf81b3306ae903c6f51c735c509ad5680c88640d99ce`. The ClickHouse jar registers both
+  `com.clickhouse.jdbc.Driver` (JDBC v2, used) and the older `ClickHouseDriver` wrapper, and does not shade
+  SLF4J: `slf4j-api` must come from the parent class loader (Paper gives plugins one).
+- ClickHouse 26.12 answers the 0.10.0 driver in a compression it cannot read ("Invalid LZ4 magic byte")
+  unless the connection sets `clickhouse_setting_network_compression_method=LZ4` (what CoreProtect sets) or
+  `compress=false`. With `binary_string_support=true` a `String` column reads as raw bytes through
+  `getBytes` (JDBC type VARCHAR), which is how CoreProtect's views expose blobs.
+- MariaDB Connector/J 3.5: `Connection.setReadOnly(true)` sends nothing to a single server unless
+  `assureReadOnly` is set, so a write still succeeds; `SET SESSION TRANSACTION READ ONLY` makes the session
+  refuse writes. `useSsl=true` is a deprecated alias that turns into `sslMode=verify-full` (with a warning);
+  CoreProtect's `enable-ssl` does not check certificates, so the import uses `sslMode=trust`.
+- sqlite-jdbc's read-only `open_mode` is 65 (read-only plus the URI flag); opening a missing file read-only
+  fails and creates nothing.
+- CoreProtect's SQLite event tables have no declared key (the implicit `rowid` is the row id); `user` and
+  `entity_spawn` declare `id INTEGER PRIMARY KEY`, an alias of the rowid, so `rowid` works on every table.
+  DuckDB's explicit `rowid` column (CoreProtect's, fed by a sequence) is what `rowid` names in SQL there.
+
+
 
 - Commit after every logical, working unit and push right after. Merge `origin/main`, never rebase or
   force-push published history.
