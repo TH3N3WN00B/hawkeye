@@ -1,0 +1,26 @@
+# Imports the database coreprotect-generate.txt made (copied to plugins/CoreProtect, no CoreProtect jar),
+# then looks the history up and rolls it back from it. Needs a fresh flat overworld and a fresh Hawkeye
+# database, within three hours of generating. The second import must add nothing. The rollbacks prove the
+# block states (the stairs CoreProtect stored with and without block data) and the item components (the
+# sword's name and enchantment, the potion's colour) survived the import.
+hawkeye status => connected
+forceload add 0 0
+forceload add 16 16
+setblock 20 -60 20 minecraft:chest
+setblock 20 -58 20 minecraft:chest
+hawkeye import status => No import is running
+hawkeye import coreprotect => Import done: 19 event(s)
+hawkeye import coreprotect => Import done: 0 event(s)
+hawkeye lookup u:#tnt t:3h r:#world #count => Matching events: 11
+hawkeye lookup u:#tnt t:3h r:#world => #tnt broke
+hawkeye lookup u:#kill t:3h r:#world => killed zombie
+hawkeye lookup u:#hopper t:3h r:#world => diamond_sword
+hawkeye rollback u:#tnt t:3h r:#world => Finished the rollback
+execute if block 2 -56 2 minecraft:oak_stairs[facing=east,half=top] => Test passed
+execute if block 4 -56 4 minecraft:oak_stairs[facing=north,half=bottom] => Test passed
+execute if block 3 -57 3 minecraft:stone => Test passed
+hawkeye rollback u:#hopper t:3h r:#world => Finished the rollback
+data get block 20 -58 20 Items => Excalibur
+data get block 20 -58 20 Items => sharpness
+data get block 20 -58 20 Items => custom_color
+hawkeye network => online

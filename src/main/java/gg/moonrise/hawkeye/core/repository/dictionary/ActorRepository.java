@@ -43,6 +43,27 @@ public final class ActorRepository {
      */
     public @NotNull Map<String, Integer> intern(@NotNull Connection connection, @NotNull Sql sql,
             @NotNull Collection<Actor> actors) throws SQLException {
+        return intern(connection, sql, actors, true);
+    }
+
+    /**
+     * The ids of actors, creating missing ones but never renaming one that exists: an imported batch may
+     * carry an older name of a player than the one this shard has seen. A created actor gets the name in
+     * the batch.
+     *
+     * @param connection a connection in auto-commit mode
+     * @param sql        the shard's SQL context
+     * @param actors     the actors
+     * @return actor key to id, for every actor
+     * @throws SQLException when a statement fails
+     */
+    public @NotNull Map<String, Integer> internKeepingNames(@NotNull Connection connection, @NotNull Sql sql,
+            @NotNull Collection<Actor> actors) throws SQLException {
+        return intern(connection, sql, actors, false);
+    }
+
+    private @NotNull Map<String, Integer> intern(@NotNull Connection connection, @NotNull Sql sql,
+            @NotNull Collection<Actor> actors, boolean rename) throws SQLException {
         Map<String, Actor> byKey = new LinkedHashMap<>();
         actors.forEach(actor -> byKey.put(actor.key(), actor));
         Map<String, StoredActor> existing = byKeys(connection, sql, byKey.keySet());
@@ -55,7 +76,7 @@ public final class ActorRepository {
                 continue;
             }
             ids.put(actor.key(), stored.id());
-            if (!stored.name().equals(actor.name())) {
+            if (rename && !stored.name().equals(actor.name())) {
                 rename(connection, sql, stored.id(), actor.name());
             }
         }

@@ -65,6 +65,47 @@ public final class ServerRepository {
     }
 
     /**
+     * Registers an import node ({@link ServerNode#imported()}: {@code last_seen = 0}) under a name no
+     * server has. A plain insert, never an upsert: when the name is taken, by a row that was there before
+     * or by one another server inserted at the same moment, the unique key rejects it and the result is
+     * empty, on every engine (an insert's update count is not "rows inserted" on MySQL, so it is not
+     * read). The name is looked up first, so a taken name never consumes an identity value.
+     *
+     * @param connection a connection in auto-commit mode
+     * @param sql        the shard's SQL context
+     * @param name       the node's name
+     * @param scope      the world scope its events are stored under
+     * @return the new node, or empty when a row with that name exists
+     * @throws SQLException when a statement fails or the shard has no node id left
+     */
+    public @NotNull Optional<ServerNode> registerImport(@NotNull Connection connection, @NotNull Sql sql,
+            @NotNull String name, @NotNull String scope) throws SQLException {
+        if (byName(connection, sql, name).isPresent()) {
+            return Optional.empty();
+        }
+        try (PreparedStatement statement = connection.prepareStatement("INSERT INTO " + sql.tables().server()
+                + " (" + String.join(", ", COLUMNS) + ") VALUES (?, ?, ?)")) {
+            statement.setString(1, name);
+            statement.setString(2, scope);
+            statement.setLong(3, 0);
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            if (byName(connection, sql, name).isPresent()) {
+                // Another server took the name between the lookup and the insert.
+                return Optional.empty();
+            }
+            throw e;
+        }
+        ServerNode node = byName(connection, sql, name)
+                .orElseThrow(() -> new SQLException("import node " + name + " vanished right after registration"));
+        if (node.node() < 1 || node.node() > EventIds.MAX_NODE) {
+            throw new SQLException("shard has no node id left for " + name + " (got " + node.node() + ", max "
+                    + EventIds.MAX_NODE + ")");
+        }
+        return Optional.of(node);
+    }
+
+    /**
      * Records a heartbeat.
      *
      * @param connection a connection

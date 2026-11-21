@@ -70,7 +70,7 @@ All tables carry the configured prefix (default `hawkeye_`).
 | Table | Columns | Keys |
 |---|---|---|
 | `schema` | `version` | Migration bookkeeping (`core.sql.Migrations`) |
-| `server` | `id SMALLINT`, `name`, `scope`, `last_seen` | PK `id`, unique `name` |
+| `server` | `id SMALLINT`, `name`, `scope`, `last_seen` (0 for an import node) | PK `id`, unique `name` |
 | `world` | `id INT`, `scope`, `name` | unique `(scope, name)` |
 | `actor` | `id INT`, `kind`, `key`, `name`, `name_lower` | unique `key`, index `name_lower` |
 | `type` | `id INT`, `value` | unique `value` |
@@ -83,6 +83,7 @@ All tables carry the configured prefix (default `hawkeye_`).
 | `block_segment` | `world INT`, `chunk BIGINT`, `newest BIGINT`, `body` (a compressed frame) | PK `(world, chunk)`, index `(newest)` |
 | `actor_segment` | `actor INT`, `newest BIGINT`, `body` (raw `IdRuns` bytes) | PK `actor`, index `(newest)` |
 | `segment_index` | `id` (always 1), `indexed_from BIGINT` | PK `id` |
+| `import_state` | `source` (up to 191 characters), `revision BIGINT`, `state` (text; MySQL `MEDIUMTEXT`), `updated BIGINT` | PK `source` |
 
 - **Dictionaries.** Worlds, actors and types are interned to small integers. `type` holds every
   namespaced value an event refers to: block states (`minecraft:oak_stairs[facing=east,...]`), item
@@ -94,13 +95,16 @@ All tables carry the configured prefix (default `hawkeye_`).
   `world` on `survival` and `world` on `creative` are different worlds. Servers that share world
   files (MultiPaper) configure the same scope.
 - **Actors.** Players are keyed by UUID (`kind = PLAYER`) and keep their latest name; non-player
-  causes are keyed by a `#name` (`#tnt`, `#creeper`, `#fire`, `#water`, `#piston`, ...).
+  causes are keyed by a `#name` (`#tnt`, `#creeper`, `#fire`, `#water`, `#piston`, ...). Imported
+  history creates missing actors but never renames a known one (`ActorRepository.internKeepingNames`):
+  the source's name of a player may be older than the one the live writer has seen.
 - **`subject` / `secondary`.** For block actions `subject` is the block the action is about (the
   broken block for a break, the placed block for a place) and `secondary` is the other side of the
   change (the block left behind after a break, the block replaced by a place). Rollback restores
   `subject` for a break and `secondary` for a place; restore does the opposite. For item actions
   `subject` is the material and `amount` the count; for kills it is the entity type.
-- **`flags`.** Bit 0: rolled back. Archived events keep it in `segment_flag` instead.
+- **`flags`.** Bit 0: rolled back. Archived events keep it in `segment_flag` instead. An event can be
+  written already rolled back (`PendingEvent.rolledBack`: imported history whose source had undone it).
 - **`data`.** An optional payload, tagged by its first byte (`util.codec.PayloadCodec`): text (chat,
   commands), sign sides (before and after), an item (only when the item has components), an inventory
   snapshot (a broken container), or an entity (for kill and removal rollback). Items and entities are
@@ -365,6 +369,106 @@ unit the header selects.
 InnoDB and SQLite append the primary key to secondary indexes, so `(world, pos)` and `(actor)` are
 already ordered by id within a key; PostgreSQL declares `id` explicitly.
 
+### Imports
+
+`/hawkeye import coreprotect` copies a CoreProtect database (SQLite, MySQL/MariaDB, DuckDB or
+ClickHouse, opened read-only) into the home shard. It only adds: archive segments, dictionary rows,
+one `server` row and one `import_state` row per source.
+
+- **Import node.** Imported events are numbered under their own node, a `server` row named
+  `<server.name>-coreprotect` (then `-coreprotect-2`, `-3`, ... for further sources) with the server's
+  world scope and `last_seen = 0` (`ServerNode.imported()`), so their ids never collide with the ones
+  the live writer issued for the same seconds. An import node never runs: `/hawkeye network` and network
+  job destinations leave it out. Lookups filter by world scope, so imported events appear in ordinary
+  lookups and rollbacks. The row is a plain insert (`ServerRepository.registerImport`): a taken name is
+  rejected by the unique key on every engine and the next suffix is tried.
+- **Reading the source.** `core.repository.coreprotect`: `CoreProtectSources` finds the database from a
+  folder (its `config.yml`, else `database.db`, else `database.duckdb`), a config or a database file, and
+  opens one read-only connection (`CoreProtectSource`). SQLite, MySQL and DuckDB tables are walked by rowid
+  in windows of row ids (`WHERE rowid > ? AND rowid <= ?`; an empty window is jumped with `MIN(rowid)`),
+  ClickHouse by `(time, rowid)` keyset pages bounded to a month above the cursor (rowids are reserved in
+  blocks per writer there). Columns and optional tables an older CoreProtect lacks read as NULL or absent.
+  Whether a table exists comes from the engine's catalog (`sqlite_master`; `information_schema.tables` of
+  the current database on MySQL and ClickHouse, where CoreProtect's tables are views, and of schema `main`
+  on DuckDB); any other failed query is an error, never a missing table. A source without `block`, `user`
+  and `world` is refused when it is opened ("not a CoreProtect database"), before the import registers
+  anything.
+  SQLite and MySQL/MariaDB use the drivers Hawkeye loads anyway; DuckDB and ClickHouse drivers are fetched
+  on first use into `<plugin data folder>/drivers` from Maven Central, checked against a pinned SHA-256 and
+  loaded in their own class loader (`SourceDrivers`, `DriverResolver`).
+- **Segments.** Events go straight into the archive (`EventStore.writeImported`, one segment of
+  `archive.segment-events` per transaction), numbered by a private `IdAssigner` fed in time order.
+- **Checkpoint.** Schema version 6 adds `import_state`: per source (`coreprotect:<scope>:<fingerprint>`)
+  the per-table cursors, counters, node name and newest slot written, as `key=value` text
+  (`util.codec.ImportStateCodec`, versioned, unknown keys ignored). Each segment's transaction ends with
+  `UPDATE ... SET revision = revision + 1 ... WHERE source = ? AND revision = ?`
+  (`core.storage.importer.ImportStore`); when no row matches, another run moved the checkpoint and the
+  segment rolls back with it. A crash, a cancel or a restart resumes from the last commit and imports
+  nothing twice.
+- **The run** (`core.service.importer`: `ImportService`, the run in `pipeline`, the row mapping in
+  `mapping`). One import runs per server, on its own `Hawkeye-Import` thread. It locates and opens the
+  source, refuses a DuckDB file while a plugin named CoreProtect is enabled (one process cannot open a
+  DuckDB file twice) and a source whose CoreProtect migration is incomplete, takes the checkpoint
+  (`ImportStore.begin`) and refuses one taken in another scan order (the database moved to or from
+  ClickHouse).
+- **Merge order.** `SourceMerge` reads every event table in pages of 4,096 rows from its cursor, in the
+  table's own scan order, and always consumes the row with the smallest `time` among the tables' next
+  rows, ties in `SourceTable` order (block, sign, container, entity container, item, entity
+  interaction, chat, command, session). Rows are therefore only as time-ordered as each table is;
+  the assigner absorbs small disorder.
+- **Horizon** (`RunHorizon`). A run imports rows stamped up to its start minus the source's settle time:
+  120 s on MySQL and ClickHouse, where CoreProtect writes while the import reads and a row can become
+  visible after the reader passed its place (a transaction still open, a ClickHouse batch published late
+  or retried, rows stamped when queued); 0 on SQLite and DuckDB, files nothing else can write to in a way
+  the reader could miss (`SourceDialect.settleSeconds`). When the next row in merge order is stamped
+  later, the merge stops (`SourceMerge.held`), the run is complete and the row stays unread: every table
+  stops at the same time, so the next run's rows are all newer than what is stored and none has to be
+  displaced. The final progress then keeps the estimate of the rows left, and the command says how many
+  the next run imports. In rowid order a row stamped more than a week past the horizon is a wrong clock,
+  not a new row: the merge returns it first and the mapper skips it, so it cannot hold back the rows
+  behind it in its table. In time order (ClickHouse) no row past the horizon is ever consumed: such rows
+  sort last and stay unread, where consuming one would move the table's keyset cursor past every later
+  row. The mapper's upper bound is the same horizon.
+- **Mapping.** `RowMapper` turns each row into one event stamped at its second, or a skip counted by
+  reason (older than 2025-01-01 or stamped in the far future, no equivalent action, folded into
+  another event, unknown world/material/entity/position). When a row names an id missing from its
+  snapshot of the source's dictionaries, the snapshot is re-read, at most once per batch. Block states
+  are rebuilt from `blockdata_map` tokens and normalised through `Bukkit.createBlockData` (cached), so
+  imported and captured events share `type` rows. Sign rows carry no material: the mapper remembers
+  each sign block's state per position, folds the "before" snapshot into the next edit and a broken
+  sign's text into its block break. Item blobs are read with `BukkitObjectInputStream` behind an
+  `ObjectInputFilter` that allows only `java.lang`, `java.util`, Guava collections and `org.bukkit`
+  classes, at most 4 MB; one that does not decode leaves the event without a payload.
+- **Batching.** Mapped events collect into a batch that closes when it holds `archive.segment-events`
+  events, when a million rows were consumed without filling one, when every table is read to its end,
+  or on cancel. Except at the end it closes only between two seconds of the source (it never splits a
+  second; twice the events or rows close it regardless), so a cancelled and resumed import numbers every
+  event exactly as an uninterrupted one.
+- **Checkpoint and resume floor.** Closing a batch adds it to the run's private `IdAssigner` and takes
+  it whole, then writes the segment and the next checkpoint (per table the last row consumed, the
+  newest slot written, the counters) in one transaction; a batch that mapped to no event writes the
+  checkpoint alone. A resumed run raises the assigner's floor to the slot after the newest one
+  written, so no id is issued twice. An event older than the floor (a row out of order by more than
+  the assigner's 120 retained seconds, or one that arrives after its second was written by an
+  earlier run) is stored in the floor's second and counted as displaced. When every table is read to
+  its end the checkpoint is marked complete; a later run continues from the cursors and imports only
+  newer rows.
+- **After a CoreProtect purge.** Before the merge starts, every stored rowid-order cursor is checked
+  (`CoreProtectSource.anchor`): CoreProtect's `/co purge` on SQLite rebuilds every table but `block` with
+  `INSERT ... SELECT`, renumbering its rows from 1 in the same order. When the cursor's row is there with
+  another time, or missing from a SQLite table other than `block`, the table was renumbered and the run
+  continues after `MAX(rowid)` of the rows stamped at or before the cursor's time (a WARN names the table
+  and both rowids). A missing row anywhere else (MySQL, DuckDB, SQLite `block`) was deleted by a purge that
+  keeps row ids, and reading continues after it. So the import continues by time after a purge, exact
+  except for rows of the cursor's own second that were stored out of order. Time-order cursors
+  (ClickHouse) do not depend on row ids alone and are kept.
+- **Cancel and shutdown.** `/hawkeye import cancel` closes the current batch at the next second and
+  writes it; shutdown cancels and waits up to 10 s. Progress is published as a snapshot after every
+  checkpoint and every 4,096 rows, and sent to the command about every 30 s (with a fresh estimate
+  of the rows left, from `CoreProtectSource.remaining`; on ClickHouse a count that can time out, so a
+  failed estimate keeps the previous one and is logged once at DEBUG, never failing the import:
+  `RowEstimate`).
+
 ## Threading
 
 | Work | Thread |
@@ -374,6 +478,7 @@ already ordered by id within a key; PostgreSQL declares `id` explicitly.
 | Writing | One `Hawkeye-Writer` thread: drains the queue every `flush-interval` or at `batch-size`, resolves dictionaries, writes one transaction per batch, retries with back-off |
 | Lookups, rollback planning, purge, jobs | The bounded `Hawkeye-Query` executor |
 | Applying a rollback/restore/preview | The region that owns each chunk (`core.service.thread.ServerThreads`), a bounded number of blocks per tick |
+| A CoreProtect import | One `Hawkeye-Import` thread per run (reading, mapping, writing) and a `Hawkeye-Import-Pack` pool of 3 that compresses segment frames; both end with the run |
 | Replies to a command sender | The sender's own thread |
 
 Every executor is owned by a bean with a `Disableable` shutdown path. Shutdown flushes the queue

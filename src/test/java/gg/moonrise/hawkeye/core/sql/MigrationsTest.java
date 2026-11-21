@@ -140,7 +140,7 @@ public class MigrationsTest {
             }
             return null;
         });
-        assertEquals(new MigrationResult.Migrated(4, 5), migrate());
+        assertEquals(new MigrationResult.Migrated(4, Schema.CURRENT), migrate());
         database.read(connection -> {
             try (Statement statement = connection.createStatement()) {
                 for (String table : List.of(t.legacyPlaceRegion(), t.legacyPlaceChunk(), t.legacyPlaceState())) {
@@ -165,12 +165,47 @@ public class MigrationsTest {
     }
 
     @Test
-    public void aFreshDatabaseEndsAtVersion5IndexingFromTheFirstSegment() throws SQLException {
-        assertEquals(new MigrationResult.Migrated(0, 5), migrate());
+    public void version6AddsAnEmptyImportStateTableAndKeepsEverythingElse() throws SQLException {
+        Tables t = database.tables();
+        database.read(connection -> {
+            try (Statement statement = connection.createStatement()) {
+                applyUpTo(statement, 5);
+                statement.execute("INSERT INTO " + t.schemaVersion() + " VALUES (1, 5)");
+                statement.execute("INSERT INTO " + t.event() + " (id, world, pos, actor, action, subject) "
+                        + "VALUES (7, 1, 0, 1, 1, 1)");
+                statement.execute("INSERT INTO " + t.segment() + " (first_id, last_id, events, header, body) "
+                        + "VALUES (1, 2, 2, x'02', x'00')");
+                statement.execute("UPDATE " + t.segmentIndex() + " SET indexed_from = 1");
+            }
+            return null;
+        });
+        assertEquals(new MigrationResult.Migrated(5, 6), migrate());
+        database.read(connection -> {
+            try (Statement statement = connection.createStatement()) {
+                assertEquals(0, count(statement, "SELECT COUNT(*) FROM " + t.importState()));
+                assertEquals(1, count(statement, "SELECT COUNT(*) FROM " + t.event()));
+                assertEquals(1, count(statement, "SELECT COUNT(*) FROM " + t.segment()));
+                assertEquals(1, count(statement, "SELECT indexed_from FROM " + t.segmentIndex()));
+                statement.execute("INSERT INTO " + t.importState() + " VALUES ('coreprotect:survival:1:25.0', 1, "
+                        + "'v=1', 5)");
+                for (String sql : Schema.statements(6, database.dialect(), t)) {
+                    statement.execute(sql);
+                }
+                assertEquals(1, count(statement, "SELECT COUNT(*) FROM " + t.importState()), "idempotent");
+            }
+            return null;
+        });
+    }
+
+    @Test
+    public void aFreshDatabaseEndsAtVersion6IndexingFromTheFirstSegment() throws SQLException {
+        assertEquals(6, Schema.CURRENT);
+        assertEquals(new MigrationResult.Migrated(0, 6), migrate());
         database.read(connection -> {
             try (Statement statement = connection.createStatement()) {
                 assertEquals(1, count(statement, "SELECT indexed_from FROM " + database.tables().segmentIndex()));
-                assertEquals(5, Migrations.version(connection, database.tables()));
+                assertEquals(0, count(statement, "SELECT COUNT(*) FROM " + database.tables().importState()));
+                assertEquals(6, Migrations.version(connection, database.tables()));
             }
             return null;
         });

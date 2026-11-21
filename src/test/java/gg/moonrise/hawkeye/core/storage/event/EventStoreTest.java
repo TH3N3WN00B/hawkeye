@@ -3,12 +3,14 @@ package gg.moonrise.hawkeye.core.storage.event;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import gg.moonrise.hawkeye.core.repository.dictionary.ActorRepository;
 import gg.moonrise.hawkeye.core.repository.dictionary.DictionaryRepository;
 import gg.moonrise.hawkeye.core.repository.event.EventRepository;
 import gg.moonrise.hawkeye.core.sql.SqliteHarness;
+import gg.moonrise.hawkeye.core.sql.Tables;
 import gg.moonrise.hawkeye.core.storage.archive.Archives;
 import gg.moonrise.hawkeye.core.storage.shard.Shard;
 import gg.moonrise.hawkeye.entity.action.Action;
@@ -27,7 +29,10 @@ import gg.moonrise.hawkeye.util.BlockPositions;
 import gg.moonrise.hawkeye.util.EventIds;
 import gg.moonrise.hawkeye.util.codec.PayloadCodec;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -257,6 +262,97 @@ public class EventStoreTest {
         LookupQuery byNewName = withActors(LookupQuery.at(new Area.Everywhere()), Set.of("alexander"));
         assertEquals(2, find(byNewName).size());
         assertEquals(0, find(withActors(LookupQuery.at(new Area.Everywhere()), Set.of("alex"))).size());
+    }
+
+    @Test
+    public void anEventStoredAsRolledBackIsFoundRolledBackInTheArchive() throws SQLException {
+        PendingEvent undone = event(T0, "world", 0, 64, 0, ALEX, Action.BLOCK_BREAK, STONE, AIR, 0, null);
+        undone = new PendingEvent(undone.stamp(), undone.world(), undone.position(), undone.actor(), undone.action(),
+                undone.subject(), undone.secondary(), undone.amount(), undone.data(), true);
+        store.writeArchived(harness.shard(), survival, "survival", List.of(undone,
+                event(T0 + 1, "world", 1, 64, 0, ALEX, Action.BLOCK_PLACE, STONE, AIR, 0, null)), Runnable::run);
+
+        List<StoredEvent> events = find(LookupQuery.at(new Area.Everywhere()));
+        assertEquals(List.of(false, true), events.stream().map(StoredEvent::rolledBack).toList());
+        assertEquals(1, store.count(harness.shard(), LookupQuery.at(new Area.Everywhere())
+                .withRollbackState(RollbackState.ROLLED_BACK), all()));
+    }
+
+    @Test
+    public void aHotEventStoredAsRolledBackIsFlagged() throws SQLException {
+        PendingEvent live = event(T0, "world", 0, 64, 0, ALEX, Action.BLOCK_BREAK, STONE, AIR, 0, null);
+        write(survival, "survival", List.of(new PendingEvent(live.stamp(), live.world(), live.position(), live.actor(),
+                live.action(), live.subject(), live.secondary(), live.amount(), live.data(), true)));
+        assertTrue(find(LookupQuery.at(new Area.Everywhere())).getFirst().rolledBack());
+    }
+
+    @Test
+    public void anImportNeverRenamesAKnownPlayerButNamesANewOne() throws SQLException {
+        write(survival, "survival", List.of(event(T0, "world", 0, 64, 0, ALEX, Action.BLOCK_PLACE, STONE, AIR, 0,
+                null)));
+        Actor oldName = Actor.player(UUID.fromString(ALEX.key()), "OldAlex");
+        Actor newcomer = Actor.player(new UUID(0, 99), "Newcomer");
+        // Another cache than the live writer's, so the repository decides, not the cache.
+        store.writeImported(harness.otherServerView(), survival, "survival", List.of(
+                event(T0 - 5_000, "world", 1, 64, 0, oldName, Action.BLOCK_PLACE, STONE, AIR, 0, null),
+                event(T0 - 4_000, "world", 2, 64, 0, newcomer, Action.BLOCK_PLACE, STONE, AIR, 0, null)),
+                Runnable::run, connection -> null);
+
+        assertEquals(2, find(withActors(LookupQuery.at(new Area.Everywhere()), Set.of("alex"))).size());
+        assertEquals(0, find(withActors(LookupQuery.at(new Area.Everywhere()), Set.of("oldalex"))).size());
+        assertEquals(1, find(withActors(LookupQuery.at(new Area.Everywhere()), Set.of("newcomer"))).size());
+        assertEquals(Set.of("Alex", "Newcomer"), Set.copyOf(find(LookupQuery.at(new Area.Everywhere())).stream()
+                .map(event -> event.actor().name()).toList()), "seen through a fresh cache too");
+        assertEquals(Set.of("Alex", "Newcomer"), Set.copyOf(store.find(harness.otherServerView(),
+                LookupQuery.at(new Area.Everywhere()), all(), 0, 10, true).stream()
+                .map(event -> event.actor().name()).toList()));
+    }
+
+    @Test
+    public void anImportedSegmentCommitsWithItsAlongsideWorkAndRollsBackWithIt() throws SQLException {
+        Tables tables = harness.database().tables();
+        List<PendingEvent> batch = List.of(event(T0, "world", 0, 64, 0, ALEX, Action.BLOCK_PLACE, STONE, AIR, 0,
+                null));
+        SQLException failure = assertThrows(SQLException.class, () -> store.writeImported(harness.shard(), survival,
+                "survival", batch, Runnable::run, connection -> {
+                    insertLease(connection, tables, "failed");
+                    throw new SQLException("checkpoint moved");
+                }));
+        assertEquals("checkpoint moved", failure.getMessage());
+        assertEquals(0, store.count(harness.shard(), LookupQuery.at(new Area.Everywhere()), all()),
+                "the segment rolled back");
+        assertEquals(0, leases("failed"), "and so did the work alongside");
+
+        assertEquals(1, store.writeImported(harness.shard(), survival, "survival", batch, Runnable::run,
+                connection -> {
+                    insertLease(connection, tables, "kept");
+                    return null;
+                }));
+        assertEquals(1, store.count(harness.shard(), LookupQuery.at(new Area.Everywhere()), all()));
+        assertEquals(1, leases("kept"));
+        assertEquals(0, store.writeImported(harness.shard(), survival, "survival", List.of(), Runnable::run,
+                connection -> {
+                    insertLease(connection, tables, "empty");
+                    return null;
+                }), "an empty batch runs only the work alongside");
+        assertEquals(1, leases("empty"));
+    }
+
+    private static void insertLease(Connection connection, Tables tables, String name) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("INSERT INTO " + tables.lease() + " VALUES ('" + name + "', 'test', 0)");
+        }
+    }
+
+    private long leases(String name) throws SQLException {
+        return harness.database().read(connection -> {
+            try (Statement statement = connection.createStatement();
+                    ResultSet rows = statement.executeQuery("SELECT COUNT(*) FROM "
+                            + harness.database().tables().lease() + " WHERE name = '" + name + "'")) {
+                rows.next();
+                return rows.getLong(1);
+            }
+        });
     }
 
     private int write(ServerNode node, String scope, List<PendingEvent> events) throws SQLException {

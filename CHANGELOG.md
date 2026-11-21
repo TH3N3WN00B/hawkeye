@@ -50,6 +50,18 @@ All notable changes to this project are documented in this file. The format is b
   history; `/hawkeye page` walks past a lower bound until the events end, and `#count` and
   `HawkeyeApi#count` stay exact.
 - The inspector (`/hawkeye inspect`): block history, container transactions, the adjacent block.
+- `/hawkeye import coreprotect [source]`, `import status` and `import cancel` (permission
+  `hawkeye.import`, default op; messages section `importing`): copies the history of a CoreProtect
+  database (SQLite, MySQL/MariaDB, DuckDB or ClickHouse, found through CoreProtect's own `config.yml`
+  and opened read-only) into Hawkeye's storage as archive segments numbered under an import node of
+  their own (`<server.name>-coreprotect`, left out of `/hawkeye network`). Each segment is written in
+  one transaction with a compare-and-set checkpoint (schema version 6, table `import_state`), so an
+  import can be cancelled, resumed after a crash and run again later for new rows without importing
+  anything twice. Existing events and player names are never changed; rows older than 2025-01-01 and
+  actions without a Hawkeye equivalent are skipped and counted. The DuckDB and ClickHouse drivers are
+  downloaded from Maven Central on first use into `plugins/Hawkeye/drivers/` and checked against a
+  pinned SHA-256. Existing `messages.yml` files keep their old `general.help` list; add the
+  `/he import coreprotect [source]` line by hand or delete the list to get the new default.
 - `/hawkeye rollback` and `restore` with chunk-by-chunk application on the owning region (blocks,
   container contents, sign text, container transactions, killed entities), `#preview` with `apply`
   and `cancel`, `undo`, network rollbacks with `s:`, and `/hawkeye purge` plus a lease-guarded
@@ -101,6 +113,29 @@ All notable changes to this project are documented in this file. The format is b
   2 bytes per repeated item on a real server. Rows written in Paper's gzip form still read.
 - Removed entities (paintings, frames, vehicles, bucketed mobs) are serialized only with
   `rollback.restore-entities` on, as kills already were.
+- A transaction that fails with an `Error` (such as running out of memory between two statements) is
+  rolled back before the connection's auto-commit is restored; restoring it used to commit the
+  statements that had run, so an import segment could be stored without its checkpoint.
+- An `Error` on the import thread ends the import as failed and frees it; it used to leave the
+  import marked as running until a restart.
+- The CoreProtect import refuses a MySQL or ClickHouse host from CoreProtect's `config.yml` that is not a
+  host name or IP address, and a database name with anything but letters, digits, `_`, `-` and `$`,
+  so neither can add parameters to the JDBC URL.
+- The CoreProtect import tells a missing table from a failed query by the engine's catalog: a table it
+  cannot read fails the import instead of being skipped as absent, and a database without CoreProtect's
+  `block`, `user` and `world` tables is refused before an import node or checkpoint is created.
+- A CoreProtect import run again after a `/co purge` of a SQLite database no longer misses rows: the
+  purge renumbers every table but `block`, so a stored cursor whose row id now names another row (or none)
+  is re-anchored by time, with a warning in the log.
+- A CoreProtect import from MySQL/MariaDB or ClickHouse stops two minutes before its start, so rows
+  CoreProtect is still writing (an open transaction, a ClickHouse batch published late) are left for the
+  next run instead of being passed by. On ClickHouse, read in time order, a row stamped in the far future
+  is never consumed: it used to move the table's cursor past every later row.
+- An import that leaves rows for the next run says so: the finished reply is followed by a new message,
+  `importing.left` (placeholder `<left>`), and the final progress keeps the estimate of those rows
+  instead of 0.
+- A failing estimate of the rows left (a ClickHouse count that times out) keeps the previous estimate
+  instead of failing the import.
 
 ### Tests
 

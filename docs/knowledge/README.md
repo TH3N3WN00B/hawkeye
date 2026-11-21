@@ -246,7 +246,104 @@ update them in the same change when you learn something durable or an entry stop
     `EntityBlockFormEvent`, `BlockMultiPlaceEvent`, `EntityBreakDoorEvent`, `PlayerDeathEvent` and
     `HangingBreakByEntityEvent` share their parent's.
 
-## Owner preferences
+## CoreProtect import facts (verified 2026-11-21)
+
+- Real-server check (2026-11-21): `scripts/smoke/coreprotect-generate.txt` on Paper 26.2 build 135 with
+  CoreProtect CE 24.1 (Modrinth; it refuses to enable on 26.3: "Minecraft 26.3 is not supported") wrote a
+  SQLite database of 13 `block` rows (11 `#tnt` breaks, 2 `#kill` kills) and 6 `container` rows (`#hopper`,
+  blobs of 497 and 451 bytes for the sword and the potion). `scripts/smoke/coreprotect-import.txt` on Paper
+  26.3 build 253 imported its 19 rows, imported nothing the second time, and rolled back from it: the
+  stairs came back as `oak_stairs[facing=east,half=top]` (stored with block data) and
+  `oak_stairs[facing=north,half=bottom]` (stored without: the server's default), the chest got back the
+  sword with `custom_name` and `sharpness` 5 and the potion with `custom_color`. So item metadata written by
+  CoreProtect on 26.2 is rebuilt by `ConfigurationSerialization` on 26.3. The same rows copied into a
+  DuckDB file (CoreProtect's column layout) and into ClickHouse tables shaped like CoreProtect's views
+  passed the same scenario on that server with each driver downloaded by `DriverResolver` on first use
+  (DuckDB about 4 s for 80 MB): both drivers load under Paper's plugin class loader. Not checked: a DuckDB
+  or ClickHouse database written by CoreProtect 25 itself (no released build runs on 26.3 yet). On this
+  host the two server folders are `~/.cache/hawkeye-ref/coreprotect-gen` (Paper 26.2, CoreProtect) and
+  `~/.cache/hawkeye-ref/import-smoke` (Paper 26.3, Hawkeye); both may be cleared. Re-run after cursor
+  anchoring, the settle horizon and the catalog existence check were added: same 19 events, and the
+  second run anchored nothing (no "renumbered" warning).
+- CoreProtect 24.1 stores the version row as `2.24.1`, a non-player cause as a user with a NULL uuid
+  (`#tnt`, `#hopper`, `#kill`), `/kill` as a kill by `#kill`, and a block whose state is the default
+  without block data.
+
+- `CoreProtectSourceIntegrationTest` runs the reader scenario on real engines when set:
+  `HAWKEYE_TEST_COREPROTECT_MYSQL=mariadb://root:@127.0.0.1:33069/coreprotect` (the embedded MariaDB,
+  database `coreprotect`), `HAWKEYE_TEST_COREPROTECT_DUCKDB=1` (with
+  `JAVA_TOOL_OPTIONS=-Djava.io.tmpdir=$HOME/.cache/hawkeye-ref/tmp`; the jar is cached in
+  `~/.cache/hawkeye-ref/drivers`), `HAWKEYE_TEST_COREPROTECT_CLICKHOUSE=http://default:@127.0.0.1:18123/default`.
+  Verified on MariaDB 11.4.5, DuckDB 1.4.5.0 and ClickHouse 26.12.1; the import checkpoint scenario of
+  `ServerDatabaseIntegrationTest` on MariaDB 11.4.5 and PostgreSQL 18.6.
+- Table existence from the catalog (verified 2026-11-21 on SQLite, MariaDB 11.4.5, DuckDB 1.4.5.0 and
+  ClickHouse 26.12.1 by the source tests): SQLite `sqlite_master` (`type IN ('table', 'view')`); MariaDB
+  `information_schema.tables WHERE table_schema = DATABASE()`; DuckDB `information_schema.tables WHERE
+  table_catalog = current_database() AND table_schema = 'main'`; ClickHouse `information_schema.tables
+  WHERE table_schema = currentDatabase()`, which lists views too (CoreProtect's ClickHouse tables are
+  views). On SQLite a view over a missing table is listed but fails on `SELECT`, which the import now
+  reports instead of treating the table as absent.
+- A local ClickHouse without Docker: the official single binary
+  (`curl -fsSL https://builds.clickhouse.com/master/amd64/clickhouse`) in `~/.cache/hawkeye-ref/clickhouse`,
+  started with `./clickhouse server -- --path=$PWD/data/ --tmp_path=$PWD/tmp/ --http_port=18123
+  --tcp_port=19000 --mysql_port=0 --postgresql_port=0 --interserver_http_port=0 --listen_host=127.0.0.1`
+  (plus `--logger.log=...`); user `default`, no password. Up in under a minute.
+- Pinned on-demand drivers (`DriverArtifact`), SHA-256 of the Maven Central files (their published `.sha1`
+  matched): `org.duckdb:duckdb_jdbc:1.4.5.0` `5f11500c4fe8af47cfb15b36bb92e22597ad2109556c1564823e2db1a210072e`,
+  class `org.duckdb.DuckDBDriver`; `com.clickhouse:clickhouse-jdbc:0.10.0:all`
+  `d83736e24306e11929b0cf81b3306ae903c6f51c735c509ad5680c88640d99ce`. The ClickHouse jar registers both
+  `com.clickhouse.jdbc.Driver` (JDBC v2, used) and the older `ClickHouseDriver` wrapper, and does not shade
+  SLF4J: `slf4j-api` must come from the parent class loader (Paper gives plugins one).
+- ClickHouse 26.12 answers the 0.10.0 driver in a compression it cannot read ("Invalid LZ4 magic byte")
+  unless the connection sets `clickhouse_setting_network_compression_method=LZ4` (what CoreProtect sets) or
+  `compress=false`. With `binary_string_support=true` a `String` column reads as raw bytes through
+  `getBytes` (JDBC type VARCHAR), which is how CoreProtect's views expose blobs.
+- MariaDB Connector/J 3.5: `Connection.setReadOnly(true)` sends nothing to a single server unless
+  `assureReadOnly` is set, so a write still succeeds; `SET SESSION TRANSACTION READ ONLY` makes the session
+  refuse writes. `useSsl=true` is a deprecated alias that turns into `sslMode=verify-full` (with a warning);
+  CoreProtect's `enable-ssl` does not check certificates, so the import uses `sslMode=trust`.
+- sqlite-jdbc's read-only `open_mode` is 65 (read-only plus the URI flag); opening a missing file read-only
+  fails and creates nothing.
+- CoreProtect's `/co purge` (`command/PurgeCommand.java`, 24.x/25.x) on SQLite copies each table into a
+  new one with `INSERT INTO ... SELECT`; only `block` copies `rowid` as well, so every other table is
+  renumbered from 1 in the same order and an import cursor's rowid then names a later row or none. On
+  MySQL and DuckDB a purge deletes rows in place and row ids are kept. `RowidScan.anchor` handles both.
+- CoreProtect's SQLite event tables have no declared key (the implicit `rowid` is the row id); `user` and
+  `entity_spawn` declare `id INTEGER PRIMARY KEY`, an alias of the rowid, so `rowid` works on every table.
+  DuckDB's explicit `rowid` column (CoreProtect's, fed by a sequence) is what `rowid` names in SQL there.
+- MockBukkit 4.120 for the import's item decoding (verified 2026-11-21): `getClassByAlias("ItemMeta")` is
+  MockBukkit's `SerializableMeta`, and `ConfigurationSerialization.deserializeObject` rebuilds plain,
+  potion, leather, stew, banner and map meta from `ItemMeta#serialize()` output. But `new ItemStack(type)
+  .hasItemMeta()` is `true` there (Paper: `false`), so "has components" is tested with
+  `isSimilar(new ItemStack(type))`; `serializeAsBytes` then `deserializeBytes` drops a potion's custom
+  colour; and `serializeAsBytes` of an item with attribute modifiers throws `ItemSerializationException`
+  (`AttributeMock` is not `Serializable`). Tests check those through `ServerItemDecoder.rebuild`, before
+  serializing.
+- MockBukkit's `Bukkit.createBlockData(String)` fills the defaults as Paper does
+  (`minecraft:oak_stairs[facing=east,half=bottom]` reads back with `shape=straight,waterlogged=false`) and
+  throws `IllegalArgumentException` for an unknown material. `MockBukkit.createMockPlugin("CoreProtect")`
+  makes `isPluginEnabled("CoreProtect")` true.
+- An `ObjectInputFilter` set on a `BukkitObjectInputStream` applies to everything it reads, wrapped
+  `ConfigurationSerializable` values included: a `java.io.File` in a blob is rejected with
+  `InvalidClassException` before it is constructed.
+- `ImportServiceIntegrationTest` runs the whole import (`ImportScenario`, every row kind) from real engines
+  with the same variables as `CoreProtectSourceIntegrationTest`; the server engines are found through a
+  written CoreProtect `config.yml`. It hard-links the cached driver jars from `~/.cache/hawkeye-ref/drivers`
+  into the plugin's `drivers` folder (copies when the temp folder is on another file system), so nothing
+  is downloaded. Verified 2026-11-21 on MariaDB 11.4.5, DuckDB 1.4.5.0 and ClickHouse 26.12.1, in one test
+  JVM with the reader test: two DuckDB driver class loaders (the reader test's resolver and the plugin's)
+  load side by side.
+- MockBukkit's plugin class loader throws `NullPointerException` ("No jar file selected") from `findClass`
+  for a class it does not have, where Paper's throws `ClassNotFoundException`; a `URLClassLoader` with it
+  as parent then fails the same way. `DriverResolver` wraps its parent so either counts as not found.
+- `.gitignore`'s `run/` (for Paper server folders) ignores every folder named `run`, packages included:
+  the import's run loop was once written as `core.service.importer.run` and its files were silently left
+  out of commits. Never name a package `run`; check `git status --ignored` after adding a package.
+- `ImportService.tune` (package-private, tests only) lowers the batch size below `archive.segment-events`'
+  minimum of 16,384 and the 30 s progress interval, so cancel and resume can be tested on a few hundred
+  rows.
+
+
 
 - Commit after every logical, working unit and push right after. Merge `origin/main`, never rebase or
   force-push published history.

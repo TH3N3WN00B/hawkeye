@@ -137,6 +137,15 @@ public record Tables(@NotNull String prefix) {
     }
 
     /**
+     * The import checkpoints: one row per imported source.
+     *
+     * @return the name
+     */
+    public @NotNull String importState() {
+        return prefix + "import_state";
+    }
+
+    /**
      * The place index's region table of schema version 4, dropped by version 5.
      *
      * @return the name

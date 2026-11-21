@@ -17,6 +17,7 @@ import gg.moonrise.hawkeye.core.repository.dictionary.ActorRepository;
 import gg.moonrise.hawkeye.core.repository.dictionary.DictionaryRepository;
 import gg.moonrise.hawkeye.core.repository.event.EventFilter;
 import gg.moonrise.hawkeye.core.repository.event.EventRepository;
+import gg.moonrise.hawkeye.core.repository.importer.ImportStateRepository;
 import gg.moonrise.hawkeye.core.repository.index.PlaceIndexRepository;
 import gg.moonrise.hawkeye.core.repository.index.SegmentIndexRepository;
 import gg.moonrise.hawkeye.core.repository.network.JobRepository;
@@ -26,6 +27,7 @@ import gg.moonrise.hawkeye.core.storage.archive.Archive;
 import gg.moonrise.hawkeye.core.storage.archive.Archives;
 import gg.moonrise.hawkeye.core.storage.event.EventStore;
 import gg.moonrise.hawkeye.core.storage.event.QueryResolver;
+import gg.moonrise.hawkeye.core.storage.importer.ImportStore;
 import gg.moonrise.hawkeye.core.storage.index.SegmentIndex;
 import gg.moonrise.hawkeye.core.storage.segment.ByteRange;
 import gg.moonrise.hawkeye.core.storage.shard.Dictionaries;
@@ -34,6 +36,11 @@ import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.actor.Actor;
 import gg.moonrise.hawkeye.entity.event.PendingEvent;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
+import gg.moonrise.hawkeye.entity.importer.CheckpointResult;
+import gg.moonrise.hawkeye.entity.importer.ImportState;
+import gg.moonrise.hawkeye.entity.importer.SkipReason;
+import gg.moonrise.hawkeye.entity.importer.SourceCursor;
+import gg.moonrise.hawkeye.entity.importer.SourceTable;
 import gg.moonrise.hawkeye.entity.job.JobKind;
 import gg.moonrise.hawkeye.entity.query.Area;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
@@ -55,6 +62,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -63,7 +71,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * The SQLite storage scenarios against a real MySQL/MariaDB or PostgreSQL server. Opt-in: set
+ * The SQLite storage scenarios against a real MySQL/MariaDB or PostgreSQL server, ending with an import's
+ * checkpointed writes ({@code import_state}, {@link ImportStore}). Opt-in: set
  * {@code HAWKEYE_TEST_MYSQL} and/or {@code HAWKEYE_TEST_POSTGRES} to {@code scheme://user:password@host:port/database}
  * (an empty database the user may create tables in). Without them the tests are skipped. Each run uses
  * its own table prefix and drops its tables afterwards.
@@ -198,6 +207,67 @@ public class ServerDatabaseIntegrationTest {
         assertFalse(leases.tryAcquire(database, "archive", "creative", 3_000, 10_000), "another server waits");
         assertTrue(leases.tryAcquire(database, "archive", "creative", 13_000, 10_000), "an expired lease moves");
         assertTrue(leases.release(database, "archive", "creative"));
+
+        assertImport(database, shard, store, creative);
+    }
+
+    /**
+     * An import's checkpoint on a server engine: the import node is a plain insert that a taken name
+     * rejects without consuming a node id, a segment and its compare-and-set checkpoint commit together,
+     * and a stale revision rolls the segment back.
+     */
+    private static void assertImport(Database database, Shard shard, EventStore store, ServerNode creative)
+            throws SQLException {
+        ImportStore imports = new ImportStore(new ImportStateRepository(), new ServerRepository(), store);
+        String source = "coreprotect:survival:1735689600:25.0";
+        ImportState state = imports.begin(shard, source, "survival", "survival", "rowid", 1_000);
+        assertEquals(ImportState.fresh("survival-coreprotect", "rowid", 1_000), state);
+        ServerNode node = imports.node(shard, state);
+        assertTrue(node.imported());
+        assertEquals(creative.node() + 1, node.node());
+        assertEquals(state, imports.begin(shard, source, "survival", "survival", "rowid", 2_000));
+        assertEquals(Optional.empty(), database.read(connection -> new ServerRepository().registerImport(connection,
+                database.sql(), "survival-coreprotect", "survival")), "the name is taken");
+        assertEquals("survival-coreprotect-2", imports.begin(shard, source + "b", "survival", "survival", "rowid",
+                3_000).node());
+        assertEquals(creative.node() + 2, imports.node(shard, imports.load(shard, source + "b").orElseThrow()).node(),
+                "a taken name consumed no node id");
+
+        ShardScope scope = new ShardScope.Scopes(Set.of("survival"));
+        LookupQuery everything = LookupQuery.at(new Area.Everywhere());
+        long before = store.count(shard, everything, scope);
+        LookupQuery rolledBack = everything.withRollbackState(RollbackState.ROLLED_BACK);
+        long rolledBackBefore = store.count(shard, rolledBack, scope);
+        long slot = EventIds.slot(EventIds.floor(T0 + 5_000_000));
+        Actor steve = Actor.player(new UUID(0, 2), "Steve");
+        List<PendingEvent> batch = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            batch.add(new PendingEvent(EventIds.slotStamp(slot, i), "world", BlockPositions.pack(i, 64, 0), steve,
+                    Action.BLOCK_BREAK, "minecraft:stone", "minecraft:air", 0, null, i == 0));
+        }
+        ImportState next = new ImportState(state.revision(), state.node(), state.order(), Map.of(SourceTable.BLOCK,
+                new SourceCursor(1_767_225_600, 3)), slot, 3, 0, Map.of(SkipReason.NO_EQUIVALENT, 1L), false,
+                state.startedMillis(), 4_000);
+        CheckpointResult saved = imports.write(shard, node, "survival", batch, Runnable::run, source, next);
+        assertEquals(new CheckpointResult.Saved(next.withRevision(2, 4_000)), saved);
+        assertEquals(next.withRevision(2, 4_000), imports.load(shard, source).orElseThrow());
+        assertEquals(before + 3, store.count(shard, everything, scope));
+        assertEquals(rolledBackBefore + 1, store.count(shard, rolledBack, scope), "imported as rolled back");
+        List<StoredEvent> imported = store.find(shard, new LookupQuery(new ServerScope.Local(), new Area.Everywhere(),
+                TimeWindow.ALL, Set.of("steve"), Set.of(), Set.of(), Set.of(), Set.of(), RollbackState.ANY), scope, 0,
+                10, false);
+        assertEquals(List.of("survival-coreprotect", "survival-coreprotect", "survival-coreprotect"),
+                imported.stream().map(StoredEvent::server).toList());
+        assertEquals(List.of(true, false, false), imported.stream().map(StoredEvent::rolledBack).toList());
+
+        List<PendingEvent> again = batch.stream().map(event -> event.withStamp(EventIds.slotStamp(slot + 1,
+                EventIds.rank(EventIds.fromStamp(event.stamp(), 0))))).toList();
+        assertEquals(new CheckpointResult.Superseded(), imports.write(shard, node, "survival", again, Runnable::run,
+                source, next), "revision 1 is stale");
+        assertEquals(before + 3, store.count(shard, everything, scope), "the stale segment rolled back");
+        assertEquals(3, assertInstanceOf(CheckpointResult.Saved.class, imports.save(shard, source,
+                next.withRevision(2, 5_000))).state().revision());
+        assertEquals(new CheckpointResult.Superseded(), imports.save(shard, source, next.withRevision(2, 6_000)));
     }
 
     /**
@@ -324,7 +394,7 @@ public class ServerDatabaseIntegrationTest {
         Tables t = database.tables();
         database.read(connection -> {
             try (Statement statement = connection.createStatement()) {
-                for (String table : List.of(t.regionSegment(), t.blockSegment(), t.actorSegment(), t.segmentIndex(), t.legacyPlaceRegion(), t.legacyPlaceChunk(), t.legacyPlaceState(), t.segmentFlag(), t.segment(), t.lease(), t.job(), t.event(), t.type(),
+                for (String table : List.of(t.importState(), t.regionSegment(), t.blockSegment(), t.actorSegment(), t.segmentIndex(), t.legacyPlaceRegion(), t.legacyPlaceChunk(), t.legacyPlaceState(), t.segmentFlag(), t.segment(), t.lease(), t.job(), t.event(), t.type(),
                         t.actor(), t.world(), t.server(), t.schemaVersion())) {
                     statement.execute("DROP TABLE IF EXISTS " + table);
                 }

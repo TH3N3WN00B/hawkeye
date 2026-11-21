@@ -34,6 +34,9 @@ public final class MessagesConfig {
     @Comment("/hawkeye purge and the automatic purge.")
     private PurgeMessages purge = new PurgeMessages();
 
+    @Comment("/hawkeye import coreprotect, status and cancel.")
+    private ImportMessages importing = new ImportMessages();
+
     @Comment("/hawkeye status and /hawkeye network.")
     private StatusMessages status = new StatusMessages();
 }

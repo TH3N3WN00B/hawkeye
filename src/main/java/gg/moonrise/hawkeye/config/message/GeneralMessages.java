@@ -26,6 +26,8 @@ public final class GeneralMessages {
             "<white>/he restore <params></white> <dark_gray>-</dark_gray> <gray>redo rolled-back changes</gray>",
             "<white>/he undo</white> <dark_gray>-</dark_gray> <gray>revert your last rollback or restore</gray>",
             "<white>/he purge t:<age></white> <dark_gray>-</dark_gray> <gray>delete old data</gray>",
+            "<white>/he import coreprotect [source]</white> <dark_gray>-</dark_gray> <gray>import CoreProtect "
+                    + "history</gray>",
             "<white>/he status</white> <dark_gray>-</dark_gray> <gray>queue, storage and network health</gray>");
 
     @Comment("Reply to /hawkeye reload when every file was read.")

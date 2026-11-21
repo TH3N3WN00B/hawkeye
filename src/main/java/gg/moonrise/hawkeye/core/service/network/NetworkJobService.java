@@ -160,6 +160,10 @@ public final class NetworkJobService implements Enableable {
         List<Destination> destinations = new ArrayList<>();
         for (Shard shard : storage.shards()) {
             for (ServerNode server : targets.servers(shard)) {
+                if (server.imported()) {
+                    // An import node only numbers imported events: no server claims its jobs.
+                    continue;
+                }
                 boolean selected = switch (scope) {
                     case ServerScope.Network network -> true;
                     case ServerScope.Named named -> named.names().contains(server.name());
