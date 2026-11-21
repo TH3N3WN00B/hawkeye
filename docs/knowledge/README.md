@@ -294,6 +294,16 @@ update them in the same change when you learn something durable or an entry stop
 - An `ObjectInputFilter` set on a `BukkitObjectInputStream` applies to everything it reads, wrapped
   `ConfigurationSerializable` values included: a `java.io.File` in a blob is rejected with
   `InvalidClassException` before it is constructed.
+- `ImportServiceIntegrationTest` runs the whole import (`ImportScenario`, every row kind) from real engines
+  with the same variables as `CoreProtectSourceIntegrationTest`; the server engines are found through a
+  written CoreProtect `config.yml`. It hard-links the cached driver jars from `~/.cache/hawkeye-ref/drivers`
+  into the plugin's `drivers` folder (copies when the temp folder is on another file system), so nothing
+  is downloaded. Verified 2026-11-21 on MariaDB 11.4.5, DuckDB 1.4.5.0 and ClickHouse 26.12.1, in one test
+  JVM with the reader test: two DuckDB driver class loaders (the reader test's resolver and the plugin's)
+  load side by side.
+- MockBukkit's plugin class loader throws `NullPointerException` ("No jar file selected") from `findClass`
+  for a class it does not have, where Paper's throws `ClassNotFoundException`; a `URLClassLoader` with it
+  as parent then fails the same way. `DriverResolver` wraps its parent so either counts as not found.
 - `ImportService.tune` (package-private, tests only) lowers the batch size below `archive.segment-events`'
   minimum of 16,384 and the 30 s progress interval, so cancel and resume can be tested on a few hundred
   rows.
