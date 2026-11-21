@@ -1,13 +1,13 @@
 package gg.moonrise.hawkeye.core.service.importer.pipeline;
 
-import gg.moonrise.hawkeye.core.queue.IdAssigner;
+import gg.moonrise.hawkeye.core.queue.id.IdAssigner;
 import gg.moonrise.hawkeye.core.storage.importer.ImportStore;
 import gg.moonrise.hawkeye.core.storage.shard.Shard;
 import gg.moonrise.hawkeye.entity.event.PendingEvent;
 import gg.moonrise.hawkeye.entity.importer.CheckpointResult;
 import gg.moonrise.hawkeye.entity.importer.ImportState;
 import gg.moonrise.hawkeye.entity.server.ServerNode;
-import gg.moonrise.hawkeye.util.EventIds;
+import gg.moonrise.hawkeye.util.event.EventIds;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.concurrent.Executor;

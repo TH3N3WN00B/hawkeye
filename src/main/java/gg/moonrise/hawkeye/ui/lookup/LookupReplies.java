@@ -1,9 +1,9 @@
 package gg.moonrise.hawkeye.ui.lookup;
 
-import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.config.message.MessagesConfig;
 import gg.moonrise.hawkeye.core.service.lookup.LookupOutcome;
-import gg.moonrise.hawkeye.core.service.lookup.PageResult;
+import gg.moonrise.hawkeye.core.service.lookup.page.PageResult;
 import gg.moonrise.hawkeye.core.service.thread.ServerThreads;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.time.Clock;

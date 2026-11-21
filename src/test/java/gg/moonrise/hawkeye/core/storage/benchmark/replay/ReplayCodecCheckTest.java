@@ -3,14 +3,14 @@ package gg.moonrise.hawkeye.core.storage.benchmark.replay;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import gg.moonrise.hawkeye.core.queue.IdAssigner;
+import gg.moonrise.hawkeye.core.queue.id.IdAssigner;
 import gg.moonrise.hawkeye.core.repository.event.EventRow;
 import gg.moonrise.hawkeye.core.storage.segment.PackedSegment;
 import gg.moonrise.hawkeye.core.storage.segment.SegmentHeader;
 import gg.moonrise.hawkeye.core.storage.segment.Segments;
 import gg.moonrise.hawkeye.core.storage.segment.SharedFrame;
 import gg.moonrise.hawkeye.entity.event.PendingEvent;
-import gg.moonrise.hawkeye.util.EventIds;
+import gg.moonrise.hawkeye.util.event.EventIds;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;

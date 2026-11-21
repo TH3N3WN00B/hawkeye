@@ -118,7 +118,7 @@ tasks {
         }
 
         // The engine moves under our package so Moss's scan (main class package only) finds its beans; its
-        // async command registry is replaced by command.HawkeyeCommandRegistry.
+        // async command registry is replaced by command.registry.HawkeyeCommandRegistry.
         exclude("gg/moonrise/engine/paper/command/PaperCommandRegistry.class")
         relocate("gg.moonrise.engine", "$basePackage.libs.engine")
     }
@@ -132,7 +132,7 @@ val verifyPluginJar = tasks.register("verifyPluginJar") {
     val ours = basePackage.replace('.', '/') + "/"
     val mainClass = "$basePackage.${pluginName}Plugin"
     val loaderClass = "$basePackage.loader.${pluginName}PluginLoader"
-    val registryClass = "${ours}command/${pluginName}CommandRegistry.class"
+    val registryClass = "${ours}command/registry/${pluginName}CommandRegistry.class"
     inputs.file(artifact)
     val marker = layout.buildDirectory.file("verifyPluginJar/ok")
     outputs.file(marker)

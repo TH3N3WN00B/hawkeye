@@ -1,6 +1,6 @@
 package gg.moonrise.hawkeye.core.storage.archive;
 
-import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.config.file.ArchiveSettings;
 import gg.moonrise.hawkeye.core.repository.network.LeaseRepository;
 import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;

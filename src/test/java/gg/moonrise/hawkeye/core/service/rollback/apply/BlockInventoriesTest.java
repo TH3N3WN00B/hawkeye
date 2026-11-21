@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import gg.moonrise.hawkeye.entity.payload.Payload;
 import gg.moonrise.hawkeye.support.TestPlugins;
-import gg.moonrise.hawkeye.util.ItemBytes;
+import gg.moonrise.hawkeye.util.serialize.ItemBytes;
 import io.papermc.paper.block.TileStateInventoryHolder;
 import java.util.List;
 import org.bukkit.Material;

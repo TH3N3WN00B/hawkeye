@@ -10,7 +10,7 @@ import gg.moonrise.hawkeye.core.service.rollback.plan.PlannedChange;
 import gg.moonrise.hawkeye.core.service.rollback.plan.RollbackPlan;
 import gg.moonrise.hawkeye.core.service.rollback.plan.SignPatch;
 import gg.moonrise.hawkeye.support.TestPlugins;
-import gg.moonrise.hawkeye.util.BlockPositions;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;

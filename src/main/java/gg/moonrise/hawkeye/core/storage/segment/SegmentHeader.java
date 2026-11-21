@@ -1,10 +1,10 @@
 package gg.moonrise.hawkeye.core.storage.segment;
 
 import gg.moonrise.hawkeye.core.repository.event.EventFilter;
-import gg.moonrise.hawkeye.util.EventIds;
-import gg.moonrise.hawkeye.util.codec.ByteReader;
-import gg.moonrise.hawkeye.util.codec.ByteWriter;
-import gg.moonrise.hawkeye.util.codec.CodecException;
+import gg.moonrise.hawkeye.util.event.EventIds;
+import gg.moonrise.hawkeye.util.codec.binary.ByteReader;
+import gg.moonrise.hawkeye.util.codec.binary.ByteWriter;
+import gg.moonrise.hawkeye.util.codec.binary.CodecException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;

@@ -26,7 +26,7 @@ import gg.moonrise.hawkeye.entity.query.EventCount;
 import gg.moonrise.hawkeye.entity.query.RollbackState;
 import gg.moonrise.hawkeye.entity.server.WorldKey;
 import gg.moonrise.hawkeye.entity.storage.SegmentTotals;
-import gg.moonrise.hawkeye.util.EventIds;
+import gg.moonrise.hawkeye.util.event.EventIds;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.sql.Connection;
 import java.sql.SQLException;

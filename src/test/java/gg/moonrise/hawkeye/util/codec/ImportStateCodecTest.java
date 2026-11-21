@@ -6,8 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import gg.moonrise.hawkeye.entity.importer.ImportState;
 import gg.moonrise.hawkeye.entity.importer.SkipReason;
-import gg.moonrise.hawkeye.entity.importer.SourceCursor;
-import gg.moonrise.hawkeye.entity.importer.SourceTable;
+import gg.moonrise.hawkeye.entity.importer.source.SourceCursor;
+import gg.moonrise.hawkeye.entity.importer.source.SourceTable;
+import gg.moonrise.hawkeye.util.codec.binary.CodecException;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 

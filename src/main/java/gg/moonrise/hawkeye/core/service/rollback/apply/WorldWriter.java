@@ -2,8 +2,8 @@ package gg.moonrise.hawkeye.core.service.rollback.apply;
 
 import gg.moonrise.hawkeye.core.service.rollback.plan.PlannedChange;
 import gg.moonrise.hawkeye.core.service.rollback.plan.SignPatch;
-import gg.moonrise.hawkeye.util.EntityBytes;
-import gg.moonrise.hawkeye.util.ItemBytes;
+import gg.moonrise.hawkeye.util.serialize.EntityBytes;
+import gg.moonrise.hawkeye.util.serialize.ItemBytes;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.util.LinkedHashMap;
 import java.util.List;

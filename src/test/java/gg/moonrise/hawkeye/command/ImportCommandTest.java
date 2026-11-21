@@ -4,8 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import gg.moonrise.hawkeye.core.repository.coreprotect.CoreProtectFixture;
-import gg.moonrise.hawkeye.core.repository.coreprotect.CoreProtectFixture.Layout;
+import gg.moonrise.hawkeye.config.permission.Permissions;
+import gg.moonrise.hawkeye.core.repository.coreprotect.source.CoreProtectFixture;
+import gg.moonrise.hawkeye.core.repository.coreprotect.source.CoreProtectFixture.Layout;
 import gg.moonrise.hawkeye.core.service.importer.ImportListener;
 import gg.moonrise.hawkeye.core.service.importer.ImportOutcome;
 import gg.moonrise.hawkeye.core.service.importer.ImportProgress;

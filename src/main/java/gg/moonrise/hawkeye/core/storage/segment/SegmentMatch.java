@@ -1,7 +1,7 @@
 package gg.moonrise.hawkeye.core.storage.segment;
 
 import gg.moonrise.hawkeye.core.repository.event.EventRow;
-import gg.moonrise.hawkeye.util.codec.CodecException;
+import gg.moonrise.hawkeye.util.codec.binary.CodecException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.LongPredicate;

@@ -4,9 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import gg.moonrise.hawkeye.core.repository.event.EventRow;
-import gg.moonrise.hawkeye.util.BlockPositions;
-import gg.moonrise.hawkeye.util.EventIds;
-import gg.moonrise.hawkeye.util.EventOrder;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
+import gg.moonrise.hawkeye.util.event.EventIds;
+import gg.moonrise.hawkeye.util.event.EventOrder;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;

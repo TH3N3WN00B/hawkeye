@@ -1,6 +1,6 @@
 package gg.moonrise.hawkeye.core.service.network;
 
-import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
 import gg.moonrise.hawkeye.core.storage.event.EventStore;
 import gg.moonrise.hawkeye.core.storage.shard.Shard;

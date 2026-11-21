@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import gg.moonrise.hawkeye.util.codec.CodecException;
+import gg.moonrise.hawkeye.util.codec.binary.CodecException;
 import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtByte;
 import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtByteArray;
 import gg.moonrise.hawkeye.util.nbt.NbtTag.NbtCompound;

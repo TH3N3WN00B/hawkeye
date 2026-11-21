@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import gg.moonrise.hawkeye.core.repository.event.EventRow;
 import gg.moonrise.hawkeye.core.storage.segment.SegmentFixtures.Draft;
-import gg.moonrise.hawkeye.util.BlockPositions;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;

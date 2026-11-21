@@ -1,7 +1,7 @@
 package gg.moonrise.hawkeye.core.service.status;
 
-import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
-import gg.moonrise.hawkeye.core.queue.EventWriter;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
+import gg.moonrise.hawkeye.core.queue.event.EventWriter;
 import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
 import gg.moonrise.hawkeye.core.service.network.NetworkJobService;
 import gg.moonrise.hawkeye.core.storage.archive.Archive;

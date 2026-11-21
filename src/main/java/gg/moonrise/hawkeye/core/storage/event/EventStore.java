@@ -18,7 +18,7 @@ import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import gg.moonrise.hawkeye.entity.query.ShardScope;
 import gg.moonrise.hawkeye.entity.server.ServerNode;
 import gg.moonrise.hawkeye.entity.server.WorldKey;
-import gg.moonrise.hawkeye.util.EventIds;
+import gg.moonrise.hawkeye.util.event.EventIds;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.sql.Connection;
 import java.sql.SQLException;

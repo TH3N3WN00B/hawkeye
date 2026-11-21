@@ -3,7 +3,7 @@ package gg.moonrise.hawkeye.core.time;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import gg.moonrise.hawkeye.util.EventIds;
+import gg.moonrise.hawkeye.util.event.EventIds;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;

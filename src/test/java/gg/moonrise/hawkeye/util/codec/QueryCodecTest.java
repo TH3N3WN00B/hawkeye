@@ -9,6 +9,7 @@ import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import gg.moonrise.hawkeye.entity.query.RollbackState;
 import gg.moonrise.hawkeye.entity.query.ServerScope;
 import gg.moonrise.hawkeye.entity.query.TimeWindow;
+import gg.moonrise.hawkeye.util.codec.binary.CodecException;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;

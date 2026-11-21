@@ -16,7 +16,7 @@ import gg.moonrise.hawkeye.entity.payload.SignSides;
 import gg.moonrise.hawkeye.entity.query.Area;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import gg.moonrise.hawkeye.entity.query.RollbackState;
-import gg.moonrise.hawkeye.util.BlockPositions;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
 import gg.moonrise.hawkeye.util.codec.PayloadCodec;
 import java.util.ArrayList;
 import java.util.Collections;

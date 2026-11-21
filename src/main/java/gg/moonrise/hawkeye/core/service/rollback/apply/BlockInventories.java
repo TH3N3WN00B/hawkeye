@@ -1,7 +1,7 @@
 package gg.moonrise.hawkeye.core.service.rollback.apply;
 
 import gg.moonrise.hawkeye.entity.payload.Payload;
-import gg.moonrise.hawkeye.util.ItemBytes;
+import gg.moonrise.hawkeye.util.serialize.ItemBytes;
 import io.papermc.paper.block.TileStateInventoryHolder;
 import java.util.ArrayList;
 import java.util.List;

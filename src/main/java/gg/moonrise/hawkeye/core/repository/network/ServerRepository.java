@@ -2,7 +2,7 @@ package gg.moonrise.hawkeye.core.repository.network;
 
 import gg.moonrise.hawkeye.core.sql.Sql;
 import gg.moonrise.hawkeye.entity.server.ServerNode;
-import gg.moonrise.hawkeye.util.EventIds;
+import gg.moonrise.hawkeye.util.event.EventIds;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.sql.Connection;
 import java.sql.PreparedStatement;

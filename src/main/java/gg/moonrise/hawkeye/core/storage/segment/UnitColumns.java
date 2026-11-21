@@ -1,8 +1,8 @@
 package gg.moonrise.hawkeye.core.storage.segment;
 
 import gg.moonrise.hawkeye.core.repository.event.EventRow;
-import gg.moonrise.hawkeye.util.BlockPositions;
-import gg.moonrise.hawkeye.util.codec.ByteWriter;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
+import gg.moonrise.hawkeye.util.codec.binary.ByteWriter;
 import org.jetbrains.annotations.NotNull;
 
 /**

@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import gg.moonrise.hawkeye.util.BlockPositions;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;

@@ -2,8 +2,8 @@ package gg.moonrise.hawkeye.core.repository.event;
 
 import gg.moonrise.hawkeye.core.sql.Dialect;
 import gg.moonrise.hawkeye.core.sql.Tables;
-import gg.moonrise.hawkeye.util.BlockPositions;
-import gg.moonrise.hawkeye.util.EventIds;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
+import gg.moonrise.hawkeye.util.event.EventIds;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;

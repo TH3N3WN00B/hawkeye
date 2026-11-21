@@ -146,7 +146,7 @@ update them in the same change when you learn something durable or an entry stop
 - Paper writes some entity keys with a dot in the key itself at the top level (`Paper.Origin`,
   `Paper.OriginWorld`, `Paper.SpawnReason`, `Spigot.ticksLived`, `Bukkit.updateLevel`), not as nested
   compounds, and writes `attributes` in hash order (it differs between identical mobs).
-- Entity normalization rule (`util.EntitySnapshots`): strip only what a respawn resets, re-rolls or
+- Entity normalization rule (`util.serialize.EntitySnapshots`): strip only what a respawn resets, re-rolls or
   gets from the event row: UUID, motion, fall distance, fire, air, on-ground, portal cooldown, hurt and
   death timers, spawn bookkeeping (`Paper.Origin*`, `Spigot.ticksLived`, world UUIDs), the knockback
   timer, combat memory (`last_hurt_by_*`, anger), `EggLayTime`, the villager

@@ -1,6 +1,6 @@
 package gg.moonrise.hawkeye.entity.query;
 
-import gg.moonrise.hawkeye.util.EventIds;
+import gg.moonrise.hawkeye.util.event.EventIds;
 import org.jetbrains.annotations.NotNull;
 
 /**

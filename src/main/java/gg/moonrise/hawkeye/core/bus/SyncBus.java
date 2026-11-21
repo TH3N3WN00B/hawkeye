@@ -1,6 +1,6 @@
 package gg.moonrise.hawkeye.core.bus;
 
-import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.config.file.NetworkSettings;
 import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
 import gg.moonrise.moss.spring.Enableable;

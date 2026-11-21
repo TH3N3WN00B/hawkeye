@@ -6,9 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import gg.moonrise.hawkeye.command.HawkeyeCommand;
-import gg.moonrise.hawkeye.command.HawkeyeCommandRegistry;
-import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
-import gg.moonrise.hawkeye.core.queue.EventWriter;
+import gg.moonrise.hawkeye.command.registry.HawkeyeCommandRegistry;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
+import gg.moonrise.hawkeye.core.queue.event.EventWriter;
 import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
 import gg.moonrise.hawkeye.core.storage.shard.StorageManager;
 import gg.moonrise.hawkeye.support.TestPlugins;

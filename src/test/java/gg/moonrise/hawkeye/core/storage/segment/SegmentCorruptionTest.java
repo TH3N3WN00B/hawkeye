@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import gg.moonrise.hawkeye.core.repository.event.EventRow;
-import gg.moonrise.hawkeye.util.codec.CodecException;
+import gg.moonrise.hawkeye.util.codec.binary.CodecException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;

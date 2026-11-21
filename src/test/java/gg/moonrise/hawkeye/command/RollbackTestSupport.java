@@ -2,7 +2,8 @@ package gg.moonrise.hawkeye.command;
 
 import static org.junit.jupiter.api.Assertions.fail;
 
-import gg.moonrise.hawkeye.command.support.QueryInput;
+import gg.moonrise.hawkeye.command.query.QueryInput;
+import gg.moonrise.hawkeye.command.registry.HawkeyeCommandRegistry;
 import gg.moonrise.hawkeye.support.TestCommandManager;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import java.util.ArrayList;

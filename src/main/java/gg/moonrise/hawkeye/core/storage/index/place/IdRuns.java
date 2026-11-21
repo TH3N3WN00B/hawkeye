@@ -1,8 +1,8 @@
 package gg.moonrise.hawkeye.core.storage.index.place;
 
-import gg.moonrise.hawkeye.util.codec.ByteReader;
-import gg.moonrise.hawkeye.util.codec.ByteWriter;
-import gg.moonrise.hawkeye.util.codec.CodecException;
+import gg.moonrise.hawkeye.util.codec.binary.ByteReader;
+import gg.moonrise.hawkeye.util.codec.binary.ByteWriter;
+import gg.moonrise.hawkeye.util.codec.binary.CodecException;
 import java.util.Arrays;
 import java.util.function.LongConsumer;
 import org.jetbrains.annotations.NotNull;

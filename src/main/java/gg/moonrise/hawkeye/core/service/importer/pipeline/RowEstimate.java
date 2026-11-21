@@ -1,7 +1,7 @@
 package gg.moonrise.hawkeye.core.service.importer.pipeline;
 
-import gg.moonrise.hawkeye.entity.importer.SourceCursor;
-import gg.moonrise.hawkeye.entity.importer.SourceTable;
+import gg.moonrise.hawkeye.entity.importer.source.SourceCursor;
+import gg.moonrise.hawkeye.entity.importer.source.SourceTable;
 import java.sql.SQLException;
 import java.util.Collection;
 import java.util.function.Function;

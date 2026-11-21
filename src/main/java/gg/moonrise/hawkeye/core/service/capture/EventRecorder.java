@@ -1,18 +1,18 @@
 package gg.moonrise.hawkeye.core.service.capture;
 
-import gg.moonrise.hawkeye.config.HawkeyeConfigProvider;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.config.file.LogCategory;
 import gg.moonrise.hawkeye.config.file.LoggingSettings;
-import gg.moonrise.hawkeye.core.queue.EventQueue;
+import gg.moonrise.hawkeye.core.queue.event.EventQueue;
 import gg.moonrise.hawkeye.core.time.EventClock;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.action.ActionFamily;
 import gg.moonrise.hawkeye.entity.actor.Actor;
 import gg.moonrise.hawkeye.entity.event.PendingEvent;
 import gg.moonrise.hawkeye.entity.payload.Payload;
-import gg.moonrise.hawkeye.util.BlockPositions;
-import gg.moonrise.hawkeye.util.EntityBytes;
-import gg.moonrise.hawkeye.util.ItemBytes;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
+import gg.moonrise.hawkeye.util.serialize.EntityBytes;
+import gg.moonrise.hawkeye.util.serialize.ItemBytes;
 import gg.moonrise.hawkeye.util.codec.PayloadCodec;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.util.concurrent.atomic.LongAdder;

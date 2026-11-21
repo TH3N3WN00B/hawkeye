@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import gg.moonrise.hawkeye.command.Permissions;
+import gg.moonrise.hawkeye.config.permission.Permissions;
 import gg.moonrise.hawkeye.loader.HawkeyePluginLoader;
 import java.io.IOException;
 import java.io.InputStream;

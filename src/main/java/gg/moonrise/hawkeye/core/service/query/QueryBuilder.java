@@ -1,11 +1,13 @@
 package gg.moonrise.hawkeye.core.service.query;
 
+import gg.moonrise.hawkeye.core.service.query.syntax.QueryError;
+import gg.moonrise.hawkeye.core.service.query.syntax.QueryParameters;
 import gg.moonrise.hawkeye.entity.query.Area;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import gg.moonrise.hawkeye.entity.query.RollbackState;
 import gg.moonrise.hawkeye.entity.query.ServerScope;
 import gg.moonrise.hawkeye.entity.query.TimeWindow;
-import gg.moonrise.hawkeye.util.BlockPositions;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.time.Clock;
 import lombok.RequiredArgsConstructor;

@@ -862,20 +862,28 @@ new top-level package (or a new `core.*` package) goes into a layer there in the
 |---|---|---|
 | Plugin | the root package | `HawkeyePlugin` only; may use any layer |
 | Loader | `loader` | `HawkeyePluginLoader` (runtime libraries) |
-| Player-facing | `command` (`command.support`), `listener.<family>`, `ui.<feature>`, `integration.api` (`type`, `indicator` are reserved) | Cloud commands, Bukkit listeners, chat output, the `HawkeyeApi` implementation other plugins call |
+| Player-facing | `command` (`command.registry`, `command.query`), `listener.<family>`, `ui.<feature>`, `integration.api` (`type`, `indicator` are reserved) | Cloud commands, Bukkit listeners, chat output, the `HawkeyeApi` implementation other plugins call |
 | Service | `core.service.<feature>` (`capture`, `importer`, `inspect`, `lookup`, `network`, `purge`, `query`, `rollback`, `status`, `thread`) | Use cases: recording, imports, lookups, rollbacks, purges, network jobs, status |
-| Backend | `core.repository.<table group>`, `core.sql`, `core.storage.<part>`, `core.queue`, `core.bus`, `core.scheduler`, `core.time` | Repositories and SQL, the storage engine, the write queue and spool, the cross-server bus, executors, the clock |
-| Bottom | `entity.<concept>`, `config` (`config.file`, `config.message`), `util` (`util.codec`, `util.nbt`), `api` | Data model, config model, pure helpers, the public API types |
+| Backend | `core.repository.<table group>`, `core.sql`, `core.storage.<part>`, `core.queue.<part>`, `core.bus`, `core.scheduler`, `core.time` | Repositories and SQL, the storage engine, the write queue and spool, the cross-server bus, executors, the clock |
+| Bottom | `entity.<concept>`, `config.<part>` (`file`, `message`, `provider`, `permission`), `util.<part>` (`codec`, `codec.binary`, `event`, `nbt`, `position`, `serialize`, `text`), `api` | Data model, config model, pure helpers, the public API types |
 
 Packages split by concern, never a flat mix (a package with classes and subpackages keeps only
-the feature's entry points and its own result types at its root):
+the feature's entry points and its own result types at its root). `core`, `core.service`, `core.storage`,
+`core.repository`, `core.repository.coreprotect`, `core.queue`, `config` and `util` hold only
+subpackages; `ArchitectureTest` checks that list:
 
 | Package | Subpackages |
 |---|---|
 | `core.storage` | `shard` (`StorageManager`, `StorageState`, `Shard`, `Dictionaries`), `event` (`EventStore`, `QueryResolver`), `archive` (`Archive`, `Archiver`, `SegmentCache`), `segment` (archive format 2 codec), `index` (`SegmentIndex`, `PlaceIndex`, `ActorIndex`), `index.place` (place index row codecs), `importer` (`ImportStore`) |
-| `core.repository` | one per table group: `event`, `dictionary`, `archive` (`segment`, `segment_flag`), `index` (segment index tables), `network` (`server`, `job`, `lease`), `importer` (`import_state`); plus `coreprotect` (reading a CoreProtect database: locator, dialects, drivers, readers) |
+| `core.repository` | one per table group: `event`, `dictionary`, `archive` (`segment`, `segment_flag`), `index` (segment index tables), `network` (`server`, `job`, `lease`), `importer` (`import_state`); plus `coreprotect` (reading a CoreProtect database, split below) |
+| `core.repository.coreprotect` | `source` (`CoreProtectSources`, `CoreProtectSource`, `SourceLocator`), `schema` (`SourceDialect`, `SourceSchema`), `driver` (`DriverArtifact`, `DriverResolver`, `SourceDrivers`), `reader` (`TableScan`, `RowidScan`, `TimeScan`, `SourceRowMapper`, `SourceNamesReader`, `SpawnUuids`) |
+| `core.queue` | `event` (`EventQueue`, `EventWriter`), `spool` (`EventSpool`, `SpoolReplay`), `id` (`IdAssigner`) |
 | `core.service.capture` | root: `EventRecorder`, `Actors`, `CauseTracker`, `KillCauses`; `block`, `container`, `text` |
-| `core.service.importer` | root: `ImportService` and its outcome, progress, listener; `pipeline` (the run loop, table merge, segment writer), `mapping` (CoreProtect rows to events, sign, block state and item conversion) |
+| `core.service.importer` | root: `ImportService` and its outcome, progress, listener; `pipeline` (the run loop, table merge, segment writer), `mapping` (root: `RowMapper`, `RowBase`, `MappedRow`, `SourceNameResolver`; `block`, `item`, `sign`) |
+| `core.service.lookup` | root: `LookupService`, `LookupMerge` and the shard results, outcome, total, warning; `page` (`LookupPager`, sessions, page views) |
+| `core.service.query` | root: `QueryBuilder`, `QueryContext`, `QueryTargets`, `BuildResult`; `syntax` (`QuerySyntax`, `QueryParameters`, `QueryFlag`, `QueryError`, `ActionAliases`), `catalog` (`TypeCatalog`) |
+| `command` | root: the `PaperCommand` beans only; `registry` (`HawkeyeCommandRegistry`), `query` (`QueryInput`). Permission nodes are `config.permission.Permissions` (also used by listeners) |
+| `entity.importer` | root: `ImportState`, `CheckpointResult`, `SkipReason`; `source` (the CoreProtect side: `SourceRow`, `SourceTable`, `SourceSettings`, ...) |
 | `core.service.rollback` | root: `RollbackService` and its request, outcome, mode, issuer, listener, previews; `plan` (planning, no server or database), `apply` (writing a plan into the world) |
 
 A binary format codec is not a repository: it lives with the storage part that owns it

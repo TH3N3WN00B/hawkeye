@@ -6,7 +6,7 @@ import gg.moonrise.hawkeye.config.message.LookupMessages;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
 import gg.moonrise.hawkeye.entity.payload.Payload;
 import gg.moonrise.hawkeye.entity.payload.SignSides;
-import gg.moonrise.hawkeye.util.Durations;
+import gg.moonrise.hawkeye.util.text.Durations;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;

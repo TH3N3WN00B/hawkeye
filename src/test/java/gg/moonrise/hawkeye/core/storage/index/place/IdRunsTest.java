@@ -5,9 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import gg.moonrise.hawkeye.util.codec.ByteReader;
-import gg.moonrise.hawkeye.util.codec.ByteWriter;
-import gg.moonrise.hawkeye.util.codec.CodecException;
+import gg.moonrise.hawkeye.util.codec.binary.ByteReader;
+import gg.moonrise.hawkeye.util.codec.binary.ByteWriter;
+import gg.moonrise.hawkeye.util.codec.binary.CodecException;
 import java.util.Arrays;
 import java.util.Random;
 import java.util.TreeSet;

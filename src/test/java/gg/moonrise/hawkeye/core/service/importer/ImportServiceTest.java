@@ -1,13 +1,13 @@
 package gg.moonrise.hawkeye.core.service.importer;
 
-import static gg.moonrise.hawkeye.core.repository.coreprotect.CoreProtectFixture.at;
+import static gg.moonrise.hawkeye.core.repository.coreprotect.source.CoreProtectFixture.at;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import gg.moonrise.hawkeye.core.repository.coreprotect.CoreProtectFixture;
-import gg.moonrise.hawkeye.core.repository.coreprotect.CoreProtectFixture.Layout;
+import gg.moonrise.hawkeye.core.repository.coreprotect.source.CoreProtectFixture;
+import gg.moonrise.hawkeye.core.repository.coreprotect.source.CoreProtectFixture.Layout;
 import gg.moonrise.hawkeye.core.service.network.NetworkService;
 import gg.moonrise.hawkeye.core.storage.event.EventStore;
 import gg.moonrise.hawkeye.core.storage.importer.ImportStore;
@@ -24,8 +24,8 @@ import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import gg.moonrise.hawkeye.entity.query.ShardScope;
 import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
 import gg.moonrise.hawkeye.support.TestPlugins;
-import gg.moonrise.hawkeye.util.BlockPositions;
-import gg.moonrise.hawkeye.util.EventIds;
+import gg.moonrise.hawkeye.util.position.BlockPositions;
+import gg.moonrise.hawkeye.util.event.EventIds;
 import java.io.Serial;
 import java.nio.file.Files;
 import java.nio.file.Path;

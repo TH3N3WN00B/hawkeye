@@ -2,7 +2,7 @@ package gg.moonrise.hawkeye.core.storage.segment;
 
 import gg.moonrise.hawkeye.core.repository.event.EventFilter;
 import gg.moonrise.hawkeye.entity.query.RollbackState;
-import gg.moonrise.hawkeye.util.codec.CodecException;
+import gg.moonrise.hawkeye.util.codec.binary.CodecException;
 import java.util.Arrays;
 import java.util.Optional;
 import org.jetbrains.annotations.NotNull;
