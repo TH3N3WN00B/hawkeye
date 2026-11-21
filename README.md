@@ -4,6 +4,8 @@
 
 [![Jenkins build](https://img.shields.io/jenkins/build?jobUrl=https%3A%2F%2Fci.moonrise.gg%2Fjob%2Fhawkeye%2Fjob%2Fmain%2F&label=Jenkins&logo=jenkins&logoColor=white&style=for-the-badge)](https://ci.moonrise.gg/job/hawkeye/job/main/)
 
+**Dev builds:** https://ci.moonrise.gg/job/hawkeye/job/main/lastSuccessfulBuild/
+
 Block and action logging for Paper and Folia 26.3, with lookups, an inspector, rollbacks and
 restores, on one server or across a network of servers. A ground-up alternative to CoreProtect
 focused on clean code, compact storage, multi-server operation and fast reads.
