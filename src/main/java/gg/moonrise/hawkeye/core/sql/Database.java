@@ -88,7 +88,9 @@ public final class Database implements AutoCloseable {
     }
 
     /**
-     * Runs work in one transaction: committed when it returns, rolled back when it throws.
+     * Runs work in one transaction: committed when it returns, rolled back when it throws anything (an
+     * {@link Error} too, before auto-commit is restored: under JDBC restoring it commits an open
+     * transaction).
      *
      * @param work the work
      * @param <T>  the result type
@@ -103,7 +105,7 @@ public final class Database implements AutoCloseable {
                 T result = work.run(connection);
                 connection.commit();
                 return result;
-            } catch (SQLException | RuntimeException e) {
+            } catch (Throwable e) {
                 rollbackQuietly(connection, e);
                 throw e;
             } finally {
@@ -122,7 +124,7 @@ public final class Database implements AutoCloseable {
         }
     }
 
-    private static void rollbackQuietly(@NotNull Connection connection, @NotNull Exception cause) {
+    private static void rollbackQuietly(@NotNull Connection connection, @NotNull Throwable cause) {
         try {
             connection.rollback();
         } catch (SQLException rollback) {

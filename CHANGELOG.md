@@ -113,6 +113,9 @@ All notable changes to this project are documented in this file. The format is b
   2 bytes per repeated item on a real server. Rows written in Paper's gzip form still read.
 - Removed entities (paintings, frames, vehicles, bucketed mobs) are serialized only with
   `rollback.restore-entities` on, as kills already were.
+- A transaction that fails with an `Error` (such as running out of memory between two statements) is
+  rolled back before the connection's auto-commit is restored; restoring it used to commit the
+  statements that had run, so an import segment could be stored without its checkpoint.
 
 ### Tests
 
