@@ -70,7 +70,7 @@ All tables carry the configured prefix (default `hawkeye_`).
 | Table | Columns | Keys |
 |---|---|---|
 | `schema` | `version` | Migration bookkeeping (`core.sql.Migrations`) |
-| `server` | `id SMALLINT`, `name`, `scope`, `last_seen` | PK `id`, unique `name` |
+| `server` | `id SMALLINT`, `name`, `scope`, `last_seen` (0 for an import node) | PK `id`, unique `name` |
 | `world` | `id INT`, `scope`, `name` | unique `(scope, name)` |
 | `actor` | `id INT`, `kind`, `key`, `name`, `name_lower` | unique `key`, index `name_lower` |
 | `type` | `id INT`, `value` | unique `value` |
@@ -83,6 +83,7 @@ All tables carry the configured prefix (default `hawkeye_`).
 | `block_segment` | `world INT`, `chunk BIGINT`, `newest BIGINT`, `body` (a compressed frame) | PK `(world, chunk)`, index `(newest)` |
 | `actor_segment` | `actor INT`, `newest BIGINT`, `body` (raw `IdRuns` bytes) | PK `actor`, index `(newest)` |
 | `segment_index` | `id` (always 1), `indexed_from BIGINT` | PK `id` |
+| `import_state` | `source` (up to 191 characters), `revision BIGINT`, `state` (text; MySQL `MEDIUMTEXT`), `updated BIGINT` | PK `source` |
 
 - **Dictionaries.** Worlds, actors and types are interned to small integers. `type` holds every
   namespaced value an event refers to: block states (`minecraft:oak_stairs[facing=east,...]`), item
@@ -94,13 +95,16 @@ All tables carry the configured prefix (default `hawkeye_`).
   `world` on `survival` and `world` on `creative` are different worlds. Servers that share world
   files (MultiPaper) configure the same scope.
 - **Actors.** Players are keyed by UUID (`kind = PLAYER`) and keep their latest name; non-player
-  causes are keyed by a `#name` (`#tnt`, `#creeper`, `#fire`, `#water`, `#piston`, ...).
+  causes are keyed by a `#name` (`#tnt`, `#creeper`, `#fire`, `#water`, `#piston`, ...). Imported
+  history creates missing actors but never renames a known one (`ActorRepository.internKeepingNames`):
+  the source's name of a player may be older than the one the live writer has seen.
 - **`subject` / `secondary`.** For block actions `subject` is the block the action is about (the
   broken block for a break, the placed block for a place) and `secondary` is the other side of the
   change (the block left behind after a break, the block replaced by a place). Rollback restores
   `subject` for a break and `secondary` for a place; restore does the opposite. For item actions
   `subject` is the material and `amount` the count; for kills it is the entity type.
-- **`flags`.** Bit 0: rolled back. Archived events keep it in `segment_flag` instead.
+- **`flags`.** Bit 0: rolled back. Archived events keep it in `segment_flag` instead. An event can be
+  written already rolled back (`PendingEvent.rolledBack`: imported history whose source had undone it).
 - **`data`.** An optional payload, tagged by its first byte (`util.codec.PayloadCodec`): text (chat,
   commands), sign sides (before and after), an item (only when the item has components), an inventory
   snapshot (a broken container), or an entity (for kill and removal rollback). Items and entities are
@@ -364,6 +368,29 @@ unit the header selects.
 
 InnoDB and SQLite append the primary key to secondary indexes, so `(world, pos)` and `(actor)` are
 already ordered by id within a key; PostgreSQL declares `id` explicitly.
+
+### Imports
+
+`/hawkeye import coreprotect` copies a CoreProtect database (SQLite, MySQL/MariaDB, DuckDB or
+ClickHouse, opened read-only) into the home shard. It only adds: archive segments, dictionary rows,
+one `server` row and one `import_state` row per source.
+
+- **Import node.** Imported events are numbered under their own node, a `server` row named
+  `<server.name>-coreprotect` (then `-coreprotect-2`, `-3`, ... for further sources) with the server's
+  world scope and `last_seen = 0` (`ServerNode.imported()`), so their ids never collide with the ones
+  the live writer issued for the same seconds. An import node never runs: `/hawkeye network` and network
+  job destinations leave it out. Lookups filter by world scope, so imported events appear in ordinary
+  lookups and rollbacks. The row is a plain insert (`ServerRepository.registerImport`): a taken name is
+  rejected by the unique key on every engine and the next suffix is tried.
+- **Segments.** Events go straight into the archive (`EventStore.writeImported`, one segment of
+  `archive.segment-events` per transaction), numbered by a private `IdAssigner` fed in time order.
+- **Checkpoint.** Schema version 6 adds `import_state`: per source (`coreprotect:<scope>:<fingerprint>`)
+  the per-table cursors, counters, node name and newest slot written, as `key=value` text
+  (`util.codec.ImportStateCodec`, versioned, unknown keys ignored). Each segment's transaction ends with
+  `UPDATE ... SET revision = revision + 1 ... WHERE source = ? AND revision = ?`
+  (`core.storage.importer.ImportStore`); when no row matches, another run moved the checkpoint and the
+  segment rolls back with it. A crash, a cancel or a restart resumes from the last commit and imports
+  nothing twice.
 
 ## Threading
 
