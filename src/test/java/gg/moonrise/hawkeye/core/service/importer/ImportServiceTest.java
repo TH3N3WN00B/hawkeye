@@ -203,12 +203,43 @@ public class ImportServiceTest {
                     run(file.toString(), ImportListener.NONE));
             assertEquals(ImportScenario.EVENTS, first.totals().imported());
             assertEquals(ImportScenario.SKIPPED, ImportScenario.skipped(first.totals()), "left unread, not skipped");
+            assertEquals(2, first.totals().rowsRemaining(), "the rows left for the next run are reported");
 
             ImportOutcome.Finished again = assertInstanceOf(ImportOutcome.Finished.class,
                     run(file.toString(), ImportListener.NONE));
             assertEquals(0, again.totals().rowsRead(), "still newer than this run: neither read nor skipped");
         }
         assertEquals(ImportScenario.EVENTS, ImportScenario.of(NODE).size());
+    }
+
+    @Test
+    public void rowsWithinTheSettleTimeAreLeftForALaterRun() throws Exception {
+        Path file = folder.resolve("cp").resolve("database.db");
+        Files.createDirectories(file.getParent());
+        long now = System.currentTimeMillis() / 1000;
+        try (CoreProtectFixture db = CoreProtectFixture.sqlite(file, Layout.CURRENT)) {
+            int world = minimal(db);
+            db.chat(now - 600, 1, at(world, 0, 64, 0), "settled");
+            db.chat(now - 500, 1, at(world, 0, 64, 0), "settled too");
+            db.chat(now - 30, 1, at(world, 0, 64, 0), "maybe still being written");
+            db.session(now - 20, 1, at(world, 0, 64, 0), 1);
+        }
+        service.settle(120);
+
+        ImportOutcome.Finished first = assertInstanceOf(ImportOutcome.Finished.class, run(file.toString(),
+                ImportListener.NONE));
+        assertEquals(2, first.totals().imported());
+        assertEquals(2, first.totals().rowsRead(), "newer than start - settle: not read");
+        assertEquals(2, first.totals().rowsRemaining());
+        assertEquals(0, first.totals().skippedTotal());
+
+        service.settle(0);
+        ImportOutcome.Finished later = assertInstanceOf(ImportOutcome.Finished.class, run(file.toString(),
+                ImportListener.NONE));
+        assertEquals(2, later.totals().imported());
+        assertEquals(0, later.totals().rowsRemaining());
+        assertEquals(100, later.totals().percent());
+        assertEquals(4, ImportScenario.of(NODE).size());
     }
 
     @Test

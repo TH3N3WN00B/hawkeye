@@ -416,11 +416,19 @@ one `server` row and one `import_state` row per source.
   rows, ties in `SourceTable` order (block, sign, container, entity container, item, entity
   interaction, chat, command, session). Rows are therefore only as time-ordered as each table is;
   the assigner absorbs small disorder.
-- **Horizon.** A run imports what the source held when it began. When the next row in merge order is
-  stamped after that moment (a CoreProtect that is still logging), the run is complete and the row stays
-  unread: every table stops at the same time, so the next run's rows are all newer than what is stored
-  and none has to be displaced. A row stamped more than a week past the start is a wrong clock, not a new
-  row: the merge returns it first and it is skipped, so it cannot hold back the rows behind it.
+- **Horizon** (`RunHorizon`). A run imports rows stamped up to its start minus the source's settle time:
+  120 s on MySQL and ClickHouse, where CoreProtect writes while the import reads and a row can become
+  visible after the reader passed its place (a transaction still open, a ClickHouse batch published late
+  or retried, rows stamped when queued); 0 on SQLite and DuckDB, files nothing else can write to in a way
+  the reader could miss (`SourceDialect.settleSeconds`). When the next row in merge order is stamped
+  later, the merge stops (`SourceMerge.held`), the run is complete and the row stays unread: every table
+  stops at the same time, so the next run's rows are all newer than what is stored and none has to be
+  displaced. The final progress then keeps the estimate of the rows left, and the command says how many
+  the next run imports. In rowid order a row stamped more than a week past the horizon is a wrong clock,
+  not a new row: the merge returns it first and the mapper skips it, so it cannot hold back the rows
+  behind it in its table. In time order (ClickHouse) no row past the horizon is ever consumed: such rows
+  sort last and stay unread, where consuming one would move the table's keyset cursor past every later
+  row. The mapper's upper bound is the same horizon.
 - **Mapping.** `RowMapper` turns each row into one event stamped at its second, or a skip counted by
   reason (older than 2025-01-01 or stamped in the far future, no equivalent action, folded into
   another event, unknown world/material/entity/position). When a row names an id missing from its
@@ -457,7 +465,9 @@ one `server` row and one `import_state` row per source.
 - **Cancel and shutdown.** `/hawkeye import cancel` closes the current batch at the next second and
   writes it; shutdown cancels and waits up to 10 s. Progress is published as a snapshot after every
   checkpoint and every 4,096 rows, and sent to the command about every 30 s (with a fresh estimate
-  of the rows left, from `CoreProtectSource.remaining`).
+  of the rows left, from `CoreProtectSource.remaining`; on ClickHouse a count that can time out, so a
+  failed estimate keeps the previous one and is logged once at DEBUG, never failing the import:
+  `RowEstimate`).
 
 ## Threading
 

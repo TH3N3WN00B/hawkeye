@@ -27,6 +27,13 @@ public enum SourceDialect {
     DUCKDB('"', ScanOrder.ROWID),
     CLICKHOUSE('`', ScanOrder.TIME);
 
+    /**
+     * How long a server engine's rows may take to become visible after the second they are stamped with:
+     * another process writes while the import reads (a transaction still open, a ClickHouse batch
+     * published late or retried, rows stamped when queued).
+     */
+    public static final long SERVER_SETTLE_SECONDS = 120;
+
     /** A CoreProtect {@code table-prefix}: what CoreProtect itself accepts. */
     private static final Pattern PREFIX = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
@@ -97,6 +104,20 @@ public enum SourceDialect {
      */
     public @NotNull ScanOrder order() {
         return order;
+    }
+
+    /**
+     * How many seconds before the start of a run its rows end: {@link #SERVER_SETTLE_SECONDS} on MySQL and
+     * ClickHouse, where rows can become visible after a reader passed their place; 0 on SQLite and DuckDB,
+     * files nothing else can be writing to in a way a reader could miss.
+     *
+     * @return the settle time in seconds
+     */
+    public long settleSeconds() {
+        return switch (this) {
+            case SQLITE, DUCKDB -> 0;
+            case MYSQL, CLICKHOUSE -> SERVER_SETTLE_SECONDS;
+        };
     }
 
     /**

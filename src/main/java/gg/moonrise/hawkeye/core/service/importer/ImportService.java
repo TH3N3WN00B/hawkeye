@@ -73,6 +73,7 @@ public final class ImportService {
     private volatile CompletableFuture<ImportOutcome> finished;
     private volatile int batchEvents;
     private volatile long progressMillis = PROGRESS_INTERVAL.toMillis();
+    private volatile long settleSeconds;
 
     /**
      * Starts an import, unless one is running or storage is not ready.
@@ -180,6 +181,16 @@ public final class ImportService {
         this.progressMillis = progressMillis;
     }
 
+    /**
+     * Makes later runs stop at least this long before their start, so tests can see a server engine's
+     * settle time on a SQLite source.
+     *
+     * @param seconds the settle time; 0 for the source's own
+     */
+    void settle(long seconds) {
+        this.settleSeconds = seconds;
+    }
+
     private @NotNull ImportOutcome run(@NotNull ImportRun run, @NotNull ExecutorService pack,
             @NotNull ExecutorService thread) {
         ImportOutcome outcome;
@@ -210,6 +221,6 @@ public final class ImportService {
         int events = batchEvents > 0 ? batchEvents : config.archive().segmentEvents();
         return new RunSettings(source, plugins.resolve(CORE_PROTECT), Path.of("").toAbsolutePath(),
                 config.server().name(), storage.worldScope(), events, CHECKPOINT_ROWS, PAGE_ROWS, progressMillis,
-                coreProtect, clock.millis());
+                coreProtect, clock.millis(), settleSeconds);
     }
 }

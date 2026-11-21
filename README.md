@@ -209,9 +209,10 @@ how it goes about every 30 seconds; `/he import status` shows the same at any ti
   worlds.
 - **Cancel, resume, catch up.** `/he import cancel` stops after the current batch; running the
   command again continues where it stopped, also after a crash or restart. A run imports what the
-  database held when it began; rows CoreProtect logs after that are left for the next run. So a
-  server can import while CoreProtect still runs and catch up after removing it: run the command once
-  more and only the new rows are imported. No row is ever imported twice: each batch is written in
+  database held when it began (on MySQL/MariaDB and ClickHouse up to two minutes before, so rows
+  CoreProtect is still writing are not passed by); rows logged after that are left for the next run,
+  and the final reply says about how many. So a server can import while CoreProtect still runs and
+  catch up after removing it: run the command once more and only the new rows are imported. No row is ever imported twice: each batch is written in
   one transaction with its checkpoint, and a second server importing the same database at the same
   time is stopped. After a CoreProtect `/co purge` (which renumbers the rows of a SQLite database) the
   next run continues by time, exact except for rows of the second it stopped at that CoreProtect stored

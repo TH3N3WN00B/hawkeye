@@ -18,6 +18,8 @@ import org.jetbrains.annotations.Nullable;
  * @param progressMillis     how often the listener hears about progress
  * @param coreProtectEnabled whether a plugin named CoreProtect is enabled on this server
  * @param startedMillis      when the run began; rows stamped later are left for the next run
+ * @param settleSeconds      at least how long before {@code startedMillis} the run's rows end (the source's
+ *                           own settle time applies when it is longer; 0 except in tests)
  */
 public record RunSettings(
         @Nullable String argument,
@@ -30,5 +32,6 @@ public record RunSettings(
         int pageRows,
         long progressMillis,
         boolean coreProtectEnabled,
-        long startedMillis) {
+        long startedMillis,
+        long settleSeconds) {
 }

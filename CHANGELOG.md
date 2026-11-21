@@ -127,6 +127,15 @@ All notable changes to this project are documented in this file. The format is b
 - A CoreProtect import run again after a `/co purge` of a SQLite database no longer misses rows: the
   purge renumbers every table but `block`, so a stored cursor whose row id now names another row (or none)
   is re-anchored by time, with a warning in the log.
+- A CoreProtect import from MySQL/MariaDB or ClickHouse stops two minutes before its start, so rows
+  CoreProtect is still writing (an open transaction, a ClickHouse batch published late) are left for the
+  next run instead of being passed by. On ClickHouse, read in time order, a row stamped in the far future
+  is never consumed: it used to move the table's cursor past every later row.
+- An import that leaves rows for the next run says so: the finished reply is followed by a new message,
+  `importing.left` (placeholder `<left>`), and the final progress keeps the estimate of those rows
+  instead of 0.
+- A failing estimate of the rows left (a ClickHouse count that times out) keeps the previous estimate
+  instead of failing the import.
 
 ### Tests
 

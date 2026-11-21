@@ -114,6 +114,26 @@ public final class CoreProtectSource implements AutoCloseable {
     }
 
     /**
+     * How long before a run's start its rows end, so rows another process is still writing are not passed
+     * by ({@link SourceDialect#settleSeconds()}).
+     *
+     * @return seconds: 120 on MySQL and ClickHouse, 0 on SQLite and DuckDB
+     */
+    public long settleSeconds() {
+        return SourceDialect.of(settings.type()).settleSeconds();
+    }
+
+    /**
+     * Whether the scan order is by time, so a row's place in it depends on its time
+     * ({@link SourceDialect.ScanOrder#TIME}, ClickHouse).
+     *
+     * @return {@code true} in time order
+     */
+    public boolean timeOrder() {
+        return SourceDialect.of(settings.type()).order() == SourceDialect.ScanOrder.TIME;
+    }
+
+    /**
      * What identifies this CoreProtect database wherever it is reached from: the time and version of its
      * first {@code version} row (written when CoreProtect created it). Without one, a hash of the
      * location.

@@ -76,6 +76,26 @@ public class ImportCommandTest {
     }
 
     @Test
+    public void rowsLeftForTheNextRunAreNamed() throws Exception {
+        Path source = scenario();
+        try (CoreProtectFixture db = CoreProtectFixture.sqlite(source.resolve("database.db"), Layout.CURRENT)) {
+            // Logged while the import runs: stamped after its start.
+            long soon = System.currentTimeMillis() / 1000 + 3_600;
+            db.execute("INSERT INTO {prefix}chat (time, user, wid, x, y, z, message) VALUES (" + soon
+                    + ", 1, 1, 0, 70, 0, 'still logging')");
+        }
+
+        commands.run(console, "hawkeye import coreprotect " + source);
+
+        List<String> replies = RollbackTestSupport.tickUntilReply(server, console, "Skipped");
+        assertTrue(replies.get(1).startsWith("Import done: 15 event(s) imported from sqlite "), replies.toString());
+        assertEquals("About 1 row(s) were logged too recently or while the import ran; the next run of "
+                + "/he import coreprotect imports them.", replies.get(2));
+        assertEquals(SKIPPED, replies.get(3));
+        assertEquals(4, replies.size(), replies.toString());
+    }
+
+    @Test
     public void runningItAgainSaysWhatWasImportedBefore() throws Exception {
         Path source = scenario();
         commands.run(console, "he import coreprotect " + source.resolve("database.db"));

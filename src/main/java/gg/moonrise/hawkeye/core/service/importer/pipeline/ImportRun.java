@@ -23,6 +23,7 @@ import gg.moonrise.hawkeye.entity.importer.SourceType;
 import gg.moonrise.hawkeye.entity.server.ServerNode;
 import java.sql.SQLException;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -41,11 +42,16 @@ import org.jetbrains.annotations.NotNull;
  * its end, or on cancel; except at the end it closes only between two seconds, so no second of the source
  * is split over two runs.
  *
- * <p>A run imports what the source held when it began. Rows stamped after that moment (a CoreProtect
- * that is still logging) are left unread for the next run: every table then stops at the same time, so
- * the next run's rows are all newer than what is stored and none has to be displaced. Only a row
- * stamped more than {@link #FUTURE_SECONDS} ahead (a clock that ran ahead) is consumed and skipped,
- * because waiting for its time would hold back the rows behind it.
+ * <p>A run imports what the source held when it began, up to its {@link RunHorizon}: the start minus the
+ * source's settle time ({@code CoreProtectSource#settleSeconds}, for rows a server engine may still be
+ * making visible). Later rows (a CoreProtect that is still logging) are left unread for the next run:
+ * every table then stops at the same time, so the next run's rows are all newer than what is stored and
+ * none has to be displaced. In rowid order a row stamped more than {@link RunHorizon#FUTURE_SECONDS} ahead
+ * (a clock that ran ahead) is consumed and skipped, because waiting for its time would hold back the rows
+ * behind it; in time order no row past the horizon is ever consumed.
+ *
+ * <p>Before reading, every stored cursor is checked against the source ({@code CoreProtectSource#anchor}):
+ * a table a CoreProtect purge renumbered continues by time.
  *
  * <p>Runs on one thread; {@link #cancel()} and {@link #progress()} may be called from any thread.
  */
@@ -57,9 +63,6 @@ public final class ImportRun {
 
     /** How many consumed rows pass between progress checks. */
     public static final int CHECK_ROWS = 4096;
-
-    /** How far past the start of a run a row's time may lie before it counts as wrong, not as new. */
-    public static final long FUTURE_SECONDS = 7L * 24 * 60 * 60;
 
     private final @NotNull RunSettings settings;
     private final @NotNull CoreProtectSources sources;
@@ -73,7 +76,6 @@ public final class ImportRun {
     private volatile boolean cancelled;
     private volatile ImportProgress latest;
     private long lastReport;
-    private long remaining;
 
     /**
      * A run, not started.
@@ -164,9 +166,11 @@ public final class ImportRun {
         RunTally tally = new RunTally(start);
         Set<SourceTable> tables = source.tables();
         anchor(source, tables, tally, description);
-        RowMapper mapper = new RowMapper(source.names(), blockStates, items, settings.startedMillis());
-        SourceMerge merge = new SourceMerge(source::read, tables, tally::cursor, settings.pageRows(),
-                settings.startedMillis() / 1000 + FUTURE_SECONDS);
+        RunHorizon horizon = RunHorizon.of(settings.startedMillis(),
+                Math.max(source.settleSeconds(), settings.settleSeconds()), source.timeOrder());
+        RowMapper mapper = new RowMapper(source.names(), blockStates, items, horizon.lastMillis());
+        SourceMerge merge = new SourceMerge(source::read, tables, tally::cursor, settings.pageRows(), horizon);
+        RowEstimate estimate = new RowEstimate(source::remaining, description);
         if (resumed) {
             log.info("Resuming the CoreProtect import from {} into node {}: {} event(s) imported before",
                     description, node.name(), start.imported());
@@ -174,29 +178,35 @@ public final class ImportRun {
             log.info("Importing CoreProtect history from {} into node {} ({} tables)", description, node.name(),
                     tables.size());
         }
-        remaining = remaining(source, tables, tally);
+        estimate.refresh(tables, tally::cursor);
         lastReport = clock.millis();
-        ImportProgress first = publish(tally, description, resumed);
+        ImportProgress first = publish(tally, description, resumed, estimate.last());
         notify(() -> listener.started(first));
         while (true) {
-            Batch batch = fill(source, merge, mapper, tally, () -> report(source, tables, tally, description, resumed));
+            Batch batch = fill(source, merge, mapper, tally, () -> report(estimate, tables, tally, description,
+                    resumed));
             if (writer.write(batch.events(), tally, batch.exhausted(), clock.millis())
                     instanceof CheckpointResult.Superseded) {
                 log.warn("The CoreProtect import from {} stopped: another run moved its checkpoint", description);
                 return new ImportOutcome.Superseded();
             }
             if (batch.exhausted()) {
-                remaining = 0;
-                ImportProgress totals = publish(tally, description, resumed);
+                // Rows past the horizon stay for the next run: say how many, rather than nothing.
+                long left = merge.held() ? estimate.refresh(tables, tally::cursor) : 0;
+                ImportProgress totals = publish(tally, description, resumed, left);
                 logEnd("finished", description, totals);
+                if (left > 0) {
+                    log.info("About {} row(s) of {} were logged after {} and are left for the next run", left,
+                            description, Instant.ofEpochSecond(horizon.seconds()));
+                }
                 return new ImportOutcome.Finished(totals);
             }
             if (cancelled) {
-                ImportProgress totals = publish(tally, description, resumed);
+                ImportProgress totals = publish(tally, description, resumed, estimate.last());
                 logEnd("cancelled", description, totals);
                 return new ImportOutcome.Cancelled(totals);
             }
-            report(source, tables, tally, description, resumed);
+            report(estimate, tables, tally, description, resumed);
         }
     }
 
@@ -227,7 +237,8 @@ public final class ImportRun {
         long lastTime = Long.MIN_VALUE;
         while (true) {
             Optional<SourceRow> head = merge.peek();
-            if (head.isEmpty() || writtenSinceStart(head.get())) {
+            if (head.isEmpty()) {
+                // Every table is read to its end, or the next row in merge order lies past the horizon.
                 return new Batch(events, true);
             }
             if (overfull(events, tally) || closing(events, tally) && head.get().time() != lastTime) {
@@ -250,16 +261,6 @@ public final class ImportRun {
         }
     }
 
-    /**
-     * Whether a row was logged after this run began. The merge returns rows by time, so every row still
-     * unread is then at least as new, and the run is complete; rows beyond the merge's ceiling come
-     * first and never get here as the newest.
-     */
-    private boolean writtenSinceStart(@NotNull SourceRow row) {
-        long millis = row.time() * 1000L;
-        return millis > settings.startedMillis() && row.time() <= settings.startedMillis() / 1000 + FUTURE_SECONDS;
-    }
-
     /** Twice the events or rows that close a batch: it closes even inside a second (never in practice). */
     private boolean overfull(@NotNull List<PendingEvent> events, @NotNull RunTally tally) {
         return events.size() >= 2L * settings.batchEvents()
@@ -272,33 +273,24 @@ public final class ImportRun {
     }
 
     /** Publishes a snapshot, and tells the listener when the progress interval has passed. */
-    private void report(@NotNull CoreProtectSource source, @NotNull Set<SourceTable> tables, @NotNull RunTally tally,
-            @NotNull String description, boolean resumed) throws SQLException {
+    private void report(@NotNull RowEstimate estimate, @NotNull Set<SourceTable> tables, @NotNull RunTally tally,
+            @NotNull String description, boolean resumed) {
         long now = clock.millis();
         if (now - lastReport < settings.progressMillis()) {
-            publish(tally, description, resumed);
+            publish(tally, description, resumed, estimate.last());
             return;
         }
         lastReport = now;
-        remaining = remaining(source, tables, tally);
-        ImportProgress progress = publish(tally, description, resumed);
+        ImportProgress progress = publish(tally, description, resumed, estimate.refresh(tables, tally::cursor));
         notify(() -> listener.progress(progress));
     }
 
-    private @NotNull ImportProgress publish(@NotNull RunTally tally, @NotNull String description, boolean resumed) {
+    private @NotNull ImportProgress publish(@NotNull RunTally tally, @NotNull String description, boolean resumed,
+            long remaining) {
         ImportProgress progress = tally.progress(description, resumed, remaining,
                 clock.millis() - settings.startedMillis());
         latest = progress;
         return progress;
-    }
-
-    private static long remaining(@NotNull CoreProtectSource source, @NotNull Set<SourceTable> tables,
-            @NotNull RunTally tally) throws SQLException {
-        long sum = 0;
-        for (SourceTable table : tables) {
-            sum += source.remaining(table, tally.cursor(table));
-        }
-        return sum;
     }
 
     private void logEnd(@NotNull String how, @NotNull String description, @NotNull ImportProgress totals) {

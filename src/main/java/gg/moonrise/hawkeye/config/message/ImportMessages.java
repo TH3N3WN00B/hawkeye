@@ -32,6 +32,11 @@ public final class ImportMessages {
     private String finished = "<green>Import done:</green> <gray><white><events></white> event(s) imported from "
             + "<source> in <duration> (<total> from this database in all).";
 
+    @Comment({"Sent after the finished line when rows were left for the next run (only then): rows logged too",
+            "recently, or while the import ran. Placeholder: <left> (an estimate of those rows)."})
+    private String left = "<gray>About <white><left></white> row(s) were logged too recently or while the import "
+            + "ran; the next run of <white>/he import coreprotect</white> imports them.";
+
     @Comment({"Sent after an import that skipped rows (only then). Placeholders: <skipped> (all), <old> (before",
             "2025-01-01, or stamped in the future), <no-equivalent>, <folded> (sign snapshots another event",
             "carries), <unknown> (an unknown world, material, entity or position)."})

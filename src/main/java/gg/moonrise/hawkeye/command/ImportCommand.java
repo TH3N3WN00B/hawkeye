@@ -83,6 +83,9 @@ public final class ImportCommand implements PaperCommand {
         switch (outcome) {
             case ImportOutcome.Finished finished -> {
                 Message.of(messages.getFinished()).send(sender, placeholders(finished.totals()));
+                if (finished.totals().rowsRemaining() > 0) {
+                    Message.of(messages.getLeft()).send(sender, count("left", finished.totals().rowsRemaining()));
+                }
                 details(sender, finished.totals());
             }
             case ImportOutcome.Cancelled cancelled -> {
