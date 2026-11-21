@@ -304,6 +304,9 @@ update them in the same change when you learn something durable or an entry stop
 - MockBukkit's plugin class loader throws `NullPointerException` ("No jar file selected") from `findClass`
   for a class it does not have, where Paper's throws `ClassNotFoundException`; a `URLClassLoader` with it
   as parent then fails the same way. `DriverResolver` wraps its parent so either counts as not found.
+- `.gitignore`'s `run/` (for Paper server folders) ignores every folder named `run`, packages included:
+  the import's run loop was once written as `core.service.importer.run` and its files were silently left
+  out of commits. Never name a package `run`; check `git status --ignored` after adding a package.
 - `ImportService.tune` (package-private, tests only) lowers the batch size below `archive.segment-events`'
   minimum of 16,384 and the 30 s progress interval, so cancel and resume can be tested on a few hundred
   rows.

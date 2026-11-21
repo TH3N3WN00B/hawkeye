@@ -400,7 +400,7 @@ one `server` row and one `import_state` row per source.
   (`core.storage.importer.ImportStore`); when no row matches, another run moved the checkpoint and the
   segment rolls back with it. A crash, a cancel or a restart resumes from the last commit and imports
   nothing twice.
-- **The run** (`core.service.importer`: `ImportService`, the run in `run`, the row mapping in
+- **The run** (`core.service.importer`: `ImportService`, the run in `pipeline`, the row mapping in
   `mapping`). One import runs per server, on its own `Hawkeye-Import` thread. It locates and opens the
   source, refuses a DuckDB file while a plugin named CoreProtect is enabled (one process cannot open a
   DuckDB file twice) and a source whose CoreProtect migration is incomplete, takes the checkpoint
@@ -424,7 +424,7 @@ one `server` row and one `import_state` row per source.
 - **Batching.** Mapped events collect into a batch that closes when it holds `archive.segment-events`
   events, when a million rows were consumed without filling one, when every table is read to its end,
   or on cancel. Except at the end it closes only between two seconds of the source (it never splits a
-  second; a batch twice the size closes regardless), so a cancelled and resumed import numbers every
+  second; twice the events or rows close it regardless), so a cancelled and resumed import numbers every
   event exactly as an uninterrupted one.
 - **Checkpoint and resume floor.** Closing a batch adds it to the run's private `IdAssigner` and takes
   it whole, then writes the segment and the next checkpoint (per table the last row consumed, the

@@ -246,7 +246,8 @@ public class RowMapperTest {
 
     @Test
     public void entityInteractions() {
-        Map<Integer, Action> expected = Map.of(1, Action.ENTITY_SHEAR, 2, Action.ENTITY_LEASH, 3, Action.ENTITY_UNLEASH);
+        Map<Integer, Action> expected = Map.of(1, Action.ENTITY_SHEAR, 2, Action.ENTITY_LEASH,
+                3, Action.ENTITY_UNLEASH);
         expected.forEach((code, action) -> {
             PendingEvent event = event(new SourceRow.EntityInteraction(1, T, USER, WORLD, 1, 2, 3, SHEEP, code));
             assertEquals(action, event.action());

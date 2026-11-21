@@ -875,7 +875,7 @@ the feature's entry points and its own result types at its root):
 | `core.storage` | `shard` (`StorageManager`, `StorageState`, `Shard`, `Dictionaries`), `event` (`EventStore`, `QueryResolver`), `archive` (`Archive`, `Archiver`, `SegmentCache`), `segment` (archive format 2 codec), `index` (`SegmentIndex`, `PlaceIndex`, `ActorIndex`), `index.place` (place index row codecs), `importer` (`ImportStore`) |
 | `core.repository` | one per table group: `event`, `dictionary`, `archive` (`segment`, `segment_flag`), `index` (segment index tables), `network` (`server`, `job`, `lease`), `importer` (`import_state`); plus `coreprotect` (reading a CoreProtect database: locator, dialects, drivers, readers) |
 | `core.service.capture` | root: `EventRecorder`, `Actors`, `CauseTracker`, `KillCauses`; `block`, `container`, `text` |
-| `core.service.importer` | root: `ImportService` and its outcome, progress, listener; `run` (the run loop, table merge, segment writer), `mapping` (CoreProtect rows to events, sign, block state and item conversion) |
+| `core.service.importer` | root: `ImportService` and its outcome, progress, listener; `pipeline` (the run loop, table merge, segment writer), `mapping` (CoreProtect rows to events, sign, block state and item conversion) |
 | `core.service.rollback` | root: `RollbackService` and its request, outcome, mode, issuer, listener, previews; `plan` (planning, no server or database), `apply` (writing a plan into the world) |
 
 A binary format codec is not a repository: it lives with the storage part that owns it
