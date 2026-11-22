@@ -246,9 +246,7 @@ public final class EventRecorder {
      */
     public void record(@NotNull Action action, @NotNull Actor actor, @Nullable World world, int x, int y, int z,
             @NotNull String subject, @Nullable String secondary, int amount, @Nullable Payload payload) {
-        if (world == null || y < BlockPositions.MIN_Y || y > BlockPositions.MAX_Y
-                || x < BlockPositions.MIN_HORIZONTAL || x > BlockPositions.MAX_HORIZONTAL
-                || z < BlockPositions.MIN_HORIZONTAL || z > BlockPositions.MAX_HORIZONTAL) {
+        if (world == null || !BlockPositions.contains(x, y, z)) {
             skipped.increment();
             return;
         }

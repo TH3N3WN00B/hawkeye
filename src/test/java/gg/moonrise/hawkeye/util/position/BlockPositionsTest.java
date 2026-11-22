@@ -1,6 +1,7 @@
 package gg.moonrise.hawkeye.util.position;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -26,6 +27,21 @@ public class BlockPositionsTest {
                 }
             }
         }
+    }
+
+    @Test
+    public void containsThePackableRangeWithItsEdges() {
+        int minH = BlockPositions.MIN_HORIZONTAL;
+        int maxH = BlockPositions.MAX_HORIZONTAL;
+        assertTrue(BlockPositions.contains(minH, BlockPositions.MIN_Y, minH));
+        assertTrue(BlockPositions.contains(maxH, BlockPositions.MAX_Y, maxH));
+        assertTrue(BlockPositions.contains(0, 64, 0));
+        assertFalse(BlockPositions.contains(minH - 1, 0, 0));
+        assertFalse(BlockPositions.contains(maxH + 1, 0, 0));
+        assertFalse(BlockPositions.contains(0, BlockPositions.MIN_Y - 1, 0));
+        assertFalse(BlockPositions.contains(0, BlockPositions.MAX_Y + 1, 0));
+        assertFalse(BlockPositions.contains(0, 0, minH - 1));
+        assertFalse(BlockPositions.contains(0, 0, maxH + 1));
     }
 
     @Test
