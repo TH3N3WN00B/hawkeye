@@ -124,6 +124,8 @@ second release in a quarter).
 
 ### Fixed
 
+- Lava turning into basalt (over soul soil, next to blue ice) is recorded as a fluid change under the
+  player who poured the lava (else `#lava`), like stone and obsidian, instead of as natural forming.
 - A block a piston destroys is recorded as broken, no longer as moved one block on.
 - Flowing water and lava are recorded with their flowing level, so a restore never creates sources.
 - Killed mobs are stored with their entity again (Paper 26.3 refuses to serialize a dying mob without

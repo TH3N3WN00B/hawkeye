@@ -119,7 +119,7 @@ falls off a wall for the player who broke the wall.
 | Blocks | Breaks (with container contents and sign text, both halves of doors, beds and tall plants), places, multi-block places, buckets (including waterlogging) |
 | Attached blocks | Torches, signs, rails, redstone, flowers, sugar cane and anything else that falls off when its support goes, under the remover of the support (else `#physics`) |
 | Explosions | Every destroyed block, the TNT block itself, and an exploding bed or respawn anchor, under the player who lit, placed, clicked or hit the cause, else the entity (`#creeper`) or `#explosion` |
-| Fire, fluids, pistons | Burning (`#fire`), lighting, flow (under the player who poured it, else `#water`/`#lava`), stone and obsidian forming, sponges, pistons (moves as a break and a place, destroyed blocks as breaks) |
+| Fire, fluids, pistons | Burning (`#fire`), lighting, flow (under the player who poured it, else `#water`/`#lava`), stone, obsidian and basalt forming, sponges, pistons (moves as a break and a place, destroyed blocks as breaks) |
 | Natural | Leaf decay, melting, snow and ice forming, grass/mycelium/vine/sculk spread, tree and mushroom growth (under the player when bone-mealed), bone meal, portals forming, cauldrons filling and drying |
 | Crop growth | A ripe crop or a newly grown block (melon, pumpkin, sugar cane, cactus, vines) as one compact `#growth` event; `crop-growth-stages` records every stage. Rollbacks never change growth |
 | Signs | Edits with the text before and after, per side |

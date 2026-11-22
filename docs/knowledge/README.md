@@ -243,6 +243,8 @@ update them in the same change when you learn something durable or an entry stop
   - `BlockGrowEvent` fires for crops, cactus, sugar cane, stem fruit, cocoa, nether wart, pitcher
     crops, sweet berries, turtle and sniffer eggs, vines, chorus, budding amethyst and dried ghasts;
     bamboo, kelp and twisting vines grow through `BlockSpreadEvent`.
+  - `LiquidBlock` raises `BlockFormEvent` (`handleBlockFormEvent`) for obsidian and cobblestone from lava
+    meeting water and for basalt from lava over soul soil next to blue ice.
   - `io.papermc.paper.event.entity.EntityBreakEvent` (and `EntityBreakByEntityEvent`, which shares its
     handler list) is constructed only in `BlockAttachedEntity` (`tick` for PHYSICS/OBSTRUCTION,
     `hurtServer` for ENTITY/EXPLOSION/DEFAULT), never for vehicles. Its subclasses are `HangingEntity`,

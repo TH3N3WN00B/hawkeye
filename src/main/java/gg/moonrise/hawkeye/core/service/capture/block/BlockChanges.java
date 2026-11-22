@@ -82,13 +82,17 @@ public final class BlockChanges {
     }
 
     /**
-     * Whether a form event is water and lava meeting (cobblestone, stone or obsidian replacing a fluid).
+     * Whether a form event is a fluid reaction: water and lava meeting (cobblestone, stone or obsidian
+     * replacing a fluid), or lava over soul soil next to blue ice turning into basalt.
      *
      * @param before the block that changes
      * @param after  the block it becomes
      * @return {@code true} for a fluid reaction
      */
     public static boolean isFluidForm(@NotNull Material before, @NotNull Material after) {
+        if (before == Material.LAVA && after == Material.BASALT) {
+            return true;
+        }
         return (before == Material.WATER || before == Material.LAVA)
                 && (after == Material.COBBLESTONE || after == Material.STONE || after == Material.OBSIDIAN);
     }

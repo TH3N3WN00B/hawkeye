@@ -94,6 +94,8 @@ public class BlockChangesTest {
         assertTrue(BlockChanges.isFluidForm(Material.LAVA, Material.OBSIDIAN));
         assertTrue(BlockChanges.isFluidForm(Material.LAVA, Material.COBBLESTONE));
         assertTrue(BlockChanges.isFluidForm(Material.WATER, Material.STONE));
+        assertTrue(BlockChanges.isFluidForm(Material.LAVA, Material.BASALT));
+        assertFalse(BlockChanges.isFluidForm(Material.WATER, Material.BASALT));
         assertFalse(BlockChanges.isFluidForm(Material.WATER, Material.ICE));
         assertFalse(BlockChanges.isFluidForm(Material.AIR, Material.SNOW));
     }
