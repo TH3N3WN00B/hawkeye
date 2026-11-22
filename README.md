@@ -130,7 +130,7 @@ falls off a wall for the player who broke the wall.
 | Entity changes | Blocks changed by endermen, falling blocks, withers, ravagers and silverfish, trampled farmland, grass eaten by sheep, and turtle eggs cracked by a player or mob walking or landing on them, under that player or mob |
 | Entity interactions | Shearing, naming (with the name), leashing, unleashing, taming, dyeing |
 | Items | Drops (and death drops), pickups (and arrows), crafting, thrown and shot items, worn-out tools, villager trades |
-| Chat, commands, books | Chat, commands, sign-click commands (`[sign]`), console commands (`#console`); `logging.redacted-commands` are stored without their arguments; written and signed books |
+| Chat, commands, books | Chat, commands, sign-click commands (`[sign]`), console commands (`#console`) and remote console commands (`#rcon`); `logging.redacted-commands` are stored without their arguments; written and signed books |
 | Sessions and modes | Joins, quits (with the kick reason), game mode changes |
 
 A rollback reverses blocks, container and item-frame/armour-stand items, kills and destroyed

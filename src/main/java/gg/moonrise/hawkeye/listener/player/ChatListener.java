@@ -7,19 +7,23 @@ import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
 import gg.moonrise.hawkeye.core.service.capture.text.CommandText;
 import gg.moonrise.hawkeye.core.service.thread.ServerThreads;
 import gg.moonrise.hawkeye.entity.action.Action;
+import gg.moonrise.hawkeye.entity.actor.Actor;
 import gg.moonrise.moss.spring.SpringComponent;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import io.papermc.paper.event.player.PlayerSignCommandPreprocessEvent;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import org.bukkit.Server;
 import org.bukkit.World;
 import org.bukkit.command.ConsoleCommandSender;
+import org.bukkit.command.RemoteConsoleCommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.server.RemoteServerCommandEvent;
 import org.bukkit.event.server.ServerCommandEvent;
 import org.jetbrains.annotations.NotNull;
 
@@ -29,7 +33,8 @@ import org.jetbrains.annotations.NotNull;
  * so it is recorded from the player's thread a tick later, where the player's position may be read.
  * A command run by clicking a sign (often with permissions the player lacks) is marked
  * {@value #SIGN_PREFIX}; commands typed into the server console ({@link LogCategory#CONSOLE_COMMANDS},
- * not command blocks) are recorded by {@link Actors#CONSOLE} at the first world's spawn.
+ * not command blocks) are recorded by {@link Actors#CONSOLE}, and commands sent over the remote console
+ * by {@link Actors#RCON}, both at the first world's spawn.
  */
 @SpringComponent
 @RequiredArgsConstructor
@@ -79,20 +84,37 @@ public final class ChatListener implements Listener {
 
     /**
      * Records a command typed into the server console. Command blocks and command minecarts send this
-     * event too and are skipped; remote console (RCON) commands have an event of their own.
+     * event too and are skipped; remote console (RCON) commands have an event of their own
+     * ({@link #onRemoteCommand}).
      *
      * @param event the event, on the global region
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onConsoleCommand(@NotNull ServerCommandEvent event) {
-        if (!(event.getSender() instanceof ConsoleCommandSender console)) {
-            return;
+        if (event.getSender() instanceof ConsoleCommandSender console) {
+            serverCommand(console.getServer(), Actors.CONSOLE, event.getCommand());
         }
-        List<World> worlds = console.getServer().getWorlds();
+    }
+
+    /**
+     * Records a command sent over the remote console (RCON). {@link RemoteServerCommandEvent} has its own
+     * handler list, so it never reaches {@link #onConsoleCommand}.
+     *
+     * @param event the event, on the global region
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onRemoteCommand(@NotNull RemoteServerCommandEvent event) {
+        if (event.getSender() instanceof RemoteConsoleCommandSender remote) {
+            serverCommand(remote.getServer(), Actors.RCON, event.getCommand());
+        }
+    }
+
+    private void serverCommand(@NotNull Server server, @NotNull Actor actor, @NotNull String command) {
+        List<World> worlds = server.getWorlds();
         if (worlds.isEmpty() || !recorder.enabled(LogCategory.CONSOLE_COMMANDS, worlds.getFirst())) {
             return;
         }
-        recorder.message(Action.COMMAND, Actors.CONSOLE, worlds.getFirst().getSpawnLocation(),
-                CommandText.recorded(event.getCommand(), configProvider.get().logging()));
+        recorder.message(Action.COMMAND, actor, worlds.getFirst().getSpawnLocation(),
+                CommandText.recorded(command, configProvider.get().logging()));
     }
 }

@@ -10,6 +10,8 @@ import gg.moonrise.hawkeye.listener.Recorded;
 import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import io.papermc.paper.event.player.PlayerSignCommandPreprocessEvent;
+import java.lang.reflect.Proxy;
+import java.net.InetSocketAddress;
 import java.util.HashSet;
 import java.util.List;
 import org.bukkit.Location;
@@ -19,7 +21,9 @@ import org.bukkit.block.Block;
 import org.bukkit.block.Sign;
 import org.bukkit.block.sign.Side;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.RemoteConsoleCommandSender;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.server.RemoteServerCommandEvent;
 import org.bukkit.event.server.ServerCommandEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -119,10 +123,31 @@ public class ChatListenerTest {
     }
 
     @Test
+    public void aRemoteConsoleCommandIsRecordedByRconAndRedacted() {
+        remoteCommand(rcon(), "op Steve");
+        remoteCommand(rcon(), "l hunter2");
+
+        List<StoredEvent> events = Recorded.events(Action.COMMAND);
+        assertEquals(List.of(new Payload.Text("/op Steve"), new Payload.Text("/l")), texts(events));
+        StoredEvent event = events.getFirst();
+        assertEquals("#rcon", event.actor().name());
+        assertEquals(world.getSpawnLocation().getBlockX(), event.x());
+        assertEquals(world.getSpawnLocation().getBlockZ(), event.z());
+    }
+
+    @Test
+    public void onlyTheRemoteConsoleIsRecordedForRemoteCommands() {
+        remoteCommand(player, "op Steve");
+
+        assertTrue(Recorded.events(Action.COMMAND).isEmpty());
+    }
+
+    @Test
     public void consoleCommandsHaveTheirOwnSwitch() {
         TestPlugins.writeConfig(plugin, "logging:\n  console-commands: false\n");
         TestPlugins.reload();
         consoleCommand(server.getConsoleSender(), "op Steve");
+        remoteCommand(rcon(), "op Steve");
         command("/spawn");
 
         assertEquals(List.of(new Payload.Text("/spawn")), texts(Recorded.events(Action.COMMAND)));
@@ -139,6 +164,24 @@ public class ChatListenerTest {
 
     private void consoleCommand(CommandSender sender, String line) {
         server.getPluginManager().callEvent(new ServerCommandEvent(sender, line));
+    }
+
+    private void remoteCommand(CommandSender sender, String line) {
+        server.getPluginManager().callEvent(new RemoteServerCommandEvent(sender, line));
+    }
+
+    /** MockBukkit has no remote console sender; this one answers its server, name and address only. */
+    private RemoteConsoleCommandSender rcon() {
+        return (RemoteConsoleCommandSender) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[] {RemoteConsoleCommandSender.class}, (proxy, method, args) -> switch (method.getName()) {
+                    case "getServer" -> server;
+                    case "getName" -> "Rcon";
+                    case "getAddress" -> new InetSocketAddress("127.0.0.1", 25575);
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    case "toString" -> "Rcon";
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
     }
 
     private static List<Payload> texts(List<StoredEvent> events) {

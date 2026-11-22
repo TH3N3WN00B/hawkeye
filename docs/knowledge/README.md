@@ -247,6 +247,9 @@ update them in the same change when you learn something durable or an entry stop
     `PlayerInteractEvent` (`Action.PHYSICAL`) for a player or `EntityInteractEvent` for a mob, then
     removes one egg with `setBlock` or the last with `Level.destroyBlock` (so a `BlockDestroyEvent`); no
     `EntityChangeBlockEvent`.
+  - RCON commands raise only `RemoteServerCommandEvent` (`DedicatedServer.runCommand`), which declares its
+    own handler list, so a `ServerCommandEvent` handler never sees them; the sender is a
+    `RemoteConsoleCommandSender`, which is not a `ConsoleCommandSender`.
   - `LiquidBlock` raises `BlockFormEvent` (`handleBlockFormEvent`) for obsidian and cobblestone from lava
     meeting water and for basalt from lava over soul soil next to blue ice.
   - `io.papermc.paper.event.entity.EntityBreakEvent` (and `EntityBreakByEntityEvent`, which shares its

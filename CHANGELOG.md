@@ -106,6 +106,9 @@ second release in a quarter).
 - CoreProtect's action synonyms in `a:` (`broke`, `placed`, `clicks`, `deaths`, `login`, `logout`, `drops`,
   `pickups`, `transactions`, ... ) and a leading `#` (`a:#block`), and `#sum` for `#count`. Suggestions
   still list only Hawkeye's own names.
+- Commands sent over the remote console (RCON) are recorded under `#rcon` with the console commands
+  (`console-commands`, the same redaction), so a leaked RCON password used for `op` or `give` leaves a
+  trace.
 ### Changed
 
 - Versions are year.quarter: a stable release is `26.4`, a Jenkins build `26.4.B<build>` (`26.4.B25`), any other

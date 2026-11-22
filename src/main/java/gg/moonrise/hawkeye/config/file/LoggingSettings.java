@@ -96,7 +96,7 @@ public final class LoggingSettings {
 
     private boolean gamemodes = true;
 
-    @Comment("Commands run from the server console (not command blocks).")
+    @Comment("Commands run from the server console (#console) or the remote console (#rcon), not command blocks.")
     private boolean consoleCommands = true;
 
     @Comment({"Blame flowing water and lava on the player who poured it (and on its flow), instead of #water or",

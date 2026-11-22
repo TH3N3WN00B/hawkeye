@@ -59,6 +59,6 @@ public enum LogCategory {
     BOOKS,
     /** Game mode changes. */
     GAMEMODES,
-    /** Commands run from the server console. */
+    /** Commands run from the server console or the remote console (RCON). */
     CONSOLE_COMMANDS
 }
