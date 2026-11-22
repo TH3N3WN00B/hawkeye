@@ -26,6 +26,7 @@ import org.bukkit.block.sign.Side;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.ItemFrame;
 import org.bukkit.entity.Zombie;
+import org.bukkit.entity.minecart.StorageMinecart;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.AfterEach;
@@ -224,6 +225,18 @@ public class WorldWriterTest {
     }
 
     @Test
+    public void itemsGoIntoAStorageMinecartAndOutOfIt() {
+        StorageMinecart minecart = world.spawn(new Location(world, 11.5, 64.06, 11.5), StorageMinecart.class);
+
+        assertEquals(WorldWriter.Effect.ITEMS, adjust(11, 64, 11, "minecraft:diamond", 70));
+        assertEquals(70, count(minecart.getInventory().getContents(), Material.DIAMOND));
+        assertEquals(WorldWriter.Effect.ITEMS, adjust(11, 64, 11, "minecraft:diamond", -65));
+        assertEquals(5, count(minecart.getInventory().getContents(), Material.DIAMOND));
+        assertEquals(WorldWriter.Effect.NONE, adjust(11, 64, 11, "minecraft:emerald", -1));
+        assertEquals(WorldWriter.Effect.NONE, adjust(11, 64, 12, "minecraft:diamond", 1));
+    }
+
+    @Test
     public void aContainerBlockComesBeforeAFrameInIt() {
         Block block = world.getBlockAt(9, 64, 9);
         block.setType(Material.CHEST);
@@ -256,8 +269,12 @@ public class WorldWriterTest {
     }
 
     private static int count(Block block, Material material) {
+        return count(((Container) block.getState()).getInventory().getContents(), material);
+    }
+
+    private static int count(ItemStack[] contents, Material material) {
         int total = 0;
-        for (ItemStack stack : ((Container) block.getState()).getInventory().getContents()) {
+        for (ItemStack stack : contents) {
             if (stack != null && stack.getType() == material) {
                 total += stack.getAmount();
             }

@@ -1,5 +1,6 @@
 package gg.moonrise.hawkeye.core.service.rollback.apply;
 
+import gg.moonrise.hawkeye.core.service.capture.container.ContainerLocations;
 import java.util.Comparator;
 import java.util.List;
 import org.bukkit.block.Block;
@@ -7,15 +8,19 @@ import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.ItemFrame;
 import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.BoundingBox;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Container changes recorded at an item frame or armour stand instead of a container block. Putting
- * items back fills an empty frame, or the free equipment slot of a stand that suits the item; taking
- * them out clears a frame or stand slot that holds a similar item. Frames come before stands. Call only
- * on the thread that owns the block.
+ * Container changes recorded at an entity instead of a container block: an item frame, an armour stand,
+ * or an entity that carries a container ({@link ContainerLocations#carriesContainer}: minecarts with a
+ * chest or hopper, chest boats, donkeys, mules and llamas). Putting items back fills an empty frame, the
+ * free equipment slot of a stand that suits the item, or a carried inventory; taking them out clears a
+ * frame or stand slot that holds a similar item, or takes similar items out of a carried inventory.
+ * Frames come before stands, stands before carried inventories. Call only on the thread that owns the
+ * block.
  */
 public final class HeldItems {
 
@@ -27,10 +32,10 @@ public final class HeldItems {
     }
 
     /**
-     * Puts items into ({@code delta > 0}) or takes them out of ({@code delta < 0}) the item frames and
-     * armour stands at a block.
+     * Puts items into ({@code delta > 0}) or takes them out of ({@code delta < 0}) the item frames,
+     * armour stands and carried inventories at a block.
      *
-     * @param block    the block the frames and stands stand in
+     * @param block    the block the entities stand in
      * @param template the item, any amount
      * @param delta    how many
      * @return how many items moved
@@ -45,20 +50,30 @@ public final class HeldItems {
             left -= switch (holder) {
                 case ItemFrame frame -> delta > 0 ? putInto(frame, template) : takeFrom(frame, template);
                 case ArmorStand stand -> delta > 0 ? putInto(stand, template, left) : takeFrom(stand, template, left);
+                case InventoryHolder carrier -> BlockInventories.adjust(carrier.getInventory(), template,
+                        delta > 0 ? left : -left);
                 default -> 0;
             };
         }
         return requested - left;
     }
 
-    /** The frames, then the stands, whose position lies in the block, in a stable order. */
+    /** The frames, then the stands, then the container carriers whose position lies in the block, in a stable order. */
     private static @NotNull List<Entity> holders(@NotNull Block block) {
         return block.getWorld().getNearbyEntities(BoundingBox.of(block),
-                        entity -> (entity instanceof ItemFrame || entity instanceof ArmorStand) && in(entity, block))
+                        entity -> (entity instanceof ItemFrame || entity instanceof ArmorStand
+                                || ContainerLocations.carriesContainer(entity)) && in(entity, block))
                 .stream()
-                .sorted(Comparator.comparing((Entity entity) -> entity instanceof ArmorStand)
-                        .thenComparing(Entity::getUniqueId))
+                .sorted(Comparator.comparingInt(HeldItems::rank).thenComparing(Entity::getUniqueId))
                 .toList();
+    }
+
+    private static int rank(@NotNull Entity entity) {
+        return switch (entity) {
+            case ItemFrame frame -> 0;
+            case ArmorStand stand -> 1;
+            default -> 2;
+        };
     }
 
     private static boolean in(@NotNull Entity entity, @NotNull Block block) {

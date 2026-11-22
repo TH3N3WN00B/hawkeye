@@ -12,12 +12,19 @@ import gg.moonrise.hawkeye.support.TestPlugins;
 import java.util.List;
 import java.util.Map;
 import org.bukkit.Material;
+import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.entity.Item;
+import org.bukkit.entity.Villager;
+import org.bukkit.entity.boat.OakChestBoat;
+import org.bukkit.entity.minecart.StorageMinecart;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryMoveItemEvent;
+import org.bukkit.event.inventory.InventoryPickupItemEvent;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
@@ -33,6 +40,7 @@ public class ContainerListenerTest {
 
     private ServerMock server;
     private TestHawkeyePlugin plugin;
+    private World world;
     private PlayerMock player;
     private Inventory chest;
 
@@ -40,7 +48,7 @@ public class ContainerListenerTest {
     public void setUp() {
         server = MockBukkit.mock();
         plugin = TestPlugins.load();
-        World world = server.addSimpleWorld("world");
+        world = server.addSimpleWorld("world");
         player = server.addPlayer("Alex");
         Block block = world.getBlockAt(2, 64, -3);
         block.setType(Material.CHEST);
@@ -149,6 +157,118 @@ public class ContainerListenerTest {
         player.openInventory(chest);
 
         assertEquals(0, TestPlugins.bean(ContainerListener.class).sessions());
+    }
+
+    @Test
+    public void aHopperPullingWhileTheChestIsOpenIsNotTheViewers() {
+        chest.setItem(0, new ItemStack(Material.DIAMOND, 10));
+        player.openInventory(chest);
+        Inventory hopper = HeldInventories.hopper(holder(2, 63, -3, Material.HOPPER));
+        ItemStack pulled = new ItemStack(Material.DIAMOND, 10);
+        server.getPluginManager().callEvent(new InventoryMoveItemEvent(chest, pulled, hopper, false));
+        chest.removeItem(pulled.clone());
+        hopper.addItem(pulled.clone());
+        click(player);
+        server.getScheduler().performOneTick();
+        player.closeInventory();
+
+        assertTrue(Recorded.events(Action.CONTAINER_WITHDRAW, Action.CONTAINER_DEPOSIT).isEmpty());
+    }
+
+    @Test
+    public void aDepositBeforeAHopperMoveInTheSameTickIsStillTheViewers() {
+        player.openInventory(chest);
+        click(player);
+        chest.setItem(5, new ItemStack(Material.EMERALD, 4));
+        Inventory hopper = HeldInventories.hopper(holder(2, 65, -3, Material.HOPPER));
+        hopper.setItem(0, new ItemStack(Material.IRON_INGOT, 1));
+        ItemStack pushed = new ItemStack(Material.IRON_INGOT, 1);
+        server.getPluginManager().callEvent(new InventoryMoveItemEvent(hopper, pushed, chest, true));
+        hopper.removeItem(pushed.clone());
+        chest.addItem(pushed.clone());
+        server.getScheduler().performOneTick();
+        player.closeInventory();
+
+        StoredEvent deposit = Recorded.only(Action.CONTAINER_DEPOSIT);
+        assertEquals("Alex", deposit.actor().name());
+        assertEquals("minecraft:emerald", deposit.subject());
+        assertEquals(4, deposit.amount());
+        assertTrue(Recorded.events(Action.CONTAINER_WITHDRAW).isEmpty());
+    }
+
+    @Test
+    public void aClickAfterAnAutomaticMoveIsTheViewersAgain() {
+        chest.setItem(0, new ItemStack(Material.DIAMOND, 10));
+        player.openInventory(chest);
+        Inventory hopper = HeldInventories.hopper(holder(2, 63, -3, Material.HOPPER));
+        server.getPluginManager().callEvent(new InventoryMoveItemEvent(chest, new ItemStack(Material.DIAMOND),
+                hopper, false));
+        chest.removeItem(new ItemStack(Material.DIAMOND));
+        click(player);
+        chest.removeItem(new ItemStack(Material.DIAMOND, 3));
+        server.getScheduler().performOneTick();
+
+        StoredEvent withdrawal = Recorded.only(Action.CONTAINER_WITHDRAW);
+        assertEquals("Alex", withdrawal.actor().name());
+        assertEquals(3, withdrawal.amount());
+    }
+
+    @Test
+    public void aGroundItemPickedUpByAnOpenHopperIsNotTheViewers() {
+        Inventory hopper = HeldInventories.hopper(holder(4, 64, -3, Material.HOPPER));
+        player.openInventory(hopper);
+        Item item = world.dropItem(new Location(world, 4, 65, -3), new ItemStack(Material.GOLD_NUGGET, 8));
+        server.getPluginManager().callEvent(new InventoryPickupItemEvent(hopper, item));
+        hopper.addItem(item.getItemStack().clone());
+        player.closeInventory();
+
+        assertTrue(Recorded.events(Action.CONTAINER_DEPOSIT).isEmpty());
+    }
+
+    @Test
+    public void aStorageMinecartIsRecordedAtItsBlock() {
+        StorageMinecart minecart = world.spawn(new Location(world, 10.7, 65.2, -4.3), StorageMinecart.class);
+        Inventory inventory = HeldInventories.chest(minecart);
+        player.openInventory(inventory);
+        inventory.addItem(new ItemStack(Material.DIAMOND, 3));
+        player.closeInventory();
+
+        StoredEvent deposit = Recorded.only(Action.CONTAINER_DEPOSIT);
+        assertEquals("Alex", deposit.actor().name());
+        assertEquals(3, deposit.amount());
+        assertEquals(10, deposit.x());
+        assertEquals(65, deposit.y());
+        assertEquals(-5, deposit.z());
+    }
+
+    @Test
+    public void aChestBoatIsRecordedAtItsBlock() {
+        OakChestBoat boat = world.spawn(new Location(world, -1.5, 62.4, 8.2), OakChestBoat.class);
+        Inventory inventory = HeldInventories.chest(boat);
+        inventory.setItem(0, new ItemStack(Material.COAL, 16));
+        player.openInventory(inventory);
+        inventory.setItem(0, new ItemStack(Material.COAL, 6));
+        player.closeInventory();
+
+        StoredEvent withdrawal = Recorded.only(Action.CONTAINER_WITHDRAW);
+        assertEquals(10, withdrawal.amount());
+        assertEquals(-2, withdrawal.x());
+        assertEquals(62, withdrawal.y());
+        assertEquals(8, withdrawal.z());
+    }
+
+    @Test
+    public void aVillagersInventoryIsNotTracked() {
+        Villager villager = world.spawn(new Location(world, 0, 64, 0), Villager.class);
+        player.openInventory(HeldInventories.chest(villager));
+
+        assertEquals(0, TestPlugins.bean(ContainerListener.class).sessions());
+    }
+
+    private InventoryHolder holder(int x, int y, int z, Material material) {
+        Block block = world.getBlockAt(x, y, z);
+        block.setType(material);
+        return (InventoryHolder) block.getState();
     }
 
     private void click(PlayerMock viewer) {

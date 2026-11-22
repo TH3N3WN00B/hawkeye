@@ -114,6 +114,21 @@ public class HopperListenerTest {
     }
 
     @Test
+    public void aHopperMinecartEndOfATransferIsRecordedAtItsBlock() {
+        enable();
+        HopperMinecartMock minecart = new HopperMinecartMock(server, UUID.randomUUID());
+        minecart.setLocation(new Location(world, 0.5, 63.06, 0.5));
+        move(chest, HeldInventories.hopper(minecart));
+
+        StoredEvent deposit = Recorded.only(Action.CONTAINER_DEPOSIT);
+        assertEquals(0, deposit.x());
+        assertEquals(63, deposit.y());
+        StoredEvent withdrawal = Recorded.only(Action.CONTAINER_WITHDRAW);
+        assertEquals(0, withdrawal.x());
+        assertEquals(64, withdrawal.y());
+    }
+
+    @Test
     public void onlyWhatFitsIsRecordedAndNothingWhenNothingFits() {
         enable();
         Inventory nearlyFull = HeldInventories.hopper(holder(1, Material.HOPPER));

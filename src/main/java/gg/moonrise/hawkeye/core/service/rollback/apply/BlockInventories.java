@@ -46,16 +46,28 @@ public final class BlockInventories {
         if (!(state instanceof TileStateInventoryHolder holder)) {
             return OptionalInt.empty();
         }
+        return OptionalInt.of(adjust(holder.getInventory(), template, delta));
+    }
+
+    /**
+     * Puts items into ({@code delta > 0}) or takes them out of ({@code delta < 0}) an inventory, in
+     * stacks of at most the item's stack size.
+     *
+     * @param inventory the inventory
+     * @param template  the item, any amount
+     * @param delta     how many
+     * @return how many items moved
+     */
+    public static int adjust(@NotNull Inventory inventory, @NotNull ItemStack template, int delta) {
         int requested = Math.abs(delta);
         int perStack = Math.max(1, template.getMaxStackSize());
         List<ItemStack> stacks = new ArrayList<>();
         for (int left = requested; left > 0; left -= perStack) {
             stacks.add(template.asQuantity(Math.min(perStack, left)));
         }
-        Inventory inventory = holder.getInventory();
         ItemStack[] moved = stacks.toArray(ItemStack[]::new);
         Map<Integer, ItemStack> missed = delta > 0 ? inventory.addItem(moved) : inventory.removeItem(moved);
-        return OptionalInt.of(requested - missed.values().stream().mapToInt(ItemStack::getAmount).sum());
+        return requested - missed.values().stream().mapToInt(ItemStack::getAmount).sum();
     }
 
     /**

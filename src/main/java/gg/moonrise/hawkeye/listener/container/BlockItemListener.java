@@ -6,16 +6,13 @@ import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
 import gg.moonrise.hawkeye.core.service.capture.block.BlockItems;
 import gg.moonrise.hawkeye.core.service.capture.container.InventoryDiff;
 import gg.moonrise.hawkeye.core.service.thread.ServerThreads;
-import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.actor.Actor;
 import gg.moonrise.moss.spring.SpringComponent;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
-import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.event.Event;
@@ -81,12 +78,7 @@ public final class BlockItemListener implements Listener {
 
     private void record(@NotNull Actor actor, @NotNull Block block, @Nullable ItemStack @NotNull [] before,
             @Nullable ItemStack @NotNull [] after) {
-        List<InventoryDiff.Delta> deltas = InventoryDiff.diff(before, after);
-        Location location = block.getLocation();
-        for (InventoryDiff.Delta delta : deltas) {
-            Action action = delta.amount() > 0 ? Action.CONTAINER_DEPOSIT : Action.CONTAINER_WITHDRAW;
-            recorder.container(action, actor, location, delta.item(), Math.abs(delta.amount()));
-        }
+        recorder.containerChanges(actor, block.getLocation(), InventoryDiff.diff(before, after));
     }
 
     /**

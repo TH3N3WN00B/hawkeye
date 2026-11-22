@@ -3,6 +3,7 @@ package gg.moonrise.hawkeye.core.service.capture;
 import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.config.file.LogCategory;
 import gg.moonrise.hawkeye.config.file.LoggingSettings;
+import gg.moonrise.hawkeye.core.service.capture.container.InventoryDiff;
 import gg.moonrise.hawkeye.core.queue.event.EventQueue;
 import gg.moonrise.hawkeye.core.time.EventClock;
 import gg.moonrise.hawkeye.entity.action.Action;
@@ -15,6 +16,7 @@ import gg.moonrise.hawkeye.util.serialize.EntityBytes;
 import gg.moonrise.hawkeye.util.serialize.ItemBytes;
 import gg.moonrise.hawkeye.util.codec.PayloadCodec;
 import gg.moonrise.moss.spring.SpringComponent;
+import java.util.List;
 import java.util.concurrent.atomic.LongAdder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -119,6 +121,22 @@ public final class EventRecorder {
             @NotNull ItemStack item, int amount) {
         requireFamily(action, ActionFamily.CONTAINER);
         recordItem(action, actor, container, item, amount);
+    }
+
+    /**
+     * Records the net changes of a container's contents: a deposit for every kind of item there is more
+     * of, a withdrawal for every kind there is less of.
+     *
+     * @param actor     who changed the contents
+     * @param container the container's location
+     * @param deltas    the changes, as {@link InventoryDiff#diff} returns them
+     */
+    public void containerChanges(@NotNull Actor actor, @NotNull Location container,
+            @NotNull List<InventoryDiff.Delta> deltas) {
+        for (InventoryDiff.Delta delta : deltas) {
+            Action action = delta.amount() > 0 ? Action.CONTAINER_DEPOSIT : Action.CONTAINER_WITHDRAW;
+            container(action, actor, container, delta.item(), Math.abs(delta.amount()));
+        }
     }
 
     /**

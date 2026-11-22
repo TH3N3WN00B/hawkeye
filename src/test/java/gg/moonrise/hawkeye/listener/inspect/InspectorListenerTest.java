@@ -95,6 +95,24 @@ public class InspectorListenerTest {
     }
 
     @Test
+    public void rightClickOnABlockThatHoldsItemsShowsItsTransactions() {
+        List<Material> types = List.of(Material.CHISELED_BOOKSHELF, Material.JUKEBOX);
+        for (int x = 0; x < types.size(); x++) {
+            Material type = types.get(x);
+            Block block = block(x, 70, 3, type);
+            recorder.record(Action.CONTAINER_WITHDRAW, Actors.of(alex), world, x, 70, 3, "minecraft:book", null, 1,
+                    null);
+
+            PlayerInteractEvent click = click(org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK, null, block);
+
+            assertTrue(cancelled(click), type.name());
+            List<String> reply = AwaitReplies.reply(server, alex);
+            assertEquals("----- Hawkeye " + x + " 70 3 -----", reply.getFirst(), type.name());
+            assertTrue(reply.stream().anyMatch(line -> line.contains("Alex removed 1x book")), reply.toString());
+        }
+    }
+
+    @Test
     public void rightClickElsewhereShowsTheBlockOnTheClickedFace() {
         Block block = block(5, 64, 5, Material.STONE);
         placeAndBreak(5, 65, 5);
