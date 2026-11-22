@@ -124,7 +124,7 @@ falls off a wall for the player who broke the wall.
 | Crop growth | A ripe crop or a newly grown block (melon, pumpkin, sugar cane, cactus, vines) as one compact `#growth` event; `crop-growth-stages` records every stage. Rollbacks never change growth |
 | Signs | Edits with the text before and after, per side |
 | Interactions | Doors, trapdoors, gates, levers, buttons, repeaters, comparators, note blocks, daylight detectors (a tick later, only when the state changed); berries picked, pumpkins and beehives sheared, flower pots, dragon eggs |
-| Containers | Net change per kind of item while a container is open; jukeboxes, chiseled bookshelves, decorated pots, shelves and lecterns; items in item frames and on armour stands |
+| Containers | Net change per kind of item while a container is open (items a hopper or dropper moves meanwhile are not the player's); jukeboxes, chiseled bookshelves, decorated pots, shelves and lecterns; items in item frames and on armour stands |
 | Dispensers and hoppers | Blocks and liquids a dispenser places or picks up (`#dispenser`); hopper transfers and ground pickups (off by default, high volume) |
 | Entities | Placed or spawned: armour stands, boats, minecarts, paintings, item frames, end crystals, spawn eggs, built golems and withers (with the consumed blocks), mobs released from buckets. Destroyed or taken: paintings, item frames, vehicles, end crystals, mobs caught in buckets. Kills |
 | Entity interactions | Shearing, naming (with the name), leashing, unleashing, taming, dyeing |
