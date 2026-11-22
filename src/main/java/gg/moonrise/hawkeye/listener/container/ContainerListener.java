@@ -6,8 +6,6 @@ import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
 import gg.moonrise.hawkeye.core.service.capture.container.ContainerLocations;
 import gg.moonrise.hawkeye.core.service.capture.container.InventoryDiff;
 import gg.moonrise.hawkeye.core.service.thread.ServerThreads;
-import gg.moonrise.hawkeye.entity.action.Action;
-import gg.moonrise.hawkeye.entity.actor.Actor;
 import gg.moonrise.moss.spring.SpringComponent;
 import java.util.List;
 import java.util.Map;
@@ -155,11 +153,7 @@ public final class ContainerListener implements Listener {
                 || !recorder.enabled(LogCategory.CONTAINERS, session.location.getWorld())) {
             return;
         }
-        Actor actor = Actors.of(player);
-        for (InventoryDiff.Delta delta : deltas) {
-            Action action = delta.amount() > 0 ? Action.CONTAINER_DEPOSIT : Action.CONTAINER_WITHDRAW;
-            recorder.container(action, actor, session.location, delta.item(), Math.abs(delta.amount()));
-        }
+        recorder.containerChanges(Actors.of(player), session.location, deltas);
     }
 
     /**
