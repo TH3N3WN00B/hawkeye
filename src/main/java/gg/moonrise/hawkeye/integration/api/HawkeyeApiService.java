@@ -2,6 +2,8 @@ package gg.moonrise.hawkeye.integration.api;
 
 import gg.moonrise.hawkeye.api.HawkeyeApi;
 import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
+import gg.moonrise.hawkeye.core.service.capture.block.BlockChanges;
+import gg.moonrise.hawkeye.core.service.capture.block.BlockContents;
 import gg.moonrise.hawkeye.core.service.lookup.LookupOutcome;
 import gg.moonrise.hawkeye.core.service.lookup.LookupService;
 import gg.moonrise.hawkeye.core.service.query.BuildResult;
@@ -68,7 +70,8 @@ public final class HawkeyeApiService implements HawkeyeApi, Enableable, Disablea
 
     @Override
     public void logRemoval(@NotNull Actor actor, @NotNull BlockState broken) {
-        recorder.blockBreak(actor, broken, plugin.getServer().createBlockData(EventRecorder.AIR), null);
+        BlockData remains = plugin.getServer().createBlockData(BlockChanges.remains(broken.getBlockData()));
+        recorder.blockBreak(actor, broken, remains, BlockContents.of(broken).orElse(null));
     }
 
     @Override

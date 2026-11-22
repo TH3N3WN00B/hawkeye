@@ -157,6 +157,9 @@ second release in a quarter).
 - An unexpected error in one pass of the writer thread is logged, counted and retried with back-off;
   it used to end the writer for good, so every later flush (and with it every lookup and rollback)
   waited forever and the queue filled up and dropped events.
+- `HawkeyeApi#logRemoval` keeps a removed container's items and a sign's text, as Hawkeye's own breaks
+  do, so a rollback no longer restores an empty chest or a blank sign; a waterlogged block leaves water
+  instead of air.
 
 ### Tests
 
