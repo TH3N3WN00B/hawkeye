@@ -27,8 +27,8 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * The previews players are looking at. A preview sends the planned blocks to its player only (the
- * world does not change) and keeps the plan until {@code /hawkeye apply}, {@code cancel} or expiry;
- * cancelling or expiring sends the real blocks back, read on each chunk's own thread.
+ * world does not change) and keeps the plan until {@code /hawkeye apply}, {@code cancel}, expiry or the
+ * player leaving; cancelling or expiring sends the real blocks back, read on each chunk's own thread.
  */
 @Slf4j
 @SpringComponent
@@ -111,6 +111,17 @@ public final class RollbackPreviews implements Disableable {
         }
         revert(preview);
         return true;
+    }
+
+    /**
+     * Drops a player's preview without sending blocks back, for a player who left: their client
+     * dropped the fake blocks with the world, and after a reconnect it shows the real ones.
+     *
+     * @param player the player's UUID
+     * @return whether they had one
+     */
+    public boolean discard(@NotNull UUID player) {
+        return previews.remove(player) != null;
     }
 
     /**

@@ -52,7 +52,7 @@ The root command is `/hawkeye` with the alias `/he`.
 | `/he tp <world> <x> <y> <z>` | `hawkeye.teleport` | Teleports to a result (clicking a location runs it) |
 | `/he rollback <parameters>` (`rb`) | `hawkeye.rollback` | Undoes changes; with `#preview` shows them to you first |
 | `/he restore <parameters>` (`rs`) | `hawkeye.rollback` | Redoes rolled-back changes |
-| `/he apply`, `/he cancel` | `hawkeye.rollback` | Applies or cancels your preview |
+| `/he apply`, `/he cancel` | `hawkeye.rollback` | Applies or cancels your preview (it also ends when it expires or you leave) |
 | `/he undo` | `hawkeye.rollback` | Reverts your last rollback or restore |
 | `/he purge t:<age> [r:#world]` | `hawkeye.purge` | Deletes data older than the age |
 | `/he import coreprotect [source]` | `hawkeye.import` | Imports a CoreProtect database ([below](#importing-from-coreprotect)) |

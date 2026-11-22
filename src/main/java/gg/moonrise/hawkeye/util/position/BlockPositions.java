@@ -37,6 +37,19 @@ public final class BlockPositions {
     }
 
     /**
+     * Whether a block position can be packed.
+     *
+     * @param x block x
+     * @param y block y
+     * @param z block z
+     * @return {@code true} when every axis lies within its packable range, both ends included
+     */
+    public static boolean contains(int x, int y, int z) {
+        return x >= MIN_HORIZONTAL && x <= MAX_HORIZONTAL && z >= MIN_HORIZONTAL && z <= MAX_HORIZONTAL
+                && y >= MIN_Y && y <= MAX_Y;
+    }
+
+    /**
      * Packs a block position.
      *
      * @param x block x
@@ -46,8 +59,7 @@ public final class BlockPositions {
      * @throws IllegalArgumentException when the position is outside the packable range
      */
     public static long pack(int x, int y, int z) {
-        if (x < MIN_HORIZONTAL || x > MAX_HORIZONTAL || z < MIN_HORIZONTAL || z > MAX_HORIZONTAL
-                || y < MIN_Y || y > MAX_Y) {
+        if (!contains(x, y, z)) {
             throw new IllegalArgumentException("position out of range: " + x + ", " + y + ", " + z);
         }
         return chunkBase(x >> 4, z >> 4) | ((long) (x & 15) << 16) | ((long) (z & 15) << 12) | (y - MIN_Y);

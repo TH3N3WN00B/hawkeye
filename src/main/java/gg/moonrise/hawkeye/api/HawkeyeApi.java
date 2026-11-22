@@ -46,10 +46,12 @@ public interface HawkeyeApi {
     void logPlacement(@NotNull Actor actor, @NotNull BlockState replaced, @NotNull BlockData placed);
 
     /**
-     * Records a block removed on behalf of an actor.
+     * Records a block removed on behalf of an actor. A container's items and a sign's text in
+     * {@code broken} are kept, so a rollback puts them back; a waterlogged block leaves water behind.
      *
      * @param actor  who removed it
-     * @param broken the block's state before
+     * @param broken the block's state before (a snapshot taken before the removal, such as
+     *               {@code block.getState()})
      */
     void logRemoval(@NotNull Actor actor, @NotNull BlockState broken);
 

@@ -18,8 +18,9 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * Reads what a block holds beyond its state, for a rollback of its removal to put back: the items of
- * a container (only this block's half of a double chest) or the text of a sign. Reads the live block
- * entity without copying it, so call it on the block's own thread before the block is removed.
+ * a container (only this block's half of a double chest) or the text of a sign. Given a block, it reads
+ * the live block entity without copying it, so call it on the block's own thread before the block is
+ * removed; a state snapshot taken before the removal can be read afterwards.
  */
 public final class BlockContents {
 
@@ -33,7 +34,17 @@ public final class BlockContents {
      * @return an inventory or sign payload, or empty for a block without contents
      */
     public static @NotNull Optional<Payload> of(@NotNull Block block) {
-        BlockState state = block.getState(false);
+        return of(block.getState(false));
+    }
+
+    /**
+     * The contents a block state holds: the live state of a block about to be removed, or a snapshot
+     * taken before its removal.
+     *
+     * @param state the block's state before the removal
+     * @return an inventory or sign payload, or empty for a block without contents
+     */
+    public static @NotNull Optional<Payload> of(@NotNull BlockState state) {
         return switch (state) {
             case Sign sign -> brokenSign(SignText.sides(sign));
             case Chest chest -> inventory(chest.getBlockInventory());

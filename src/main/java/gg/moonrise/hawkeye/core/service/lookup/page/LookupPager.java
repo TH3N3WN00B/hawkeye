@@ -163,7 +163,7 @@ public final class LookupPager {
      * @param first   page 1
      * @return the total
      */
-    static @NotNull LookupTotal firstTotal(@NotNull LookupTotal counted, @NotNull LookupOutcome.Page first) {
+    public static @NotNull LookupTotal firstTotal(@NotNull LookupTotal counted, @NotNull LookupOutcome.Page first) {
         long seen = first.events().size() + (first.hasMore() ? 1 : 0);
         LookupTotal total = counted instanceof LookupTotal.AtLeast atLeast && atLeast.events() < seen
                 ? new LookupTotal.AtLeast(seen) : counted;
