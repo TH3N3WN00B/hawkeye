@@ -45,7 +45,8 @@ public final class LoggingSettings {
     @Comment("Doors, trapdoors, gates, levers, buttons, repeaters, comparators, note blocks.")
     private boolean interactions = true;
 
-    @Comment("Endermen, falling blocks, trampled farmland, sheep eating grass, wither and dragon damage.")
+    @Comment({"Endermen, falling blocks, trampled farmland, sheep eating grass, wither and dragon damage, turtle",
+            "eggs cracked by players and mobs."})
     private boolean entityChanges = true;
 
     @Comment("Players putting items into and taking them out of containers.")

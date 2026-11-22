@@ -127,6 +127,7 @@ falls off a wall for the player who broke the wall.
 | Containers | Net change per kind of item while a container is open; jukeboxes, chiseled bookshelves, decorated pots, shelves and lecterns; items in item frames and on armour stands |
 | Dispensers and hoppers | Blocks and liquids a dispenser places or picks up (`#dispenser`); hopper transfers and ground pickups (off by default, high volume) |
 | Entities | Placed or spawned: armour stands, boats, minecarts, paintings, item frames, cushions, end crystals, spawn eggs, built golems and withers (with the consumed blocks), mobs released from buckets. Destroyed or taken: paintings, item frames, cushions, vehicles, end crystals, mobs caught in buckets. Kills |
+| Entity changes | Blocks changed by endermen, falling blocks, withers, ravagers and silverfish, trampled farmland, grass eaten by sheep, and turtle eggs cracked by a player or mob walking or landing on them, under that player or mob |
 | Entity interactions | Shearing, naming (with the name), leashing, unleashing, taming, dyeing |
 | Items | Drops (and death drops), pickups (and arrows), crafting, thrown and shot items, worn-out tools, villager trades |
 | Chat, commands, books | Chat, commands, sign-click commands (`[sign]`), console commands (`#console`); `logging.redacted-commands` are stored without their arguments; written and signed books |

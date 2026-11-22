@@ -101,6 +101,8 @@ second release in a quarter).
 - Broken cushions (Paper's `EntityBreakEvent`) are recorded as entity removals, under the player or
   entity that broke them, whoever removed their support (else `#physics`), or `#explosion`; a rollback
   puts them back.
+- Turtle eggs cracked by a player or mob walking or landing on them are recorded (`entity-changes`): one
+  egg fewer as a change, the last egg as a break, under that player or mob.
 ### Changed
 
 - Versions are year.quarter: a stable release is `26.4`, a Jenkins build `26.4.B<build>` (`26.4.B25`), any other

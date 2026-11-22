@@ -23,7 +23,7 @@ public enum LogCategory {
     SIGNS,
     /** Doors, levers, buttons, repeaters and other block uses. */
     INTERACTIONS,
-    /** Mobs changing blocks: endermen, falling blocks, trampled farmland, eaten grass. */
+    /** Mobs changing blocks: endermen, falling blocks, trampled farmland, eaten grass, cracked turtle eggs. */
     ENTITY_CHANGES,
     /** Items put into or taken from containers by players. */
     CONTAINERS,
