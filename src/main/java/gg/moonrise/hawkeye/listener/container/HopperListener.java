@@ -12,7 +12,6 @@ import gg.moonrise.moss.spring.SpringComponent;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.bukkit.Location;
-import org.bukkit.entity.minecart.HopperMinecart;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -25,9 +24,9 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * Automatic transfers ({@link LogCategory#HOPPERS}, off by default): an item a hopper, hopper minecart
- * or dropper moves is a withdrawal at the source container block and a deposit at the destination
- * container block, by {@link Actors#HOPPER} or {@link Actors#DISPENSER}. Ends of the transfer that are
- * not blocks (minecarts) are not recorded. A ground item a hopper or hopper minecart picks up is a
+ * or dropper moves is a withdrawal at the source container and a deposit at the destination container
+ * ({@link ContainerLocations}: a minecart's end is its block), by {@link Actors#HOPPER} or
+ * {@link Actors#DISPENSER}. A ground item a hopper or hopper minecart picks up is a
  * deposit at the hopper (the minecart's block) by {@link Actors#HOPPER}, counting only what fits. These
  * events are among the busiest on a server, so the global switch is read before anything else.
  */
@@ -74,7 +73,7 @@ public final class HopperListener implements Listener {
             return;
         }
         Inventory inventory = event.getInventory();
-        Optional<Location> hopper = ContainerLocations.of(inventory).or(() -> minecart(inventory));
+        Optional<Location> hopper = ContainerLocations.of(inventory);
         if (hopper.isEmpty() || hopper.get().getWorld() == null
                 || !recorder.enabled(LogCategory.HOPPERS, hopper.get().getWorld())) {
             return;
@@ -84,10 +83,5 @@ public final class HopperListener implements Listener {
         if (moved > 0) {
             recorder.container(Action.CONTAINER_DEPOSIT, Actors.HOPPER, hopper.get(), item, moved);
         }
-    }
-
-    private static @NotNull Optional<Location> minecart(@NotNull Inventory inventory) {
-        return inventory.getHolder(false) instanceof HopperMinecart minecart
-                ? Optional.of(minecart.getLocation().toBlockLocation()) : Optional.empty();
     }
 }

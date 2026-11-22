@@ -86,6 +86,11 @@ second release in a quarter).
   ground pickups; jukeboxes, chiseled bookshelves, decorated pots, shelves and lecterns as containers
   (with rollback).
 - Books, game mode changes, sign-click and console commands, and kick reasons on quits.
+- Containers carried by entities: minecarts with a chest or hopper, chest boats and rafts, and donkeys,
+  mules and llamas record their transactions at the block the entity stands in, hopper transfers into
+  and out of minecarts record both ends, and a rollback puts the items back into (or takes them out of)
+  such an entity standing in the recorded block. Other entities with an inventory (players, villagers,
+  horses) are still not recorded.
 - `config.yml` and `messages.yml` with every default documented; invalid files keep the previous
   configuration, and restart-only changes are reported.
 - Database and Redis credentials from environment variables, the recommended setting and the default:

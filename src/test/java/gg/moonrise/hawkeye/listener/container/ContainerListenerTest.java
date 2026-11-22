@@ -16,6 +16,9 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Item;
+import org.bukkit.entity.Villager;
+import org.bukkit.entity.boat.OakChestBoat;
+import org.bukkit.entity.minecart.StorageMinecart;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -220,6 +223,46 @@ public class ContainerListenerTest {
         player.closeInventory();
 
         assertTrue(Recorded.events(Action.CONTAINER_DEPOSIT).isEmpty());
+    }
+
+    @Test
+    public void aStorageMinecartIsRecordedAtItsBlock() {
+        StorageMinecart minecart = world.spawn(new Location(world, 10.7, 65.2, -4.3), StorageMinecart.class);
+        Inventory inventory = HeldInventories.chest(minecart);
+        player.openInventory(inventory);
+        inventory.addItem(new ItemStack(Material.DIAMOND, 3));
+        player.closeInventory();
+
+        StoredEvent deposit = Recorded.only(Action.CONTAINER_DEPOSIT);
+        assertEquals("Alex", deposit.actor().name());
+        assertEquals(3, deposit.amount());
+        assertEquals(10, deposit.x());
+        assertEquals(65, deposit.y());
+        assertEquals(-5, deposit.z());
+    }
+
+    @Test
+    public void aChestBoatIsRecordedAtItsBlock() {
+        OakChestBoat boat = world.spawn(new Location(world, -1.5, 62.4, 8.2), OakChestBoat.class);
+        Inventory inventory = HeldInventories.chest(boat);
+        inventory.setItem(0, new ItemStack(Material.COAL, 16));
+        player.openInventory(inventory);
+        inventory.setItem(0, new ItemStack(Material.COAL, 6));
+        player.closeInventory();
+
+        StoredEvent withdrawal = Recorded.only(Action.CONTAINER_WITHDRAW);
+        assertEquals(10, withdrawal.amount());
+        assertEquals(-2, withdrawal.x());
+        assertEquals(62, withdrawal.y());
+        assertEquals(8, withdrawal.z());
+    }
+
+    @Test
+    public void aVillagersInventoryIsNotTracked() {
+        Villager villager = world.spawn(new Location(world, 0, 64, 0), Villager.class);
+        player.openInventory(HeldInventories.chest(villager));
+
+        assertEquals(0, TestPlugins.bean(ContainerListener.class).sessions());
     }
 
     private InventoryHolder holder(int x, int y, int z, Material material) {

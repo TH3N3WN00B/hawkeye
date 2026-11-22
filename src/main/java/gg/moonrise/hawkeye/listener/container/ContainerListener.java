@@ -32,8 +32,10 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Players moving items into and out of container blocks ({@link LogCategory#CONTAINERS}). Opening a
- * block container starts a session with a copy of its contents. A click or drag changes the contents
+ * Players moving items into and out of containers ({@link LogCategory#CONTAINERS}): container blocks and
+ * the entities that carry one ({@link ContainerLocations}: minecarts with a chest or hopper, chest boats,
+ * donkeys, mules and llamas, recorded at the block the entity stands in when it is opened). Opening a
+ * container starts a session with a copy of its contents. A click or drag changes the contents
  * only after the event, so it schedules a comparison on the player's thread a tick later; closing
  * compares once more and ends the session. Each comparison records the net change per kind of item
  * ({@link InventoryDiff}) as a deposit or withdrawal at the container (the left half of a double
@@ -57,7 +59,7 @@ public final class ContainerListener implements Listener {
     private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
 
     /**
-     * Starts a session for a block container.
+     * Starts a session for a container.
      *
      * @param event the event
      */
@@ -151,7 +153,7 @@ public final class ContainerListener implements Listener {
     /**
      * The number of open sessions.
      *
-     * @return players with a block container open
+     * @return players with a container open
      */
     public int sessions() {
         return sessions.size();

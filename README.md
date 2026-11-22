@@ -124,17 +124,18 @@ falls off a wall for the player who broke the wall.
 | Crop growth | A ripe crop or a newly grown block (melon, pumpkin, sugar cane, cactus, vines) as one compact `#growth` event; `crop-growth-stages` records every stage. Rollbacks never change growth |
 | Signs | Edits with the text before and after, per side |
 | Interactions | Doors, trapdoors, gates, levers, buttons, repeaters, comparators, note blocks, daylight detectors (a tick later, only when the state changed); berries picked, pumpkins and beehives sheared, flower pots, dragon eggs |
-| Containers | Net change per kind of item while a container is open (items a hopper or dropper moves meanwhile are not the player's); jukeboxes, chiseled bookshelves, decorated pots, shelves and lecterns; items in item frames and on armour stands |
-| Dispensers and hoppers | Blocks and liquids a dispenser places or picks up (`#dispenser`); hopper transfers and ground pickups (off by default, high volume) |
+| Containers | Net change per kind of item while a container is open (items a hopper or dropper moves meanwhile are not the player's); jukeboxes, chiseled bookshelves, decorated pots, shelves and lecterns; minecarts with a chest or hopper, chest boats and rafts, donkeys, mules and llamas (at the block they stand in); items in item frames and on armour stands |
+| Dispensers and hoppers | Blocks and liquids a dispenser places or picks up (`#dispenser`); hopper transfers (also into and out of minecarts) and ground pickups (off by default, high volume) |
 | Entities | Placed or spawned: armour stands, boats, minecarts, paintings, item frames, end crystals, spawn eggs, built golems and withers (with the consumed blocks), mobs released from buckets. Destroyed or taken: paintings, item frames, vehicles, end crystals, mobs caught in buckets. Kills |
 | Entity interactions | Shearing, naming (with the name), leashing, unleashing, taming, dyeing |
 | Items | Drops (and death drops), pickups (and arrows), crafting, thrown and shot items, worn-out tools, villager trades |
 | Chat, commands, books | Chat, commands, sign-click commands (`[sign]`), console commands (`#console`); `logging.redacted-commands` are stored without their arguments; written and signed books |
 | Sessions and modes | Joins, quits (with the kick reason), game mode changes |
 
-A rollback reverses blocks, container and item-frame/armour-stand items, kills and destroyed
-entities (respawned) and placed or spawned entities (removed while they are still in the world);
-interactions, growth, items, chat and sessions are history only.
+A rollback reverses blocks, container items (also in minecarts, chest boats and pack animals still
+standing in the recorded block), item-frame/armour-stand items, kills and destroyed entities (respawned)
+and placed or spawned entities (removed while they are still in the world); interactions, growth, items,
+chat and sessions are history only.
 
 ## Configuration
 
