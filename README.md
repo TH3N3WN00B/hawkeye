@@ -76,12 +76,12 @@ without relearning:
 | `u:` | Players, or sources with `#` | `u:Alex,Steve`, `u:#tnt` |
 | `t:` | How far back, or between two ages | `t:2h`, `t:3d12h`, `t:1h-2d` |
 | `r:` | Radius around you, a whole world, or everywhere | `r:10`, `r:10x5` (5 up and down), `r:#world_nether`, `r:#global` |
-| `a:` | Actions | `block`, `+block`, `-block`, `change`, `sign`, `click`, `grow`, `container`, `+container`, `-container`, `item`, `+item`, `-item`, `craft`, `throw`, `trade`, `kill`, `entity`, `+entity`, `-entity`, `spawn`, `chat`, `command`, `book`, `gamemode`, `session`, `+session`, `-session` |
+| `a:` | Actions (CoreProtect's synonyms such as `broke`, `placed`, `login`, `drops` and a leading `#` are accepted too) | `block`, `+block`, `-block`, `change`, `sign`, `click`, `grow`, `container`, `+container`, `-container`, `item`, `+item`, `-item`, `craft`, `throw`, `trade`, `kill`, `entity`, `+entity`, `-entity`, `spawn`, `chat`, `command`, `book`, `gamemode`, `session`, `+session`, `-session` |
 | `i:` | Only these blocks, items or entities | `i:diamond_ore,chest` |
 | `e:` | Except these types or players | `e:stone,Steve` |
 | `s:` | Other servers | `s:creative`, `s:#network` |
 | `#preview` | Show a rollback or restore to you only | |
-| `#count` | Count matches instead of listing them (always the exact number) | |
+| `#count` | Count matches instead of listing them (always the exact number); CoreProtect's `#sum` works too | |
 
 A lookup without `r:` searches every world of this server. Rollbacks and restores need a `t:` (a
 safety net against undoing a server's whole history by accident); without `r:` they use

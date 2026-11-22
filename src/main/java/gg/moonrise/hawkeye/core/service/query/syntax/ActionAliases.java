@@ -12,11 +12,14 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * The {@code a:} vocabulary, kept compatible with CoreProtect's so staff can switch without relearning:
- * {@code +} means added or placed, {@code -} removed or broken.
+ * {@code +} means added or placed, {@code -} removed or broken. CoreProtect's synonyms ({@code broke},
+ * {@code placed}, {@code login}, {@code drops}, ...) and a leading {@code #} ({@code a:#block}) are
+ * accepted too, but only the canonical names are suggested.
  */
 public final class ActionAliases {
 
     private static final Map<String, Set<Action>> ALIASES = aliases();
+    private static final Map<String, String> SYNONYMS = synonyms();
 
     private ActionAliases() {
     }
@@ -24,15 +27,20 @@ public final class ActionAliases {
     /**
      * The actions an alias stands for.
      *
-     * @param alias e.g. {@code -block}, any case
+     * @param alias e.g. {@code -block}, {@code broke} or {@code #block}, any case
      * @return the actions, or empty for an unknown alias
      */
     public static @NotNull Optional<Set<Action>> of(@NotNull String alias) {
-        return Optional.ofNullable(ALIASES.get(alias.toLowerCase(Locale.ROOT)));
+        String name = alias.toLowerCase(Locale.ROOT);
+        if (name.startsWith("#")) {
+            name = name.substring(1);
+        }
+        Set<Action> actions = ALIASES.get(SYNONYMS.getOrDefault(name, name));
+        return Optional.ofNullable(actions);
     }
 
     /**
-     * Every alias, for suggestions.
+     * Every canonical alias, for suggestions (CoreProtect's synonyms are accepted but not listed).
      *
      * @return the aliases in a stable order
      */
@@ -72,5 +80,39 @@ public final class ActionAliases {
         aliases.put("+session", Set.of(Action.JOIN));
         aliases.put("-session", Set.of(Action.QUIT));
         return aliases;
+    }
+
+    /** CoreProtect's other spellings, each to the canonical alias it means. */
+    private static @NotNull Map<String, String> synonyms() {
+        Map<String, String> synonyms = new LinkedHashMap<>();
+        synonym(synonyms, "block", "blocks", "block-change", "changes");
+        synonym(synonyms, "-block", "broke", "break", "remove", "destroy", "block-break", "block-remove", "-blocks",
+                "block-");
+        synonym(synonyms, "+block", "placed", "place", "block-place", "+blocks", "block+");
+        synonym(synonyms, "click", "clicks", "interact", "interaction", "player-interact", "player-interaction",
+                "player-click");
+        synonym(synonyms, "kill", "death", "deaths", "entity-death", "entity-deaths", "kills", "entity-kill",
+                "entity-kills");
+        synonym(synonyms, "spawn", "spawns", "entity-spawn", "entity-spawns");
+        synonym(synonyms, "container", "containers", "container-change", "chest", "transaction", "transactions");
+        synonym(synonyms, "-container", "container-", "remove-container");
+        synonym(synonyms, "+container", "container+", "container-add", "add-container");
+        synonym(synonyms, "chat", "chats", "message", "messages");
+        synonym(synonyms, "command", "commands");
+        synonym(synonyms, "+session", "login", "logins", "+sessions", "session+", "+connection", "connection+");
+        synonym(synonyms, "-session", "logout", "logouts", "-sessions", "session-", "-connection", "connection-");
+        synonym(synonyms, "session", "sessions", "connection", "connections");
+        synonym(synonyms, "sign", "signs");
+        synonym(synonyms, "item", "items");
+        synonym(synonyms, "-item", "-items", "item-", "items-", "drop", "drops");
+        synonym(synonyms, "+item", "+items", "item+", "items+", "pickup", "pickups");
+        return synonyms;
+    }
+
+    private static void synonym(@NotNull Map<String, String> synonyms, @NotNull String alias,
+            @NotNull String... spellings) {
+        for (String spelling : spellings) {
+            synonyms.put(spelling, alias);
+        }
     }
 }

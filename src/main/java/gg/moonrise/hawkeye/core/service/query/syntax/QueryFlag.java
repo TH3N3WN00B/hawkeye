@@ -9,7 +9,7 @@ public enum QueryFlag {
 
     /** {@code #preview}: show a rollback or restore to the sender only, then apply or cancel. */
     PREVIEW,
-    /** {@code #count}: report how many events match instead of listing them. */
+    /** {@code #count} (or CoreProtect's {@code #sum}): report how many events match instead of listing them. */
     COUNT;
 
     /**
@@ -24,10 +24,13 @@ public enum QueryFlag {
     /**
      * The flag a token sets.
      *
-     * @param token e.g. {@code #preview}, any case
+     * @param token e.g. {@code #preview}, any case; {@code #sum} is CoreProtect's name for {@code #count}
      * @return the flag, or empty when the token is not a flag
      */
     public static @NotNull Optional<QueryFlag> of(@NotNull String token) {
+        if ("#sum".equalsIgnoreCase(token)) {
+            return Optional.of(COUNT);
+        }
         for (QueryFlag flag : values()) {
             if (flag.token().equalsIgnoreCase(token)) {
                 return Optional.of(flag);

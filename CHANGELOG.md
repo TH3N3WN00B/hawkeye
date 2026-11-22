@@ -103,6 +103,9 @@ second release in a quarter).
   puts them back.
 - Turtle eggs cracked by a player or mob walking or landing on them are recorded (`entity-changes`): one
   egg fewer as a change, the last egg as a break, under that player or mob.
+- CoreProtect's action synonyms in `a:` (`broke`, `placed`, `clicks`, `deaths`, `login`, `logout`, `drops`,
+  `pickups`, `transactions`, ... ) and a leading `#` (`a:#block`), and `#sum` for `#count`. Suggestions
+  still list only Hawkeye's own names.
 ### Changed
 
 - Versions are year.quarter: a stable release is `26.4`, a Jenkins build `26.4.B<build>` (`26.4.B25`), any other
