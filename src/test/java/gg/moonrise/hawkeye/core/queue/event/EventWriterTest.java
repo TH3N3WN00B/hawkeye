@@ -4,13 +4,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.queue.spool.EventSpool;
+import gg.moonrise.hawkeye.core.queue.spool.SpoolReplay;
 import gg.moonrise.hawkeye.core.service.capture.Actors;
 import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
 import gg.moonrise.hawkeye.core.sql.Database;
 import gg.moonrise.hawkeye.core.storage.event.EventStore;
 import gg.moonrise.hawkeye.core.storage.shard.StorageManager;
 import gg.moonrise.hawkeye.core.storage.shard.StorageState;
+import gg.moonrise.hawkeye.core.time.EventClock;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.hawkeye.entity.event.PendingEvent;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
@@ -34,6 +37,10 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -42,6 +49,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.bukkit.World;
@@ -285,6 +293,39 @@ public class EventWriterTest {
     }
 
     @Test
+    public void anUnexpectedFailureDoesNotStopTheWriter() throws Exception {
+        StorageState.Ready ready = TestPlugins.awaitStorage();
+        server.addSimpleWorld("world");
+        TestPlugins.flush();
+        // A writer of its own, on its own queue, whose clock throws once: the plugin's writer stays idle.
+        HawkeyeConfigProvider config = TestPlugins.bean(HawkeyeConfigProvider.class);
+        EventQueue queue = new EventQueue(config);
+        FailingClock clock = new FailingClock();
+        EventWriter writer = new EventWriter(queue, TestPlugins.bean(StorageManager.class),
+                TestPlugins.bean(EventStore.class), TestPlugins.bean(EventSpool.class),
+                TestPlugins.bean(SpoolReplay.class), new EventClock(clock), config);
+        writer.onEnable();
+        try {
+            writer.flush().get(20, TimeUnit.SECONDS);
+            clock.failNext();
+            queue.offer(placed(1));
+            writer.flush().get(20, TimeUnit.SECONDS);
+            assertTrue(writer.stats().failures() > 0, writer.stats().toString());
+
+            queue.offer(placed(2));
+            // A flush that arrives during the back-off is answered at once with what is stored; ask again.
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+            do {
+                writer.flush().get(20, TimeUnit.SECONDS);
+            } while (writer.stats().queued() > 0 && System.nanoTime() < deadline);
+            assertEquals(0, writer.stats().queued(), writer.stats().toString());
+        } finally {
+            writer.onDisable();
+        }
+        assertEquals(List.of(1, 2), rows(ready).stream().map(Row::x).sorted().toList());
+    }
+
+    @Test
     public void disabledWorldsAreNotRecorded() throws Exception {
         TestPlugins.writeConfig(plugin, "logging:\n  disabled-worlds: [lobby]\n");
         TestPlugins.reload();
@@ -390,8 +431,46 @@ public class EventWriterTest {
                 Collectors.toList()));
     }
 
+    private static @NotNull PendingEvent placed(int x) {
+        return new PendingEvent(TestPlugins.bean(EventClock.class).next(), "world", BlockPositions.pack(x, 64, 0),
+                Actors.NATURE, Action.BLOCK_PLACE, "minecraft:stone", "minecraft:air", 0, null);
+    }
+
     private static long slotNow() {
         return (System.currentTimeMillis() - EventIds.EPOCH_MILLIS) / EventIds.SLOT_MILLIS;
+    }
+
+    /** The system clock, except that the first reading after {@link #failNext()} throws. */
+    private static final class FailingClock extends Clock {
+
+        private final AtomicBoolean fail = new AtomicBoolean();
+
+        private void failNext() {
+            fail.set(true);
+        }
+
+        @Override
+        public long millis() {
+            if (fail.compareAndSet(true, false)) {
+                throw new IllegalStateException("writer test");
+            }
+            return System.currentTimeMillis();
+        }
+
+        @Override
+        public @NotNull Instant instant() {
+            return Instant.ofEpochMilli(millis());
+        }
+
+        @Override
+        public @NotNull ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public @NotNull Clock withZone(@NotNull ZoneId zone) {
+            return this;
+        }
     }
 
     /**

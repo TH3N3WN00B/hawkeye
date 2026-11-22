@@ -23,7 +23,7 @@ public enum LogCategory {
     SIGNS,
     /** Doors, levers, buttons, repeaters and other block uses. */
     INTERACTIONS,
-    /** Mobs changing blocks: endermen, falling blocks, trampled farmland, eaten grass. */
+    /** Mobs changing blocks: endermen, falling blocks, trampled farmland, eaten grass, cracked turtle eggs. */
     ENTITY_CHANGES,
     /** Items put into or taken from containers by players. */
     CONTAINERS,
@@ -59,6 +59,6 @@ public enum LogCategory {
     BOOKS,
     /** Game mode changes. */
     GAMEMODES,
-    /** Commands run from the server console. */
+    /** Commands run from the server console or the remote console (RCON). */
     CONSOLE_COMMANDS
 }

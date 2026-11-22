@@ -127,6 +127,10 @@ public final class EventWriter implements Enableable, Disableable {
         }
         CompletableFuture<Void> request = new CompletableFuture<>();
         flushRequests.add(request);
+        if (!running) {
+            // The loop ended between the check and the add and may have released its last requests.
+            request.complete(null);
+        }
         queue.wake();
         return request;
     }
@@ -148,19 +152,38 @@ public final class EventWriter implements Enableable, Disableable {
                 if (!running) {
                     break;
                 }
-                List<CompletableFuture<Void>> requests = takeRequests();
-                writeAvailable(!requests.isEmpty());
-                release(requests);
+                writeOnce();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } catch (RuntimeException e) {
             log.error("The writer loop failed", e);
         } finally {
+            // From here on flush() answers at once: nothing would complete a request queued later.
+            running = false;
             shutdownDrain();
             release(takeRequests());
             stopped.complete(null);
         }
+    }
+
+    /**
+     * One pass of the loop. An unexpected failure is counted and backed off like a failed batch, so it
+     * never ends the writer while events are still captured and flushes still wait for it.
+     */
+    private void writeOnce() throws InterruptedException {
+        List<CompletableFuture<Void>> requests = takeRequests();
+        try {
+            writeAvailable(!requests.isEmpty());
+        } catch (RuntimeException e) {
+            if (countFailure(e)) {
+                log.error("The writer loop failed (attempt {}), retrying", consecutiveFailures, e);
+            }
+            release(requests);
+            backOff();
+            return;
+        }
+        release(requests);
     }
 
     /**
@@ -287,13 +310,21 @@ public final class EventWriter implements Enableable, Disableable {
     }
 
     private void failed(@NotNull String what, @NotNull Exception e) {
+        if (countFailure(e)) {
+            log.warn("{} (attempt {}): {}", what, consecutiveFailures, lastError.get());
+        }
+    }
+
+    /**
+     * Counts a failure for the stats and the back-off.
+     *
+     * @return {@code true} when this attempt is to be logged (the first, then every 20th)
+     */
+    private boolean countFailure(@NotNull Exception e) {
         failures.incrementAndGet();
         consecutiveFailures++;
-        String reason = Objects.requireNonNullElse(e.getMessage(), e.getClass().getSimpleName());
-        lastError.set(reason);
-        if (consecutiveFailures == 1 || consecutiveFailures % 20 == 0) {
-            log.warn("{} (attempt {}): {}", what, consecutiveFailures, reason);
-        }
+        lastError.set(Objects.requireNonNullElse(e.getMessage(), e.getClass().getSimpleName()));
+        return consecutiveFailures == 1 || consecutiveFailures % 20 == 0;
     }
 
     private void backOff() throws InterruptedException {

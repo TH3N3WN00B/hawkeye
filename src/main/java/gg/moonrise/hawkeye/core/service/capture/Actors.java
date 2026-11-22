@@ -45,6 +45,8 @@ public final class Actors {
     public static final Actor LIGHTNING = Actor.source("lightning");
     /** The server console or a command block. */
     public static final Actor CONSOLE = Actor.source("console");
+    /** The remote console (RCON). */
+    public static final Actor RCON = Actor.source("rcon");
 
     /** The persistent-data key of an entity's cause tag. */
     public static final NamespacedKey CAUSE = new NamespacedKey("hawkeye", "cause");

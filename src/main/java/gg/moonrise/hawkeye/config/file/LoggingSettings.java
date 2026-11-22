@@ -45,7 +45,8 @@ public final class LoggingSettings {
     @Comment("Doors, trapdoors, gates, levers, buttons, repeaters, comparators, note blocks.")
     private boolean interactions = true;
 
-    @Comment("Endermen, falling blocks, trampled farmland, sheep eating grass, wither and dragon damage.")
+    @Comment({"Endermen, falling blocks, trampled farmland, sheep eating grass, wither and dragon damage, turtle",
+            "eggs cracked by players and mobs."})
     private boolean entityChanges = true;
 
     @Comment("Players putting items into and taking them out of containers.")
@@ -95,7 +96,7 @@ public final class LoggingSettings {
 
     private boolean gamemodes = true;
 
-    @Comment("Commands run from the server console (not command blocks).")
+    @Comment("Commands run from the server console (#console) or the remote console (#rcon), not command blocks.")
     private boolean consoleCommands = true;
 
     @Comment({"Blame flowing water and lava on the player who poured it (and on its flow), instead of #water or",

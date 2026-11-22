@@ -243,6 +243,21 @@ update them in the same change when you learn something durable or an entry stop
   - `BlockGrowEvent` fires for crops, cactus, sugar cane, stem fruit, cocoa, nether wart, pitcher
     crops, sweet berries, turtle and sniffer eggs, vines, chorus, budding amethyst and dried ghasts;
     bamboo, kelp and twisting vines grow through `BlockSpreadEvent`.
+  - A turtle egg cracked by an entity (`TurtleEggBlock.destroyEgg`, after its random roll) raises only
+    `PlayerInteractEvent` (`Action.PHYSICAL`) for a player or `EntityInteractEvent` for a mob, then
+    removes one egg with `setBlock` or the last with `Level.destroyBlock` (so a `BlockDestroyEvent`); no
+    `EntityChangeBlockEvent`.
+  - RCON commands raise only `RemoteServerCommandEvent` (`DedicatedServer.runCommand`), which declares its
+    own handler list, so a `ServerCommandEvent` handler never sees them; the sender is a
+    `RemoteConsoleCommandSender`, which is not a `ConsoleCommandSender`.
+  - `LiquidBlock` raises `BlockFormEvent` (`handleBlockFormEvent`) for obsidian and cobblestone from lava
+    meeting water and for basalt from lava over soul soil next to blue ice.
+  - `io.papermc.paper.event.entity.EntityBreakEvent` (and `EntityBreakByEntityEvent`, which shares its
+    handler list) is constructed only in `BlockAttachedEntity` (`tick` for PHYSICS/OBSTRUCTION,
+    `hurtServer` for ENTITY/EXPLOSION/DEFAULT), never for vehicles. Its subclasses are `HangingEntity`,
+    `LeashFenceKnotEntity` and `Cushion`; for a hanging one it fires right after `HangingBreakEvent`,
+    pre-cancelled when that was cancelled, so only non-hanging entities (cushions) are recorded from it.
+    Cushions are placed through `EntityPlaceEvent` (`CushionItem`).
   - Handler lists are per event class: `BlockSpreadEvent`, `BlockFertilizeEvent`, `BlockGrowEvent`,
     `EntityPlaceEvent` and `BlockDestroyEvent` have their own and never reach a parent's handler;
     `EntityBlockFormEvent`, `BlockMultiPlaceEvent`, `EntityBreakDoorEvent`, `PlayerDeathEvent` and

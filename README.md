@@ -52,7 +52,7 @@ The root command is `/hawkeye` with the alias `/he`.
 | `/he tp <world> <x> <y> <z>` | `hawkeye.teleport` | Teleports to a result (clicking a location runs it) |
 | `/he rollback <parameters>` (`rb`) | `hawkeye.rollback` | Undoes changes; with `#preview` shows them to you first |
 | `/he restore <parameters>` (`rs`) | `hawkeye.rollback` | Redoes rolled-back changes |
-| `/he apply`, `/he cancel` | `hawkeye.rollback` | Applies or cancels your preview |
+| `/he apply`, `/he cancel` | `hawkeye.rollback` | Applies or cancels your preview (it also ends when it expires or you leave) |
 | `/he undo` | `hawkeye.rollback` | Reverts your last rollback or restore |
 | `/he purge t:<age> [r:#world]` | `hawkeye.purge` | Deletes data older than the age |
 | `/he import coreprotect [source]` | `hawkeye.import` | Imports a CoreProtect database ([below](#importing-from-coreprotect)) |
@@ -76,12 +76,12 @@ without relearning:
 | `u:` | Players, or sources with `#` | `u:Alex,Steve`, `u:#tnt` |
 | `t:` | How far back, or between two ages | `t:2h`, `t:3d12h`, `t:1h-2d` |
 | `r:` | Radius around you, a whole world, or everywhere | `r:10`, `r:10x5` (5 up and down), `r:#world_nether`, `r:#global` |
-| `a:` | Actions | `block`, `+block`, `-block`, `change`, `sign`, `click`, `grow`, `container`, `+container`, `-container`, `item`, `+item`, `-item`, `craft`, `throw`, `trade`, `kill`, `entity`, `+entity`, `-entity`, `spawn`, `chat`, `command`, `book`, `gamemode`, `session`, `+session`, `-session` |
+| `a:` | Actions (CoreProtect's synonyms such as `broke`, `placed`, `login`, `drops` and a leading `#` are accepted too) | `block`, `+block`, `-block`, `change`, `sign`, `click`, `grow`, `container`, `+container`, `-container`, `item`, `+item`, `-item`, `craft`, `throw`, `trade`, `kill`, `entity`, `+entity`, `-entity`, `spawn`, `chat`, `command`, `book`, `gamemode`, `session`, `+session`, `-session` |
 | `i:` | Only these blocks, items or entities | `i:diamond_ore,chest` |
 | `e:` | Except these types or players | `e:stone,Steve` |
 | `s:` | Other servers | `s:creative`, `s:#network` |
 | `#preview` | Show a rollback or restore to you only | |
-| `#count` | Count matches instead of listing them (always the exact number) | |
+| `#count` | Count matches instead of listing them (always the exact number); CoreProtect's `#sum` works too | |
 
 A lookup without `r:` searches every world of this server. Rollbacks and restores need a `t:` (a
 safety net against undoing a server's whole history by accident); without `r:` they use
@@ -102,9 +102,9 @@ servers show their server name.
 ## Inspector
 
 With `/he inspect` on, left-clicking a block shows its history (the block is not broken),
-right-clicking a container shows its transactions, right-clicking any other block shows the block
-in front of the clicked face, and placing a block shows that spot (the placement is cancelled). The
-inspector turns itself off if you lose `hawkeye.inspect`.
+right-clicking a container (or a lectern, jukebox, bookshelf, pot or shelf) shows its transactions,
+right-clicking any other block shows the block in front of the clicked face, and placing a block shows
+that spot (the placement is cancelled). The inspector turns itself off if you lose `hawkeye.inspect`.
 
 ## What is recorded
 
@@ -119,22 +119,24 @@ falls off a wall for the player who broke the wall.
 | Blocks | Breaks (with container contents and sign text, both halves of doors, beds and tall plants), places, multi-block places, buckets (including waterlogging) |
 | Attached blocks | Torches, signs, rails, redstone, flowers, sugar cane and anything else that falls off when its support goes, under the remover of the support (else `#physics`) |
 | Explosions | Every destroyed block, the TNT block itself, and an exploding bed or respawn anchor, under the player who lit, placed, clicked or hit the cause, else the entity (`#creeper`) or `#explosion` |
-| Fire, fluids, pistons | Burning (`#fire`), lighting, flow (under the player who poured it, else `#water`/`#lava`), stone and obsidian forming, sponges, pistons (moves as a break and a place, destroyed blocks as breaks) |
+| Fire, fluids, pistons | Burning (`#fire`), lighting, flow (under the player who poured it, else `#water`/`#lava`), stone, obsidian and basalt forming, sponges, pistons (moves as a break and a place, destroyed blocks as breaks) |
 | Natural | Leaf decay, melting, snow and ice forming, grass/mycelium/vine/sculk spread, tree and mushroom growth (under the player when bone-mealed), bone meal, portals forming, cauldrons filling and drying |
 | Crop growth | A ripe crop or a newly grown block (melon, pumpkin, sugar cane, cactus, vines) as one compact `#growth` event; `crop-growth-stages` records every stage. Rollbacks never change growth |
 | Signs | Edits with the text before and after, per side |
 | Interactions | Doors, trapdoors, gates, levers, buttons, repeaters, comparators, note blocks, daylight detectors (a tick later, only when the state changed); berries picked, pumpkins and beehives sheared, flower pots, dragon eggs |
-| Containers | Net change per kind of item while a container is open; jukeboxes, chiseled bookshelves, decorated pots, shelves and lecterns; items in item frames and on armour stands |
-| Dispensers and hoppers | Blocks and liquids a dispenser places or picks up (`#dispenser`); hopper transfers and ground pickups (off by default, high volume) |
-| Entities | Placed or spawned: armour stands, boats, minecarts, paintings, item frames, end crystals, spawn eggs, built golems and withers (with the consumed blocks), mobs released from buckets. Destroyed or taken: paintings, item frames, vehicles, end crystals, mobs caught in buckets. Kills |
+| Containers | Net change per kind of item while a container is open (items a hopper or dropper moves meanwhile are not the player's); jukeboxes, chiseled bookshelves, decorated pots, shelves and lecterns; minecarts with a chest or hopper, chest boats and rafts, donkeys, mules and llamas (at the block they stand in); items in item frames and on armour stands |
+| Dispensers and hoppers | Blocks and liquids a dispenser places or picks up (`#dispenser`); hopper transfers (also into and out of minecarts) and ground pickups (off by default, high volume) |
+| Entities | Placed or spawned: armour stands, boats, minecarts, paintings, item frames, cushions, end crystals, spawn eggs, built golems and withers (with the consumed blocks), mobs released from buckets. Destroyed or taken: paintings, item frames, cushions, vehicles, end crystals, mobs caught in buckets. Kills |
+| Entity changes | Blocks changed by endermen, falling blocks, withers, ravagers and silverfish, trampled farmland, grass eaten by sheep, and turtle eggs cracked by a player or mob walking or landing on them, under that player or mob |
 | Entity interactions | Shearing, naming (with the name), leashing, unleashing, taming, dyeing |
 | Items | Drops (and death drops), pickups (and arrows), crafting, thrown and shot items, worn-out tools, villager trades |
-| Chat, commands, books | Chat, commands, sign-click commands (`[sign]`), console commands (`#console`); `logging.redacted-commands` are stored without their arguments; written and signed books |
+| Chat, commands, books | Chat, commands, sign-click commands (`[sign]`), console commands (`#console`) and remote console commands (`#rcon`); `logging.redacted-commands` are stored without their arguments; written and signed books |
 | Sessions and modes | Joins, quits (with the kick reason), game mode changes |
 
-A rollback reverses blocks, container and item-frame/armour-stand items, kills and destroyed
-entities (respawned) and placed or spawned entities (removed while they are still in the world);
-interactions, growth, items, chat and sessions are history only.
+A rollback reverses blocks, container items (also in minecarts, chest boats and pack animals still
+standing in the recorded block), item-frame/armour-stand items, kills and destroyed entities (respawned)
+and placed or spawned entities (removed while they are still in the world); interactions, growth, items,
+chat and sessions are history only.
 
 ## Configuration
 

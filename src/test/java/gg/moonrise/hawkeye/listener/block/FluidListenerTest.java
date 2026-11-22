@@ -144,6 +144,31 @@ public class FluidListenerTest {
     }
 
     @Test
+    public void lavaTurnedToBasaltIsAChangeByLavaAndNotNatural() {
+        Block lava = block(0, Material.LAVA);
+        BlockData before = lava.getBlockData();
+        server.getPluginManager().callEvent(new BlockFormEvent(lava, new BlockStateMock(Material.BASALT)));
+
+        StoredEvent event = Recorded.only(Action.BLOCK_CHANGE);
+        assertEquals("#lava", event.actor().name());
+        assertEquals("minecraft:basalt[axis=y]", event.subject());
+        assertEquals(before.getAsString(), event.secondary());
+        assertTrue(Recorded.events(Action.BLOCK_PLACE).isEmpty(), "the natural listener leaves fluid forms alone");
+    }
+
+    @Test
+    public void basaltFromPouredLavaCountsForThePlayer() {
+        Block poured = block(0, Material.AIR);
+        server.getPluginManager().callEvent(new PlayerBucketEmptyEvent(player, poured,
+                poured.getRelative(BlockFace.DOWN), BlockFace.UP, Material.LAVA_BUCKET,
+                new ItemStack(Material.LAVA_BUCKET), EquipmentSlot.HAND));
+        poured.setType(Material.LAVA);
+        server.getPluginManager().callEvent(new BlockFormEvent(poured, new BlockStateMock(Material.BASALT)));
+
+        assertEquals("Alex", Recorded.only(Action.BLOCK_CHANGE).actor().name());
+    }
+
+    @Test
     public void obsidianFromPouredWaterCountsForThePlayer() {
         Block poured = block(1, Material.AIR);
         server.getPluginManager().callEvent(new PlayerBucketEmptyEvent(player, poured,

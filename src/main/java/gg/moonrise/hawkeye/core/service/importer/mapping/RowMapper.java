@@ -136,9 +136,7 @@ public final class RowMapper {
     }
 
     private static @NotNull OptionalLong position(@NotNull SourceRow row) {
-        if (row.x() < BlockPositions.MIN_HORIZONTAL || row.x() > BlockPositions.MAX_HORIZONTAL
-                || row.z() < BlockPositions.MIN_HORIZONTAL || row.z() > BlockPositions.MAX_HORIZONTAL
-                || row.y() < BlockPositions.MIN_Y || row.y() > BlockPositions.MAX_Y) {
+        if (!BlockPositions.contains(row.x(), row.y(), row.z())) {
             return OptionalLong.empty();
         }
         return OptionalLong.of(BlockPositions.pack(row.x(), row.y(), row.z()));

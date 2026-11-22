@@ -162,9 +162,7 @@ public final class CauseTracker {
     }
 
     private static boolean inRange(@NotNull Block block) {
-        return block.getY() >= BlockPositions.MIN_Y && block.getY() <= BlockPositions.MAX_Y
-                && block.getX() >= BlockPositions.MIN_HORIZONTAL && block.getX() <= BlockPositions.MAX_HORIZONTAL
-                && block.getZ() >= BlockPositions.MIN_HORIZONTAL && block.getZ() <= BlockPositions.MAX_HORIZONTAL;
+        return BlockPositions.contains(block.getX(), block.getY(), block.getZ());
     }
 
     private static @NotNull Key key(@NotNull Block block) {

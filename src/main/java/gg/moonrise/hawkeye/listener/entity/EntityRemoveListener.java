@@ -6,8 +6,11 @@ import gg.moonrise.hawkeye.core.service.capture.CauseTracker;
 import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
 import gg.moonrise.hawkeye.entity.actor.Actor;
 import gg.moonrise.moss.spring.SpringComponent;
+import io.papermc.paper.event.entity.EntityBreakByEntityEvent;
+import io.papermc.paper.event.entity.EntityBreakEvent;
 import lombok.RequiredArgsConstructor;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.damage.DamageSource;
 import org.bukkit.entity.EnderCrystal;
 import org.bukkit.entity.Entity;
@@ -29,15 +32,16 @@ import org.jetbrains.annotations.NotNull;
  * {@link gg.moonrise.hawkeye.entity.action.Action#ENTITY_REMOVE} with the entity's bytes so a rollback
  * puts it back: paintings and item frames (by whatever broke them; a frame that fell off because its
  * wall went is blamed on whoever removed the wall, else {@link Actors#PHYSICS}), boats and minecarts
- * (the attacker, else a source named after the damage type), mobs caught in a bucket (the player) and
- * end crystals hit by an entity. A hit crystal is also tagged with the hitter
+ * (the attacker, else a source named after the damage type), other placeable entities such as cushions
+ * (by whatever broke them, as for paintings), mobs caught in a bucket (the player) and end crystals hit
+ * by an entity. A hit crystal is also tagged with the hitter
  * ({@link LogCategory#EXPLOSIONS}), so the blocks its explosion destroys count for them.
  */
 @SpringComponent
 @RequiredArgsConstructor
 public final class EntityRemoveListener implements Listener {
 
-    /** A hanging broken by damage without an entity or explosion behind it. */
+    /** A hanging or cushion broken by damage without an entity or explosion behind it. */
     public static final Actor UNKNOWN = Actor.source("unknown");
 
     private final @NotNull EventRecorder recorder;
@@ -56,6 +60,23 @@ public final class EntityRemoveListener implements Listener {
             return;
         }
         recorder.entityRemove(remover(event), hanging);
+    }
+
+    /**
+     * Records a placeable entity other than a painting, item frame or leash knot breaking (a cushion).
+     * {@link EntityBreakByEntityEvent} shares this event's handler list. Paper fires this event only
+     * for block-attached entities (never for vehicles), and for a hanging one right after its
+     * {@link HangingBreakEvent} (recorded by {@link #onHangingBreak}), so hanging entities are skipped.
+     *
+     * @param event the event
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onEntityBreak(@NotNull EntityBreakEvent event) {
+        Entity entity = event.getEntity();
+        if (entity instanceof Hanging || !recorder.enabled(LogCategory.ENTITIES, entity.getWorld())) {
+            return;
+        }
+        recorder.entityRemove(remover(event), entity);
     }
 
     /**
@@ -114,6 +135,21 @@ public final class EntityRemoveListener implements Listener {
         return switch (event.getCause()) {
             case PHYSICS, OBSTRUCTION -> causes.recentCause(own.getRelative(hanging.getAttachedFace()))
                     .or(() -> causes.recentCause(own))
+                    .orElse(Actors.PHYSICS);
+            case EXPLOSION -> Actors.EXPLOSION;
+            case ENTITY, DEFAULT -> UNKNOWN;
+        };
+    }
+
+    private @NotNull Actor remover(@NotNull EntityBreakEvent event) {
+        if (event instanceof EntityBreakByEntityEvent byEntity) {
+            Entity causing = byEntity.getDamageSource().getCausingEntity();
+            return Actors.of(causing != null ? causing : byEntity.getRemover());
+        }
+        Block own = event.getEntity().getLocation().getBlock();
+        return switch (event.getCause()) {
+            case PHYSICS, OBSTRUCTION -> causes.recentCause(own)
+                    .or(() -> causes.recentCause(own.getRelative(BlockFace.DOWN)))
                     .orElse(Actors.PHYSICS);
             case EXPLOSION -> Actors.EXPLOSION;
             case ENTITY, DEFAULT -> UNKNOWN;

@@ -86,6 +86,11 @@ second release in a quarter).
   ground pickups; jukeboxes, chiseled bookshelves, decorated pots, shelves and lecterns as containers
   (with rollback).
 - Books, game mode changes, sign-click and console commands, and kick reasons on quits.
+- Containers carried by entities: minecarts with a chest or hopper, chest boats and rafts, and donkeys,
+  mules and llamas record their transactions at the block the entity stands in, hopper transfers into
+  and out of minecarts record both ends, and a rollback puts the items back into (or takes them out of)
+  such an entity standing in the recorded block. Other entities with an inventory (players, villagers,
+  horses) are still not recorded.
 - `config.yml` and `messages.yml` with every default documented; invalid files keep the previous
   configuration, and restart-only changes are reported.
 - Database and Redis credentials from environment variables, the recommended setting and the default:
@@ -98,6 +103,17 @@ second release in a quarter).
   scrubbed (`<redacted>`), a `config.yml` error names the key instead of quoting a section, and a numeric
   `password: 123456` is read as text. The CoreProtect import shows its source without the username, and
   scrubs driver errors and YAML errors of CoreProtect's config the same way.
+- Broken cushions (Paper's `EntityBreakEvent`) are recorded as entity removals, under the player or
+  entity that broke them, whoever removed their support (else `#physics`), or `#explosion`; a rollback
+  puts them back.
+- Turtle eggs cracked by a player or mob walking or landing on them are recorded (`entity-changes`): one
+  egg fewer as a change, the last egg as a break, under that player or mob.
+- CoreProtect's action synonyms in `a:` (`broke`, `placed`, `clicks`, `deaths`, `login`, `logout`, `drops`,
+  `pickups`, `transactions`, ... ) and a leading `#` (`a:#block`), and `#sum` for `#count`. Suggestions
+  still list only Hawkeye's own names.
+- Commands sent over the remote console (RCON) are recorded under `#rcon` with the console commands
+  (`console-commands`, the same redaction), so a leaked RCON password used for `op` or `give` leaves a
+  trace.
 ### Changed
 
 - Versions are year.quarter: a stable release is `26.4`, a Jenkins build `26.4.B<build>` (`26.4.B25`), any other
@@ -121,6 +137,8 @@ second release in a quarter).
 
 ### Fixed
 
+- Lava turning into basalt (over soul soil, next to blue ice) is recorded as a fluid change under the
+  player who poured the lava (else `#lava`), like stone and obsidian, instead of as natural forming.
 - A block a piston destroys is recorded as broken, no longer as moved one block on.
 - Flowing water and lava are recorded with their flowing level, so a restore never creates sources.
 - Killed mobs are stored with their entity again (Paper 26.3 refuses to serialize a dying mob without
@@ -154,6 +172,20 @@ second release in a quarter).
   instead of 0.
 - A failing estimate of the rows left (a ClickHouse count that times out) keeps the previous estimate
   instead of failing the import.
+- Items a hopper, hopper minecart or dropper moves into or out of a container while a player has it open
+  are no longer recorded as that player's deposits and withdrawals (also with `logging.hoppers` off), so
+  rolling the player back no longer duplicates or deletes them. What the player moved before the
+  transfer, in the same tick, is still theirs.
+- The inspector shows the transactions of a right-clicked lectern, jukebox, chiseled bookshelf, decorated
+  pot or shelf, as for any container, instead of the block in front of it.
+- An unexpected error in one pass of the writer thread is logged, counted and retried with back-off;
+  it used to end the writer for good, so every later flush (and with it every lookup and rollback)
+  waited forever and the queue filled up and dropped events.
+- `HawkeyeApi#logRemoval` keeps a removed container's items and a sign's text, as Hawkeye's own breaks
+  do, so a rollback no longer restores an empty chest or a blank sign; a waterlogged block leaves water
+  instead of air.
+- A rollback preview ends when its player leaves. It used to survive a relog, so `/hawkeye apply` applied
+  a plan the client no longer showed.
 
 ### Tests
 

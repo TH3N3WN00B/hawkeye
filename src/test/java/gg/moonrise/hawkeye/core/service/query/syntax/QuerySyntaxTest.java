@@ -38,6 +38,15 @@ public class QuerySyntaxTest {
     }
 
     @Test
+    public void readsCoreProtectActionSynonymsAndTheSumFlag() {
+        QueryParameters p = parsed("a:broke,#placed,LOGIN #sum");
+        assertEquals(Set.of(Action.BLOCK_BREAK, Action.BLOCK_PLACE, Action.JOIN), p.actions());
+        assertTrue(p.has(QueryFlag.COUNT));
+        assertTrue(parsed("#SUM").has(QueryFlag.COUNT));
+        assertEquals("#count", QueryFlag.COUNT.token());
+    }
+
+    @Test
     public void anEmptyListHasNoFilters() {
         assertEquals(QueryParameters.NONE, parsed("   "));
     }

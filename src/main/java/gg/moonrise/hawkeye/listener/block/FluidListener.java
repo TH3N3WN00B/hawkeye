@@ -31,7 +31,8 @@ import org.jetbrains.annotations.NotNull;
  * Water and lava ({@link LogCategory#FLUIDS}): a fluid flowing into another block is a place of the
  * flowing state it leaves there ({@link FluidFlows}; never a source, so a rollback cannot create one)
  * by {@link Actors#WATER} or {@link Actors#LAVA}, and water meeting lava (cobblestone, stone, obsidian)
- * is a change blamed on the fluid that was not replaced. With {@code liquid-tracking}, a flow and the
+ * is a change blamed on the fluid that was not replaced; lava turning into basalt (over soul soil, next
+ * to blue ice) is a change by {@link Actors#LAVA}. With {@code liquid-tracking}, a flow and the
  * stone it forms count for the player who poured the fluid, and pass that player on to the block they
  * flow into. Flow within the same fluid only changes its level and is not recorded. A sponge soaking up
  * water is a break of each water block (or a change of each drained waterlogged block) by whoever placed
@@ -83,7 +84,7 @@ public final class FluidListener implements Listener {
     }
 
     /**
-     * Records water and lava forming stone.
+     * Records water and lava forming stone, and lava forming basalt.
      *
      * @param event the event
      */
@@ -98,8 +99,8 @@ public final class FluidListener implements Listener {
         if (!BlockChanges.isFluidForm(before.getMaterial(), after.getMaterial())) {
             return;
         }
-        Actor other = before.getMaterial() == Material.LAVA ? Actors.WATER : Actors.LAVA;
-        Actor actor = configProvider.get().logging().liquidTracking() ? pouredAt(block).orElse(other) : other;
+        Actor fallback = fallbackForm(before.getMaterial(), after.getMaterial());
+        Actor actor = configProvider.get().logging().liquidTracking() ? pouredAt(block).orElse(fallback) : fallback;
         recorder.block(Action.BLOCK_CHANGE, actor, block, after, before, null);
     }
 
@@ -134,6 +135,17 @@ public final class FluidListener implements Listener {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * The source a fluid form is blamed on when nobody poured a fluid there: the other fluid of a
+     * water-and-lava reaction, or the lava itself for basalt (its other side is blue ice).
+     */
+    private static @NotNull Actor fallbackForm(@NotNull Material before, @NotNull Material after) {
+        if (after == Material.BASALT) {
+            return Actors.LAVA;
+        }
+        return before == Material.LAVA ? Actors.WATER : Actors.LAVA;
     }
 
     /**
