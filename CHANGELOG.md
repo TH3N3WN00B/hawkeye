@@ -154,6 +154,9 @@ second release in a quarter).
   instead of 0.
 - A failing estimate of the rows left (a ClickHouse count that times out) keeps the previous estimate
   instead of failing the import.
+- An unexpected error in one pass of the writer thread is logged, counted and retried with back-off;
+  it used to end the writer for good, so every later flush (and with it every lookup and rollback)
+  waited forever and the queue filled up and dropped events.
 
 ### Tests
 
