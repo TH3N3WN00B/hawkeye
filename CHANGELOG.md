@@ -163,6 +163,8 @@ second release in a quarter).
   are no longer recorded as that player's deposits and withdrawals (also with `logging.hoppers` off), so
   rolling the player back no longer duplicates or deletes them. What the player moved before the
   transfer, in the same tick, is still theirs.
+- The inspector shows the transactions of a right-clicked lectern, jukebox, chiseled bookshelf, decorated
+  pot or shelf, as for any container, instead of the block in front of it.
 
 ### Tests
 

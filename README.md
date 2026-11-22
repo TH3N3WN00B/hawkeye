@@ -102,9 +102,9 @@ servers show their server name.
 ## Inspector
 
 With `/he inspect` on, left-clicking a block shows its history (the block is not broken),
-right-clicking a container shows its transactions, right-clicking any other block shows the block
-in front of the clicked face, and placing a block shows that spot (the placement is cancelled). The
-inspector turns itself off if you lose `hawkeye.inspect`.
+right-clicking a container (or a lectern, jukebox, bookshelf, pot or shelf) shows its transactions,
+right-clicking any other block shows the block in front of the clicked face, and placing a block shows
+that spot (the placement is cancelled). The inspector turns itself off if you lose `hawkeye.inspect`.
 
 ## What is recorded
 

@@ -7,9 +7,9 @@ import gg.moonrise.hawkeye.core.service.lookup.page.LookupPager;
 import gg.moonrise.hawkeye.entity.query.LookupQuery;
 import gg.moonrise.hawkeye.ui.lookup.LookupReplies;
 import gg.moonrise.moss.spring.SpringComponent;
+import io.papermc.paper.block.TileStateInventoryHolder;
 import lombok.RequiredArgsConstructor;
 import org.bukkit.block.Block;
-import org.bukkit.block.Container;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
@@ -24,7 +24,8 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * The inspector's clicks. While a player inspects: left-click shows a block's history (and does not
- * break it), right-click on a container shows its transactions, right-click elsewhere shows the block
+ * break it), right-click on a block with an inventory (a container, or a lectern, jukebox, chiseled
+ * bookshelf, decorated pot or shelf) shows its transactions, right-click elsewhere shows the block
  * on the clicked face, and placing a block shows that spot instead of placing. Each reply starts a
  * lookup session, so {@code /hawkeye page} continues it. The cancelling handlers run at
  * {@link EventPriority#LOWEST} so protection plugins see the cancelled event.
@@ -84,7 +85,7 @@ public final class InspectorListener implements Listener {
             event.setCancelled(true);
             return;
         }
-        if (clicked.getState(false) instanceof Container) {
+        if (clicked.getState(false) instanceof TileStateInventoryHolder) {
             event.setCancelled(true);
             lookUp(player, inspector.transactions(clicked));
             return;
