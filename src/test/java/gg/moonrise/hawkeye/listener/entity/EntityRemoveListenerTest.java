@@ -11,6 +11,8 @@ import gg.moonrise.hawkeye.entity.event.StoredEvent;
 import gg.moonrise.hawkeye.listener.Recorded;
 import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
 import gg.moonrise.hawkeye.support.TestPlugins;
+import io.papermc.paper.event.entity.EntityBreakByEntityEvent;
+import io.papermc.paper.event.entity.EntityBreakEvent;
 import java.util.EnumMap;
 import java.util.Map;
 import org.bukkit.Location;
@@ -22,6 +24,7 @@ import org.bukkit.damage.DamageSource;
 import org.bukkit.damage.DamageType;
 import org.bukkit.entity.Arrow;
 import org.bukkit.entity.Axolotl;
+import org.bukkit.entity.Cushion;
 import org.bukkit.entity.EnderCrystal;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.ItemFrame;
@@ -135,6 +138,77 @@ public class EntityRemoveListenerTest {
     }
 
     @Test
+    public void aCushionBrokenByAPlayerIsRemovedByThem() {
+        Cushion cushion = cushion(3, 64, 3);
+
+        call(new EntityBreakByEntityEvent(cushion, alex, damage(DamageType.PLAYER_ATTACK),
+                EntityBreakEvent.RemoveCause.ENTITY));
+
+        StoredEvent event = Recorded.only(Action.ENTITY_REMOVE);
+        assertEquals("Alex", event.actor().name());
+        assertEquals("minecraft:cushion", event.subject());
+        assertEquals(3, event.x());
+        assertEquals(64, event.y());
+        assertEquals(3, event.z());
+    }
+
+    @Test
+    public void aCushionBreakPrefersTheEntityBehindTheDamageOverTheDirectRemover() {
+        Cushion cushion = cushion(3, 64, 3);
+        Arrow arrow = world.spawn(new Location(world, 3.5, 65, 1.5), Arrow.class);
+        DamageSource shot = DamageSource.builder(DamageType.ARROW).withCausingEntity(alex).withDirectEntity(arrow)
+                .build();
+
+        call(new EntityBreakByEntityEvent(cushion, arrow, shot, EntityBreakEvent.RemoveCause.ENTITY));
+
+        assertEquals("Alex", Recorded.only(Action.ENTITY_REMOVE).actor().name());
+    }
+
+    @Test
+    public void aCushionThatLostItsSupportIsBlamedOnWhoeverRemovedItElsePhysics() {
+        Cushion supported = cushion(3, 64, 3);
+        TestPlugins.bean(CauseTracker.class).rememberAround(world.getBlockAt(3, 63, 3), Actors.of(alex));
+        Cushion loose = cushion(20, 64, 20);
+
+        call(new EntityBreakEvent(supported, EntityBreakEvent.RemoveCause.PHYSICS));
+        call(new EntityBreakEvent(loose, EntityBreakEvent.RemoveCause.OBSTRUCTION));
+
+        assertEquals("Alex", Recorded.events(Action.ENTITY_REMOVE).get(0).actor().name());
+        assertEquals("#physics", Recorded.events(Action.ENTITY_REMOVE).get(1).actor().name());
+    }
+
+    @Test
+    public void aCushionBrokenByAnExplosionOrAnUncategorisedCauseIsNamed() {
+        call(new EntityBreakEvent(cushion(3, 64, 3), EntityBreakEvent.RemoveCause.EXPLOSION));
+        call(new EntityBreakEvent(cushion(5, 64, 5), EntityBreakEvent.RemoveCause.DEFAULT));
+
+        assertEquals("#explosion", Recorded.events(Action.ENTITY_REMOVE).get(0).actor().name());
+        assertEquals("#unknown", Recorded.events(Action.ENTITY_REMOVE).get(1).actor().name());
+    }
+
+    @Test
+    public void aCancelledCushionBreakIsNotRecorded() {
+        EntityBreakEvent event = new EntityBreakEvent(cushion(3, 64, 3), EntityBreakEvent.RemoveCause.PHYSICS);
+        event.setCancelled(true);
+
+        call(event);
+
+        assertTrue(Recorded.events(Action.ENTITY_REMOVE).isEmpty());
+    }
+
+    /** Paper fires the entity break event after the hanging break event for the same frame. */
+    @Test
+    public void aFrameIsRecordedOnceThoughBothBreakEventsFire() {
+        ItemFrame frame = frame(2, 64, 2);
+
+        call(new HangingBreakByEntityEvent(frame, alex, damage(DamageType.PLAYER_ATTACK)));
+        call(new EntityBreakByEntityEvent(frame, alex, damage(DamageType.PLAYER_ATTACK),
+                EntityBreakEvent.RemoveCause.ENTITY));
+
+        assertEquals("Alex", Recorded.only(Action.ENTITY_REMOVE).actor().name());
+    }
+
+    @Test
     public void aVehicleIsRemovedByItsAttackerElseByTheDamage() {
         RideableMinecart hit = world.spawn(new Location(world, 8.5, 64, 8.5), RideableMinecart.class);
         RideableMinecart burnt = world.spawn(new Location(world, 9.5, 64, 8.5), RideableMinecart.class);
@@ -213,6 +287,10 @@ public class EntityRemoveListenerTest {
         ItemFrame frame = world.spawn(new Location(world, x + 0.5, y + 0.5, z + 0.97), ItemFrame.class);
         frame.setFacingDirection(BlockFace.NORTH, true);
         return frame;
+    }
+
+    private Cushion cushion(int x, int y, int z) {
+        return world.spawn(new Location(world, x + 0.5, y, z + 0.5), Cushion.class);
     }
 
     /** Paper has no damage event constructor without the deprecated damage modifiers. */

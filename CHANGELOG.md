@@ -98,6 +98,9 @@ second release in a quarter).
   scrubbed (`<redacted>`), a `config.yml` error names the key instead of quoting a section, and a numeric
   `password: 123456` is read as text. The CoreProtect import shows its source without the username, and
   scrubs driver errors and YAML errors of CoreProtect's config the same way.
+- Broken cushions (Paper's `EntityBreakEvent`) are recorded as entity removals, under the player or
+  entity that broke them, whoever removed their support (else `#physics`), or `#explosion`; a rollback
+  puts them back.
 ### Changed
 
 - Versions are year.quarter: a stable release is `26.4`, a Jenkins build `26.4.B<build>` (`26.4.B25`), any other

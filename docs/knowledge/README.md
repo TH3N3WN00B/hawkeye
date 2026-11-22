@@ -243,6 +243,12 @@ update them in the same change when you learn something durable or an entry stop
   - `BlockGrowEvent` fires for crops, cactus, sugar cane, stem fruit, cocoa, nether wart, pitcher
     crops, sweet berries, turtle and sniffer eggs, vines, chorus, budding amethyst and dried ghasts;
     bamboo, kelp and twisting vines grow through `BlockSpreadEvent`.
+  - `io.papermc.paper.event.entity.EntityBreakEvent` (and `EntityBreakByEntityEvent`, which shares its
+    handler list) is constructed only in `BlockAttachedEntity` (`tick` for PHYSICS/OBSTRUCTION,
+    `hurtServer` for ENTITY/EXPLOSION/DEFAULT), never for vehicles. Its subclasses are `HangingEntity`,
+    `LeashFenceKnotEntity` and `Cushion`; for a hanging one it fires right after `HangingBreakEvent`,
+    pre-cancelled when that was cancelled, so only non-hanging entities (cushions) are recorded from it.
+    Cushions are placed through `EntityPlaceEvent` (`CushionItem`).
   - Handler lists are per event class: `BlockSpreadEvent`, `BlockFertilizeEvent`, `BlockGrowEvent`,
     `EntityPlaceEvent` and `BlockDestroyEvent` have their own and never reach a parent's handler;
     `EntityBlockFormEvent`, `BlockMultiPlaceEvent`, `EntityBreakDoorEvent`, `PlayerDeathEvent` and
