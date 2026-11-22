@@ -160,6 +160,8 @@ second release in a quarter).
 - `HawkeyeApi#logRemoval` keeps a removed container's items and a sign's text, as Hawkeye's own breaks
   do, so a rollback no longer restores an empty chest or a blank sign; a waterlogged block leaves water
   instead of air.
+- A rollback preview ends when its player leaves. It used to survive a relog, so `/hawkeye apply` applied
+  a plan the client no longer showed.
 
 ### Tests
 
