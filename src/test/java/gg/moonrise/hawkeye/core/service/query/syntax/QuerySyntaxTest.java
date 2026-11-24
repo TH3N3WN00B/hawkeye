@@ -20,7 +20,7 @@ public class QuerySyntaxTest {
         assertEquals(Set.of("alex", "#tnt"), p.actors());
         assertEquals(new QueryParameters.TimeSpec.Within(7_200_000), p.time());
         assertEquals(new QueryParameters.RadiusSpec.Blocks(10, 5), p.radius());
-        assertEquals(Set.of(Action.BLOCK_BREAK, Action.CONTAINER_DEPOSIT), p.actions());
+        assertEquals(Set.of(Action.BLOCK_BREAK, Action.CONTAINER_DEPOSIT, Action.VIRTUAL_DEPOSIT), p.actions());
         assertEquals(Set.of("minecraft:stone"), p.includedTypes());
         assertEquals(Set.of("minecraft:diamond_ore"), p.excludedTypes());
         assertEquals(Set.of("steve"), p.excludedActors());

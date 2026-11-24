@@ -74,6 +74,23 @@ public class ActionAliasesTest {
     }
 
     @Test
+    public void containerCoversVirtualContainersAndVirtualOnlyThose() {
+        assertEquals(Set.of(Action.CONTAINER_DEPOSIT, Action.CONTAINER_WITHDRAW, Action.VIRTUAL_DEPOSIT,
+                Action.VIRTUAL_WITHDRAW), ActionAliases.of("container").orElseThrow());
+        assertEquals(Set.of(Action.CONTAINER_DEPOSIT, Action.VIRTUAL_DEPOSIT),
+                ActionAliases.of("+container").orElseThrow());
+        assertEquals(Set.of(Action.CONTAINER_WITHDRAW, Action.VIRTUAL_WITHDRAW),
+                ActionAliases.of("-container").orElseThrow());
+        Set<Action> virtual = Set.of(Action.VIRTUAL_DEPOSIT, Action.VIRTUAL_WITHDRAW);
+        assertEquals(virtual, ActionAliases.of("virtual").orElseThrow());
+        assertEquals(Set.of(Action.VIRTUAL_DEPOSIT), ActionAliases.of("+virtual").orElseThrow());
+        assertEquals(Set.of(Action.VIRTUAL_WITHDRAW), ActionAliases.of("-virtual").orElseThrow());
+        for (String synonym : List.of("enderchest", "ender-chest", "vault", "vaults", "#EnderChest")) {
+            assertEquals(virtual, ActionAliases.of(synonym).orElseThrow(), synonym);
+        }
+    }
+
+    @Test
     public void depositAndWithdrawStayUnknown() {
         assertTrue(ActionAliases.of("deposit").isEmpty());
         assertTrue(ActionAliases.of("withdraw").isEmpty());
@@ -82,7 +99,9 @@ public class ActionAliasesTest {
     @Test
     public void suggestionsListOnlyTheCanonicalNames() {
         List<String> names = ActionAliases.names();
-        assertEquals(33, names.size());
+        assertEquals(36, names.size());
+        assertTrue(names.contains("virtual"));
+        assertFalse(names.contains("enderchest"));
         assertTrue(names.contains("-block"));
         assertTrue(names.contains("snapshot"));
         assertFalse(names.contains("snapshots"));

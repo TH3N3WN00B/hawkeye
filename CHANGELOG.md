@@ -136,7 +136,9 @@ second release in a quarter).
   their own contents record nothing. New actions 12 and 13 (stored data: payload tag 8) and messages
   (`actions.virtual-deposit`, `virtual-withdraw`; `<text>` is the inventory's name). History only: a
   rollback never changes them. `EventRecorder.container` (and `HawkeyeApi.logContainer`) now refuse any
-  action other than `CONTAINER_DEPOSIT` and `CONTAINER_WITHDRAW`.
+  action other than `CONTAINER_DEPOSIT` and `CONTAINER_WITHDRAW`. `a:container`, `+container` and
+  `-container` include them (a rollback still changes only container blocks and entities); `a:virtual`,
+  `+virtual` and `-virtual` (also `enderchest`, `ender-chest`, `vault`, `vaults`) look up only them.
 ### Changed
 
 - Versions are year.quarter: a stable release is `26.4`, a Jenkins build `26.4.B<build>` (`26.4.B25`), any other
