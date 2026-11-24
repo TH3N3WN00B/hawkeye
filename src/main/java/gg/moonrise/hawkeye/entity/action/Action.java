@@ -30,6 +30,15 @@ public enum Action {
     CONTAINER_DEPOSIT(10, ActionFamily.CONTAINER, true),
     /** Items were taken out of a container; subject is the item material, amount the count. */
     CONTAINER_WITHDRAW(11, ActionFamily.CONTAINER, true),
+    /**
+     * Items were put into an inventory that is not a container in the world (an ender chest, a plugin's
+     * inventory such as a player vault or backpack, another player's inventory); subject is the item
+     * material, amount the count, the payload names the inventory. Recorded where the player stood and
+     * never changed by rollbacks.
+     */
+    VIRTUAL_DEPOSIT(12, ActionFamily.CONTAINER, false),
+    /** Items were taken out of such an inventory; recorded like {@link #VIRTUAL_DEPOSIT}. */
+    VIRTUAL_WITHDRAW(13, ActionFamily.CONTAINER, false),
 
     /** Items were dropped; subject is the item material, amount the count. */
     ITEM_DROP(20, ActionFamily.ITEM, false),
@@ -81,7 +90,19 @@ public enum Action {
     /** A player joined. */
     JOIN(50, ActionFamily.SESSION, false),
     /** A player left. */
-    QUIT(51, ActionFamily.SESSION, false);
+    QUIT(51, ActionFamily.SESSION, false),
+
+    /** A copy of a player's inventory when they joined. */
+    SNAPSHOT_JOIN(52, ActionFamily.SNAPSHOT, false),
+    /** A copy of a player's inventory when they left. */
+    SNAPSHOT_QUIT(53, ActionFamily.SNAPSHOT, false),
+    /**
+     * A copy of a player's inventory when they teleported (at the place they left) or changed worlds
+     * without a teleport (at the place they arrived); the snapshot's detail says where to.
+     */
+    SNAPSHOT_TELEPORT(54, ActionFamily.SNAPSHOT, false),
+    /** A copy of the inventory a player died with; the snapshot's detail is the death message. */
+    SNAPSHOT_DEATH(55, ActionFamily.SNAPSHOT, false);
 
     private static final Action[] BY_CODE = new Action[64];
 
@@ -125,7 +146,7 @@ public enum Action {
     /**
      * Whether rollback and restore change the world for this action.
      *
-     * @return {@code true} for block, container and kill actions
+     * @return {@code true} for block, container (not virtual inventory) and kill actions
      */
     public boolean reversible() {
         return reversible;

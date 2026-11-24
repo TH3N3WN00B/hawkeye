@@ -60,5 +60,15 @@ public enum LogCategory {
     /** Game mode changes. */
     GAMEMODES,
     /** Commands run from the server console or the remote console (RCON). */
-    CONSOLE_COMMANDS
+    CONSOLE_COMMANDS,
+    /** A copy of a player's whole inventory when they join. */
+    JOIN_SNAPSHOTS,
+    /** A copy of a player's whole inventory when they leave. */
+    QUIT_SNAPSHOTS,
+    /** A copy of a player's whole inventory when they teleport or change worlds. */
+    TELEPORT_SNAPSHOTS,
+    /** A copy of the whole inventory a player died with. */
+    DEATH_SNAPSHOTS,
+    /** Items players put into and take out of ender chests, plugin inventories and other players' inventories. */
+    VIRTUAL_CONTAINERS
 }

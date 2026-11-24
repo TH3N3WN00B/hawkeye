@@ -4,6 +4,7 @@ import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.config.file.LogCategory;
 import gg.moonrise.hawkeye.config.file.LoggingSettings;
 import gg.moonrise.hawkeye.core.service.capture.container.InventoryDiff;
+import gg.moonrise.hawkeye.core.service.capture.container.PlayerContents;
 import gg.moonrise.hawkeye.core.queue.event.EventQueue;
 import gg.moonrise.hawkeye.core.time.EventClock;
 import gg.moonrise.hawkeye.entity.action.Action;
@@ -119,7 +120,9 @@ public final class EventRecorder {
      */
     public void container(@NotNull Action action, @NotNull Actor actor, @NotNull Location container,
             @NotNull ItemStack item, int amount) {
-        requireFamily(action, ActionFamily.CONTAINER);
+        if (action != Action.CONTAINER_DEPOSIT && action != Action.CONTAINER_WITHDRAW) {
+            throw new IllegalArgumentException(action + " is not a container block action");
+        }
         recordItem(action, actor, container, item, amount);
     }
 
@@ -136,6 +139,48 @@ public final class EventRecorder {
         for (InventoryDiff.Delta delta : deltas) {
             Action action = delta.amount() > 0 ? Action.CONTAINER_DEPOSIT : Action.CONTAINER_WITHDRAW;
             container(action, actor, container, delta.item(), Math.abs(delta.amount()));
+        }
+    }
+
+    /**
+     * Records an item moved into or out of a virtual container (an ender chest, a plugin's inventory,
+     * another player's inventory), where the player stands. The payload names the inventory and holds the
+     * item's NBT when the item has components (empty for a plain stack).
+     *
+     * @param action    {@link Action#VIRTUAL_DEPOSIT} or {@link Action#VIRTUAL_WITHDRAW}
+     * @param actor     who moved it
+     * @param at        where they stood
+     * @param container the inventory's label
+     * @param item      the item (its amount is ignored)
+     * @param amount    how many moved
+     */
+    public void virtual(@NotNull Action action, @NotNull Actor actor, @NotNull Location at,
+            @NotNull String container, @NotNull ItemStack item, int amount) {
+        if (action != Action.VIRTUAL_DEPOSIT && action != Action.VIRTUAL_WITHDRAW) {
+            throw new IllegalArgumentException(action + " is not a virtual container action");
+        }
+        if (item.isEmpty() || amount <= 0) {
+            return;
+        }
+        byte[] bytes = item.hasItemMeta() ? ItemBytes.serialize(item.asOne()) : new byte[0];
+        record(action, actor, at.getWorld(), at.getBlockX(), at.getBlockY(), at.getBlockZ(),
+                item.getType().getKey().toString(), null, amount, new Payload.VirtualItem(container, bytes));
+    }
+
+    /**
+     * Records a viewer's moves in a virtual container: a deposit for every positive delta, a withdrawal
+     * for every negative one.
+     *
+     * @param actor     who moved the items
+     * @param at        where they stood
+     * @param container the inventory's label
+     * @param moves     the moves, as {@code VirtualTransfers#match} returns them
+     */
+    public void virtualChanges(@NotNull Actor actor, @NotNull Location at, @NotNull String container,
+            @NotNull List<InventoryDiff.Delta> moves) {
+        for (InventoryDiff.Delta move : moves) {
+            Action action = move.amount() > 0 ? Action.VIRTUAL_DEPOSIT : Action.VIRTUAL_WITHDRAW;
+            virtual(action, actor, at, container, move.item(), Math.abs(move.amount()));
         }
     }
 
@@ -246,6 +291,23 @@ public final class EventRecorder {
         requireFamily(action, ActionFamily.SESSION);
         record(action, actor, location.getWorld(), location.getBlockX(), location.getBlockY(), location.getBlockZ(),
                 "", null, 0, null);
+    }
+
+    /**
+     * Records a copy of a player's whole inventory (armour, off hand and the cursor stack included).
+     * An empty inventory is recorded too, so the moment is kept.
+     *
+     * @param action a snapshot-family action
+     * @param player the player, whose inventory is read now
+     * @param at     where the moment happened (for a teleport, where the player left from)
+     * @param detail what the moment was (where a teleport went, the death message), or empty
+     */
+    public void snapshot(@NotNull Action action, @NotNull Player player, @NotNull Location at,
+            @NotNull String detail) {
+        requireFamily(action, ActionFamily.SNAPSHOT);
+        PlayerContents contents = PlayerContents.of(player);
+        record(action, Actors.of(player), at.getWorld(), at.getBlockX(), at.getBlockY(), at.getBlockZ(), "", null,
+                contents.amount(), new Payload.Snapshot(detail, contents.slots()));
     }
 
     /**

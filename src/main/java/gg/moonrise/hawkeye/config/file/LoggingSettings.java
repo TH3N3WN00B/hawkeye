@@ -99,6 +99,25 @@ public final class LoggingSettings {
     @Comment("Commands run from the server console (#console) or the remote console (#rcon), not command blocks.")
     private boolean consoleCommands = true;
 
+    @Comment({"A copy of the player's whole inventory (armour, off hand and cursor included) when they join; look",
+            "them up with a:snapshot."})
+    private boolean joinSnapshots = true;
+
+    @Comment("The same copy when they leave.")
+    private boolean quitSnapshots = true;
+
+    @Comment({"The same copy when they teleport, portals and world changes included, at the place they left.",
+            "Position corrections, dismounts and leaving a bed are skipped; within one world at most one per",
+            "second per player."})
+    private boolean teleportSnapshots = true;
+
+    @Comment("The same copy when they die, before their items drop, with the death message.")
+    private boolean deathSnapshots = true;
+
+    @Comment({"Players putting items into and taking them out of ender chests and plugin inventories (player vaults,",
+            "backpacks, another player's inventory). Recorded where the player stands; rollbacks never change them."})
+    private boolean virtualContainers = true;
+
     @Comment({"Blame flowing water and lava on the player who poured it (and on its flow), instead of #water or",
             "#lava, so /hawkeye rollback u:<player> also removes the flow."})
     private boolean liquidTracking = true;
@@ -151,6 +170,11 @@ public final class LoggingSettings {
             case BOOKS -> books;
             case GAMEMODES -> gamemodes;
             case CONSOLE_COMMANDS -> consoleCommands;
+            case JOIN_SNAPSHOTS -> joinSnapshots;
+            case QUIT_SNAPSHOTS -> quitSnapshots;
+            case TELEPORT_SNAPSHOTS -> teleportSnapshots;
+            case DEATH_SNAPSHOTS -> deathSnapshots;
+            case VIRTUAL_CONTAINERS -> virtualContainers;
         };
     }
 

@@ -108,6 +108,58 @@ public sealed interface Payload {
     }
 
     /**
+     * A copy of a player's whole inventory at a moment (join, quit, teleport, death), with what the
+     * moment was. Slot indexes are those of {@code PlayerInventory#getContents()} (0 to 35 storage, 36 to
+     * 39 armour, 40 the off hand), and {@link #CURSOR} is the stack held on the cursor.
+     *
+     * @param detail what the moment was (where a teleport went, the death message), or empty
+     * @param slots  the non-empty slots
+     */
+    record Snapshot(@NotNull String detail, @NotNull List<Slot> slots) implements Payload {
+
+        /** The slot index of the stack on the cursor. */
+        public static final int CURSOR = 41;
+
+        /**
+         * Copies the slot list.
+         *
+         * @param detail what the moment was, or empty
+         * @param slots  the non-empty slots
+         */
+        public Snapshot {
+            slots = List.copyOf(slots);
+        }
+    }
+
+    /**
+     * The inventory of a virtual container transaction (an ender chest, a plugin's inventory, another
+     * player's inventory) and the item that moved.
+     *
+     * @param container the inventory's label ({@code ender_chest}, {@code ender_chest (Steve)},
+     *                  {@code inventory (Steve)}, or a plugin inventory's title)
+     * @param item      the item's NBT, or empty for a plain stack (the material and amount columns describe
+     *                  it)
+     */
+    record VirtualItem(@NotNull String container, byte @NotNull [] item) implements Payload {
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof VirtualItem virtual && container.equals(virtual.container)
+                    && Arrays.equals(item, virtual.item);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * container.hashCode() + Arrays.hashCode(item);
+        }
+
+        @Override
+        public @NotNull String toString() {
+            return "VirtualItem[" + container + ", " + item.length + " bytes]";
+        }
+    }
+
+    /**
      * One inventory slot.
      *
      * @param index the slot index

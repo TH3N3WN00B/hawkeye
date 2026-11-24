@@ -212,6 +212,26 @@ public class RollbackPlannerTest {
     }
 
     @Test
+    public void virtualContainerChangesAreNeverReversed() {
+        List<StoredEvent> events = List.of(
+                item(1, Action.VIRTUAL_DEPOSIT, DIAMOND, 5, new Payload.VirtualItem("ender_chest", new byte[0])),
+                item(2, Action.VIRTUAL_WITHDRAW, DIAMOND, 2, new Payload.VirtualItem("Vault #1", new byte[] {9})),
+                item(3, Action.CONTAINER_DEPOSIT, DIAMOND, 4, null));
+        for (RollbackMode mode : RollbackMode.values()) {
+            RollbackPlan plan = planner.plan(mode, events, ALL);
+            assertEquals(List.of(3L), plan.eventIds(), mode.name());
+            assertEquals(1, plan.changes().count(), mode.name());
+        }
+        Set<Action> container = EnumSet.of(Action.CONTAINER_DEPOSIT, Action.CONTAINER_WITHDRAW,
+                Action.VIRTUAL_DEPOSIT, Action.VIRTUAL_WITHDRAW);
+        LookupQuery query = planner.query(LookupQuery.at(new Area.Everywhere()).withActions(container),
+                RollbackMode.ROLLBACK, ALL).orElseThrow();
+        assertEquals(Set.of(Action.CONTAINER_DEPOSIT, Action.CONTAINER_WITHDRAW), query.actions());
+        assertTrue(planner.query(LookupQuery.at(new Area.Everywhere()).withActions(EnumSet.of(Action.VIRTUAL_DEPOSIT,
+                Action.VIRTUAL_WITHDRAW)), RollbackMode.RESTORE, ALL).isEmpty());
+    }
+
+    @Test
     public void containerChangesCanBeTurnedOff() {
         PlanOptions blocksOnly = new PlanOptions(false, true, null);
         RollbackPlan plan = planner.plan(RollbackMode.ROLLBACK,

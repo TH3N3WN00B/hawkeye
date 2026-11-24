@@ -145,7 +145,7 @@ public class EventWriterTest {
         TestPlugins.flush();
 
         List<Row> rows = rows(ready);
-        assertEquals(xs.size() + 5 + 1, rows.size(), "placements, chat and the join");
+        assertEquals(xs.size() + 5 + 2, rows.size(), "placements, chat, the join and its inventory snapshot");
         assertOnGrid(rows);
         for (List<Row> slot : bySlot(rows).values()) {
             for (int i = 1; i < slot.size(); i++) {

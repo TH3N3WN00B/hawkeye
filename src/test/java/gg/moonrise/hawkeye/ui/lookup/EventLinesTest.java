@@ -13,6 +13,7 @@ import gg.moonrise.hawkeye.entity.payload.SignSides;
 import gg.moonrise.hawkeye.util.position.BlockPositions;
 import gg.moonrise.hawkeye.util.event.EventIds;
 import gg.moonrise.hawkeye.util.codec.PayloadCodec;
+import gg.moonrise.hawkeye.util.serialize.ItemSummaryTest;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -76,12 +77,48 @@ public class EventLinesTest {
     }
 
     @Test
+    public void aVirtualContainerLineNamesTheInventory() {
+        assertEquals("added 5x diamond to ender_chest", plain(lines.action(event(Action.VIRTUAL_DEPOSIT,
+                "minecraft:diamond", 5, new Payload.VirtualItem("ender_chest", new byte[0])))));
+        assertEquals("removed 2x iron_ingot from Vault #1", plain(lines.action(event(Action.VIRTUAL_WITHDRAW,
+                "minecraft:iron_ingot", 2, new Payload.VirtualItem("Vault #1", new byte[] {10, 0, 0})))));
+        assertEquals("Vault #1", plain(EventLines.text(event(Action.VIRTUAL_WITHDRAW, "minecraft:iron_ingot", 2,
+                new Payload.VirtualItem("Vault #1", new byte[0]))).orElseThrow()));
+    }
+
+    @Test
     public void aSignEditShowsTheEditedSideAfterTheEdit() {
         SignSides before = new SignSides(List.of(json("old"), json("")), List.of(json("back")));
         SignSides after = new SignSides(List.of(json("Hello"), json("World")), List.of(json("back")));
         Component text = lines.action(event(Action.SIGN_EDIT, "minecraft:oak_sign", 0, new Payload.Sign(before,
                 after)));
         assertEquals("wrote Hello World", plain(text));
+    }
+
+    @Test
+    public void aSnapshotShowsItsItemCountWithTheItemsInItsHover() {
+        Payload.Snapshot snapshot = new Payload.Snapshot("ender_pearl to world_nether 10 64 -5", List.of(
+                new Payload.Slot(36, ItemSummaryTest.item("minecraft:diamond_helmet", 1)),
+                new Payload.Slot(0, ItemSummaryTest.item("minecraft:stone", 64)),
+                new Payload.Slot(5, new byte[] {(byte) 0xac, (byte) 0xed, 0, 5}),
+                new Payload.Slot(Payload.Snapshot.CURSOR, ItemSummaryTest.item("minecraft:torch", 3))));
+        Component text = lines.action(event(Action.SNAPSHOT_TELEPORT, "", 70, snapshot));
+        assertEquals("inventory at teleport (ender_pearl to world_nether 10 64 -5): 70 items [4 stacks]",
+                plain(text));
+        assertEquals(List.of("64x stone\n1x diamond_helmet\n3x torch"), hovers(text));
+    }
+
+    @Test
+    public void aSnapshotWithoutItemsSaysSoInItsHover() {
+        Component join = lines.action(event(Action.SNAPSHOT_JOIN, "", 0, new Payload.Snapshot("", List.of())));
+        assertEquals("inventory at join: 0 items [0 stacks]", plain(join));
+        assertEquals(List.of("empty"), hovers(join));
+        Component death = lines.action(event(Action.SNAPSHOT_DEATH, "", 2, new Payload.Snapshot(
+                "Alex fell from a high place", List.of(new Payload.Slot(1, new byte[] {9})))));
+        assertEquals("inventory at death: 2 items [1 stacks] Alex fell from a high place", plain(death));
+        assertTrue(hovers(death).isEmpty(), hovers(death).toString());
+        assertEquals("inventory at quit: 0 items [0 stacks]", plain(lines.action(event(Action.SNAPSHOT_QUIT, "", 0,
+                new Payload.Snapshot("", List.of())))));
     }
 
     @Test

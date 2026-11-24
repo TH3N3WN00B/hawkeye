@@ -114,6 +114,31 @@ second release in a quarter).
 - Commands sent over the remote console (RCON) are recorded under `#rcon` with the console commands
   (`console-commands`, the same redaction), so a leaked RCON password used for `op` or `give` leaves a
   trace.
+- Inventory snapshots: a copy of a player's whole inventory (storage, armour, off hand and the stack on
+  the cursor) when they join, leave, teleport and die, each with its own switch (`logging.join-snapshots`,
+  `quit-snapshots`, `teleport-snapshots`, `death-snapshots`, all on). A teleport is recorded where the
+  player left from, with its cause and destination (`ender_pearl to world_nether 10 64 -5`; portals and
+  end gateways included); a world change without a teleport event (a respawn in another world) where they
+  arrived (`world_change from world`). Position corrections, dismounts and leaving a bed are skipped, and
+  within one world at most one teleport a second per player is recorded. A death is recorded before the
+  items drop, with the death message. New actions 52-55 (stored data: payload tag 7) and messages
+  (`actions.snapshot-join`, `snapshot-quit`, `snapshot-teleport`, `snapshot-death`, placeholder
+  `<contents>`; `lookup.snapshot-contents`, `snapshot-item`, `snapshot-empty`): a lookup line shows the item
+  and stack count, its hover every item. Snapshots are history only. `a:snapshot` (or `snapshots`) looks
+  them all up, `a:join-snapshot`, `quit-snapshot`, `teleport-snapshot` and `death-snapshot` one kind.
+- Ender chest and plugin inventory transactions (`logging.virtual-containers`, on): items a player puts
+  into or takes out of an ender chest (their own or, as staff, someone else's), another player's inventory
+  (an /invsee view) or a plugin's storage inventory (player vaults, backpacks: a chest, barrel, shulker box,
+  hopper, dispenser or dropper inventory that belongs to no block or entity), one event per kind of item,
+  recorded where the player stands with the inventory's name (`ender_chest`, `ender_chest (Steve)`,
+  `inventory (Steve)`, or the title). A change of the inventory counts only as far as what the player holds
+  (inventory, cursor, and what they drop from it) changed the opposite way, so plugin menus that change
+  their own contents record nothing. New actions 12 and 13 (stored data: payload tag 8) and messages
+  (`actions.virtual-deposit`, `virtual-withdraw`; `<text>` is the inventory's name). History only: a
+  rollback never changes them. `EventRecorder.container` (and `HawkeyeApi.logContainer`) now refuse any
+  action other than `CONTAINER_DEPOSIT` and `CONTAINER_WITHDRAW`. `a:container`, `+container` and
+  `-container` include them (a rollback still changes only container blocks and entities); `a:virtual`,
+  `+virtual` and `-virtual` (also `enderchest`, `ender-chest`, `vault`, `vaults`) look up only them.
 ### Changed
 
 - Versions are year.quarter: a stable release is `26.4`, a Jenkins build `26.4.B<build>` (`26.4.B25`), any other

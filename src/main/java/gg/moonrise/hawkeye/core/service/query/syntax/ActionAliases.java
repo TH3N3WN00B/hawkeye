@@ -14,7 +14,10 @@ import org.jetbrains.annotations.NotNull;
  * The {@code a:} vocabulary, kept compatible with CoreProtect's so staff can switch without relearning:
  * {@code +} means added or placed, {@code -} removed or broken. CoreProtect's synonyms ({@code broke},
  * {@code placed}, {@code login}, {@code drops}, ...) and a leading {@code #} ({@code a:#block}) are
- * accepted too, but only the canonical names are suggested.
+ * accepted too, but only the canonical names are suggested. Inventory snapshots are {@code snapshot} (and
+ * {@code join-snapshot}, ...), never {@code inventory}, which means something else in CoreProtect.
+ * {@code container} also covers ender chests and plugin inventories ({@code virtual} only those), so a
+ * lookup of what a player stashed finds both; rollbacks skip the virtual ones, which are not reversible.
  */
 public final class ActionAliases {
 
@@ -57,9 +60,12 @@ public final class ActionAliases {
         aliases.put("sign", Set.of(Action.SIGN_EDIT));
         aliases.put("click", Set.of(Action.INTERACT));
         aliases.put("grow", Set.of(Action.BLOCK_GROW));
-        aliases.put("container", Set.of(Action.CONTAINER_DEPOSIT, Action.CONTAINER_WITHDRAW));
-        aliases.put("+container", Set.of(Action.CONTAINER_DEPOSIT));
-        aliases.put("-container", Set.of(Action.CONTAINER_WITHDRAW));
+        aliases.put("container", Set.of(Action.of(ActionFamily.CONTAINER)));
+        aliases.put("+container", Set.of(Action.CONTAINER_DEPOSIT, Action.VIRTUAL_DEPOSIT));
+        aliases.put("-container", Set.of(Action.CONTAINER_WITHDRAW, Action.VIRTUAL_WITHDRAW));
+        aliases.put("virtual", Set.of(Action.VIRTUAL_DEPOSIT, Action.VIRTUAL_WITHDRAW));
+        aliases.put("+virtual", Set.of(Action.VIRTUAL_DEPOSIT));
+        aliases.put("-virtual", Set.of(Action.VIRTUAL_WITHDRAW));
         aliases.put("item", Set.of(Action.ITEM_DROP, Action.ITEM_PICKUP, Action.ITEM_CRAFT, Action.ITEM_THROW,
                 Action.ITEM_BREAK, Action.ITEM_TRADE));
         aliases.put("+item", Set.of(Action.ITEM_PICKUP));
@@ -79,10 +85,15 @@ public final class ActionAliases {
         aliases.put("session", Set.of(Action.JOIN, Action.QUIT));
         aliases.put("+session", Set.of(Action.JOIN));
         aliases.put("-session", Set.of(Action.QUIT));
+        aliases.put("snapshot", Set.of(Action.of(ActionFamily.SNAPSHOT)));
+        aliases.put("join-snapshot", Set.of(Action.SNAPSHOT_JOIN));
+        aliases.put("quit-snapshot", Set.of(Action.SNAPSHOT_QUIT));
+        aliases.put("teleport-snapshot", Set.of(Action.SNAPSHOT_TELEPORT));
+        aliases.put("death-snapshot", Set.of(Action.SNAPSHOT_DEATH));
         return aliases;
     }
 
-    /** CoreProtect's other spellings, each to the canonical alias it means. */
+    /** CoreProtect's other spellings, each to the canonical alias it means (and a plural of Hawkeye's own). */
     private static @NotNull Map<String, String> synonyms() {
         Map<String, String> synonyms = new LinkedHashMap<>();
         synonym(synonyms, "block", "blocks", "block-change", "changes");
@@ -106,6 +117,8 @@ public final class ActionAliases {
         synonym(synonyms, "item", "items");
         synonym(synonyms, "-item", "-items", "item-", "items-", "drop", "drops");
         synonym(synonyms, "+item", "+items", "item+", "items+", "pickup", "pickups");
+        synonym(synonyms, "snapshot", "snapshots");
+        synonym(synonyms, "virtual", "enderchest", "ender-chest", "vault", "vaults");
         return synonyms;
     }
 

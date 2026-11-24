@@ -229,7 +229,16 @@ update them in the same change when you learn something durable or an entry stop
   lectern states count as `Container`; the state of a block set with `setBlockData` reads as air (set
   the data on the state in tests); `getState()` is live and `getState(false)` a copy (the reverse of
   Paper); nearby entities are found by position, not bounding box.
-- `Recorded.events()` in listener tests includes the JOIN that `server.addPlayer` records.
+- MockBukkit 4.120 `InventoryMock#getHolder(boolean)` throws `UnimplementedOperationException` for every
+  inventory it builds, `getEnderChest()` and `createInventory` included; tests open `listener.HeldInventories`
+  (`chest`, `hopper`, `dropper`, `typed(holder, type)`, `chest(holder, title)`) instead. A view's title is the
+  inventory's `getTitle()` (its custom title, else the type's default title), and `InventoryView#title()` is
+  Paper's default (the legacy title deserialized).
+- `Recorded.events()` in listener tests includes the JOIN and the (empty) SNAPSHOT_JOIN that
+  `server.addPlayer` records; tests that count every event turn `sessions` and `join-snapshots` off.
+- MockBukkit 4.120 `PlayerMock#teleport` fires `PlayerTeleportEvent` (cause `PLUGIN` unless given) and,
+  for another world, `PlayerChangedWorldEvent` after the move; `setLocation` fires nothing. It never fires
+  `PlayerPortalEvent`. `setItemOnCursor`/`getItemOnCursor` work and `getContents()` has 41 slots.
 - Paper 26.3 event behaviour verified in the server jar's bytecode (2026-11-16; the jar is
   `versions/26.3/paper-26.3.jar` after a first start; grep class files for an event's internal name,
   and for `CraftEventFactory` helpers such as `handleBlockGrowEvent`, to find where it fires):
@@ -258,6 +267,29 @@ update them in the same change when you learn something durable or an entry stop
     `LeashFenceKnotEntity` and `Cushion`; for a hanging one it fires right after `HangingBreakEvent`,
     pre-cancelled when that was cancelled, so only non-hanging entities (cushions) are recorded from it.
     Cushions are placed through `EntityPlaceEvent` (`CushionItem`).
+  - `ServerPlayer#die` (checked 2026-11-24) collects the drops, calls `CraftEventFactory.callPlayerDeathEvent`
+    (which fires `PlayerDeathEvent`, then spawns the drops with `dropAllItems`), and only afterwards, when
+    `getKeepInventory()` is false, empties every inventory and equipment slot not in `getItemsToKeep()`. A
+    `MONITOR` death handler therefore still reads the whole inventory the player died with.
+  - Portal travel (checked 2026-11-24): `NetherPortalBlock` and `EndPortalBlock` fire `PlayerPortalEvent`
+    (`CraftEventFactory.handlePortalEvents`) while working out the destination; the move itself goes
+    through `ServerPlayer#teleport(TeleportTransition)`, which fires a `PlayerTeleportEvent` with the
+    transition's cause (`NETHER_PORTAL`, `END_PORTAL`) for every teleport, or a
+    `PlayerTeleportEndGatewayEvent` for an end gateway (it shares `PlayerTeleportEvent`'s handler list).
+    `PlayerPortalEvent` declares its own handler list, so a `PlayerTeleportEvent` handler sees each portal
+    trip exactly once; handling both would record it twice. A respawn in another world fires no teleport
+    event, only `PlayerChangedWorldEvent`.
+  - Ender chests and container drops (checked 2026-11-24): `CraftInventory#getType()` is `ENDER_CHEST` for a
+    `PlayerEnderChestContainer` (a plugin inventory with its own holder is checked first and keeps its own
+    type), and `getHolder(false)` of any inventory that is not a block entity returns the container's
+    `getOwner()`, which for an ender chest is its owner player (not the ender chest block; its `getLocation()`
+    is the block only while one is open). `CraftInventory#equals` compares the underlying container, so two
+    viewers' views of one plugin inventory compare equal. The drop key on a slot (`ContainerInput.THROW` in
+    `AbstractContainerMenu#doClick`, after the `InventoryClickEvent`) takes the stack with `Slot.safeTake` and
+    calls `Player#drop(stack, true, PREDICTED)`, and so does dropping the cursor stack outside the window; that
+    reaches `LivingEntity#drop(..., callEvent = true, ...)`, which fires `PlayerDropItemEvent` once the item
+    entity exists. A cancelled drop goes back into the main hand or the inventory. The item never passes
+    through the player's inventory, which is why `VirtualContainerListener` counts drops as still held.
   - Handler lists are per event class: `BlockSpreadEvent`, `BlockFertilizeEvent`, `BlockGrowEvent`,
     `EntityPlaceEvent` and `BlockDestroyEvent` have their own and never reach a parent's handler;
     `EntityBlockFormEvent`, `BlockMultiPlaceEvent`, `EntityBreakDoorEvent`, `PlayerDeathEvent` and

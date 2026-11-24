@@ -9,6 +9,7 @@ import gg.moonrise.hawkeye.core.service.capture.Actors;
 import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
 import gg.moonrise.hawkeye.core.service.lookup.LookupFixtures;
 import gg.moonrise.hawkeye.entity.action.Action;
+import gg.moonrise.hawkeye.entity.payload.Payload;
 import gg.moonrise.hawkeye.support.TestCommandManager;
 import gg.moonrise.hawkeye.support.TestCommandSource;
 import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
@@ -43,8 +44,8 @@ public class LookupCommandTest {
     public void setUp() {
         server = MockBukkit.mock();
         TestHawkeyePlugin plugin = TestPlugins.load();
-        // Only the events each test records: no join event for the player added below.
-        TestPlugins.writeConfig(plugin, "logging:\n  sessions: false\n");
+        // Only the events each test records: no join events for the player added below.
+        TestPlugins.writeConfig(plugin, "logging:\n  sessions: false\n  join-snapshots: false\n");
         TestPlugins.reload();
         TestPlugins.awaitStorage();
         commands = TestPlugins.commands();
@@ -190,12 +191,20 @@ public class LookupCommandTest {
         EventRecorder recorder = TestPlugins.bean(EventRecorder.class);
         recorder.record(Action.CONTAINER_DEPOSIT, Actors.of(alex), world, 1, 64, 1,
                 "minecraft:diamond", null, 5, null);
+        recorder.record(Action.VIRTUAL_DEPOSIT, Actors.of(alex), world, 9, 70, 9,
+                "minecraft:emerald", null, 3, new Payload.VirtualItem("ender_chest", new byte[0]));
         LookupFixtures.breaks(Actors.NATURE, world, 2);
 
         commands.run(console, "hawkeye lookup a:+container");
         List<String> reply = AwaitReplies.reply(server, console);
-        assertEquals(2, reply.size(), reply.toString());
-        assertTrue(reply.get(1).contains("Alex added 5x diamond"), reply.get(1));
+        assertEquals(3, reply.size(), reply.toString());
+        assertTrue(String.join("\n", reply).contains("Alex added 5x diamond"), reply.toString());
+        assertTrue(String.join("\n", reply).contains("Alex added 3x emerald to ender_chest"), reply.toString());
+
+        commands.run(console, "hawkeye lookup a:enderchest");
+        List<String> virtual = AwaitReplies.reply(server, console);
+        assertEquals(2, virtual.size(), virtual.toString());
+        assertTrue(virtual.get(1).contains("Alex added 3x emerald to ender_chest"), virtual.get(1));
     }
 
     private static List<String> clicks(Component component) {

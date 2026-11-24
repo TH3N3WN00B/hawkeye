@@ -62,4 +62,15 @@ public final class LookupMessages {
     @Comment({"<pages> and <total> of a large result when they are lower bounds: opening a lookup counts at most",
             "16 archive segments; #count gives the exact number. Placeholder: <value>."})
     private String atLeast = "<value>+";
+
+    @Comment({"<contents> of an inventory snapshot. Placeholders: <stacks> (occupied slots), <amount> (items in",
+            "all of them). Its hover lists the items (snapshot-item, one line each)."})
+    private String snapshotContents = "<white><amount> items</white> <#7dd3fc>[<stacks> stacks]</#7dd3fc>";
+
+    @Comment({"One line of a snapshot's hover. Placeholders: <amount>, <target> (the item), <slot> (0-35 storage,",
+            "36-39 armour, 40 off hand, 41 cursor)."})
+    private String snapshotItem = "<white><amount>x <target></white>";
+
+    @Comment("The hover of a snapshot without items.")
+    private String snapshotEmpty = "<gray>empty";
 }
