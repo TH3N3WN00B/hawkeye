@@ -19,9 +19,9 @@ import org.jetbrains.annotations.NotNull;
  * Encodes {@link Payload}s for the {@code data} column. The first byte is the tag (the payload type
  * in the low bits, {@link #DEFLATED} when the body is deflated); the body follows. Text and sign
  * bodies of at least {@link #COMPRESS_THRESHOLD} bytes are deflated when that makes them smaller.
- * Item and entity bytes (raw NBT, or Paper's gzip NBT in rows from earlier builds) are stored as they
- * are handed over: compressing each one alone would hide the repetition between snapshots from the
- * archive, which compresses many rows together. The format is a data contract: tags are never reused.
+ * Item and entity bytes (raw NBT, or Paper's gzip NBT in rows from earlier builds), inventories and
+ * player inventory snapshots included, are stored as they are handed over: compressing each one alone
+ * would hide the repetition between snapshots from the archive, which compresses many rows together. The format is a data contract: tags are never reused.
  */
 public final class PayloadCodec {
 
@@ -37,6 +37,7 @@ public final class PayloadCodec {
     private static final int INVENTORY = 4;
     private static final int ENTITY = 5;
     private static final int ENTITY_REF = 6;
+    private static final int SNAPSHOT = 7;
     private static final int DEFLATED = 0x80;
     private static final int TYPE_MASK = 0x7F;
 
@@ -61,11 +62,14 @@ public final class PayloadCodec {
             case Payload.Item item -> tagged(ITEM, item.bytes());
             case Payload.Inventory inventory -> {
                 ByteWriter body = new ByteWriter(64 * inventory.slots().size() + 4);
-                body.writeVarLong(inventory.slots().size());
-                for (Payload.Slot slot : inventory.slots()) {
-                    body.writeVarLong(slot.index()).writeBytes(slot.item());
-                }
+                writeSlots(body, inventory.slots());
                 yield tagged(INVENTORY, body.toByteArray());
+            }
+            case Payload.Snapshot snapshot -> {
+                ByteWriter body = new ByteWriter(64 * snapshot.slots().size() + snapshot.detail().length() + 8);
+                body.writeString(snapshot.detail());
+                writeSlots(body, snapshot.slots());
+                yield tagged(SNAPSHOT, body.toByteArray());
             }
             case Payload.Entity entity -> tagged(ENTITY, entity.bytes());
             case Payload.EntityRef ref -> tagged(ENTITY_REF, new ByteWriter(16)
@@ -90,18 +94,28 @@ public final class PayloadCodec {
             case TEXT -> new Payload.Text(new String(body, StandardCharsets.UTF_8));
             case SIGN -> new Payload.Sign(readSides(in), readSides(in));
             case ITEM -> new Payload.Item(body);
-            case INVENTORY -> {
-                int count = in.readVarInt();
-                List<Payload.Slot> slots = new ArrayList<>(Math.min(count, 256));
-                for (int i = 0; i < count; i++) {
-                    slots.add(new Payload.Slot(in.readVarInt(), in.readBytes()));
-                }
-                yield new Payload.Inventory(slots);
-            }
+            case INVENTORY -> new Payload.Inventory(readSlots(in));
+            case SNAPSHOT -> new Payload.Snapshot(in.readString(), readSlots(in));
             case ENTITY -> new Payload.Entity(body);
             case ENTITY_REF -> new Payload.EntityRef(new UUID(in.readLong(), in.readLong()));
             default -> throw new CodecException("unknown payload tag " + tag);
         };
+    }
+
+    private static void writeSlots(@NotNull ByteWriter out, @NotNull List<Payload.Slot> slots) {
+        out.writeVarLong(slots.size());
+        for (Payload.Slot slot : slots) {
+            out.writeVarLong(slot.index()).writeBytes(slot.item());
+        }
+    }
+
+    private static @NotNull List<Payload.Slot> readSlots(@NotNull ByteReader in) {
+        int count = in.readVarInt();
+        List<Payload.Slot> slots = new ArrayList<>(Math.min(count, 256));
+        for (int i = 0; i < count; i++) {
+            slots.add(new Payload.Slot(in.readVarInt(), in.readBytes()));
+        }
+        return slots;
     }
 
     private static void writeSides(@NotNull ByteWriter out, @NotNull SignSides sides) {

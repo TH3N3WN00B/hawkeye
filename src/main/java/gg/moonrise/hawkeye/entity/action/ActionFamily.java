@@ -14,14 +14,16 @@ public enum ActionFamily {
     /** No subject; the payload is text. */
     MESSAGE,
     /** No subject. */
-    SESSION;
+    SESSION,
+    /** No subject; the payload is the player's inventory and {@code amount} the number of items in it. */
+    SNAPSHOT;
 
     /**
      * Whether the subject column refers to a value in the {@code type} dictionary.
      *
-     * @return {@code false} for message and session actions
+     * @return {@code false} for message, session and snapshot actions
      */
     public boolean hasSubject() {
-        return this != MESSAGE && this != SESSION;
+        return this != MESSAGE && this != SESSION && this != SNAPSHOT;
     }
 }

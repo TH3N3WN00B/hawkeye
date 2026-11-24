@@ -7,7 +7,9 @@ import lombok.Getter;
 /**
  * The {@code actions} section of {@code messages.yml}: the {@code <action>} placeholder of a result
  * line. Placeholders in every entry: {@code <target>} (block, item or entity name, with a hover
- * showing the full state), {@code <amount>}, {@code <text>} (chat, commands, sign lines).
+ * showing the full state), {@code <amount>}, {@code <text>} (chat, commands, sign lines, where a
+ * teleport went, a death message), {@code <contents>} (an inventory snapshot's item count, with a hover
+ * listing its items; {@code lookup.snapshot-contents}).
  */
 @Getter
 @Configuration
@@ -42,6 +44,11 @@ public final class ActionMessages {
     private String gamemodeChange = "<yellow>switched to</yellow> <white><text></white>";
     private String join = "<green>joined</green>";
     private String quit = "<red>left</red> <gray><text></gray>";
+    private String snapshotJoin = "<gray>inventory at join:</gray> <contents>";
+    private String snapshotQuit = "<gray>inventory at quit:</gray> <contents>";
+    private String snapshotTeleport = "<gray>inventory at teleport</gray> <dark_gray>(<text>)</dark_gray>"
+            + "<gray>:</gray> <contents>";
+    private String snapshotDeath = "<gray>inventory at death:</gray> <contents> <dark_gray><text></dark_gray>";
 
     @Comment("<action> for an action this version does not know (written by a newer Hawkeye).")
     private String unknown = "<gray>did something</gray>";

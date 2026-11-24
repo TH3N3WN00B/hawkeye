@@ -24,7 +24,12 @@ public class PayloadCodecTest {
                 new Payload.Inventory(List.of(new Payload.Slot(0, new byte[] {9}), new Payload.Slot(26,
                         new byte[] {8, 7}))),
                 new Payload.Entity(new byte[] {4, 5}),
-                new Payload.EntityRef(UUID.fromString("0f8fad5b-d9cb-469f-a165-70867728950e")));
+                new Payload.EntityRef(UUID.fromString("0f8fad5b-d9cb-469f-a165-70867728950e")),
+                new Payload.Snapshot("ender_pearl to world_nether 10 64 -5", List.of(new Payload.Slot(0,
+                        new byte[] {10, 0, 0}), new Payload.Slot(40, new byte[] {6}),
+                        new Payload.Slot(Payload.Snapshot.CURSOR, new byte[] {5, 4}))),
+                new Payload.Snapshot("", List.of(new Payload.Slot(36, new byte[] {1}))),
+                new Payload.Snapshot("", List.of()));
         for (Payload payload : payloads) {
             assertEquals(payload, PayloadCodec.decode(PayloadCodec.encode(payload)), payload.toString());
         }
@@ -42,6 +47,16 @@ public class PayloadCodecTest {
     public void shortTextIsStoredAsItIs() {
         byte[] encoded = PayloadCodec.encode(new Payload.Text("hi"));
         assertArrayEquals(new byte[] {1, 'h', 'i'}, encoded);
+    }
+
+    @Test
+    public void aSnapshotIsTaggedSevenAndKeepsItsItemBytesAsTheyAre() {
+        byte[] item = {10, 0, 0, 8, 0, 2, 'i', 'd', 0, 1, 'x', 0};
+        byte[] encoded = PayloadCodec.encode(new Payload.Snapshot("x".repeat(300),
+                List.of(new Payload.Slot(3, item), new Payload.Slot(4, item))));
+        assertEquals(7, encoded[0]);
+        assertTrue(encoded.length > 300 + 2 * item.length, "not deflated: " + encoded.length + " bytes");
+        assertArrayEquals(new byte[] {7, 0, 0}, PayloadCodec.encode(new Payload.Snapshot("", List.of())));
     }
 
     @Test

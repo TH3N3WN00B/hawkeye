@@ -81,7 +81,19 @@ public enum Action {
     /** A player joined. */
     JOIN(50, ActionFamily.SESSION, false),
     /** A player left. */
-    QUIT(51, ActionFamily.SESSION, false);
+    QUIT(51, ActionFamily.SESSION, false),
+
+    /** A copy of a player's inventory when they joined. */
+    SNAPSHOT_JOIN(52, ActionFamily.SNAPSHOT, false),
+    /** A copy of a player's inventory when they left. */
+    SNAPSHOT_QUIT(53, ActionFamily.SNAPSHOT, false),
+    /**
+     * A copy of a player's inventory when they teleported (at the place they left) or changed worlds
+     * without a teleport (at the place they arrived); the snapshot's detail says where to.
+     */
+    SNAPSHOT_TELEPORT(54, ActionFamily.SNAPSHOT, false),
+    /** A copy of the inventory a player died with; the snapshot's detail is the death message. */
+    SNAPSHOT_DEATH(55, ActionFamily.SNAPSHOT, false);
 
     private static final Action[] BY_CODE = new Action[64];
 

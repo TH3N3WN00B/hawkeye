@@ -108,6 +108,30 @@ public sealed interface Payload {
     }
 
     /**
+     * A copy of a player's whole inventory at a moment (join, quit, teleport, death), with what the
+     * moment was. Slot indexes are those of {@code PlayerInventory#getContents()} (0 to 35 storage, 36 to
+     * 39 armour, 40 the off hand), and {@link #CURSOR} is the stack held on the cursor.
+     *
+     * @param detail what the moment was (where a teleport went, the death message), or empty
+     * @param slots  the non-empty slots
+     */
+    record Snapshot(@NotNull String detail, @NotNull List<Slot> slots) implements Payload {
+
+        /** The slot index of the stack on the cursor. */
+        public static final int CURSOR = 41;
+
+        /**
+         * Copies the slot list.
+         *
+         * @param detail what the moment was, or empty
+         * @param slots  the non-empty slots
+         */
+        public Snapshot {
+            slots = List.copyOf(slots);
+        }
+    }
+
+    /**
      * One inventory slot.
      *
      * @param index the slot index

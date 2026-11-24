@@ -6,6 +6,7 @@ import gg.moonrise.hawkeye.config.message.LookupMessages;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
 import gg.moonrise.hawkeye.entity.payload.Payload;
 import gg.moonrise.hawkeye.entity.payload.SignSides;
+import gg.moonrise.hawkeye.util.serialize.ItemSummary;
 import gg.moonrise.hawkeye.util.text.Durations;
 import java.time.Duration;
 import java.time.Instant;
@@ -14,6 +15,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import net.kyori.adventure.text.Component;
@@ -65,16 +67,47 @@ public record EventLines(@NotNull LookupMessages lookup, @NotNull ActionMessages
     }
 
     /**
-     * What happened ({@code <action>}): the action's template with its target, amount and text.
+     * What happened ({@code <action>}): the action's template with its target, amount, text and
+     * snapshot contents.
      *
      * @param event the event
      * @return the action text
      */
     public @NotNull Component action(@NotNull StoredEvent event) {
+        Optional<Payload> payload = payload(event);
         return Message.of(template(event)).asComponent(
                 Placeholder.component("target", target(event.subject())),
                 literal("amount", Integer.toString(event.amount())),
-                Placeholder.component("text", text(event).orElse(Component.empty())));
+                Placeholder.component("text", payload.flatMap(EventLines::payloadText).orElse(Component.empty())),
+                Placeholder.component("contents", payload.orElse(null) instanceof Payload.Snapshot snapshot
+                        ? contents(snapshot, event.amount()) : Component.empty()));
+    }
+
+    /**
+     * {@code <contents>} of an inventory snapshot: {@code lookup.snapshot-contents}, with a hover listing
+     * one {@code lookup.snapshot-item} per slot in slot order ({@code lookup.snapshot-empty} without
+     * items). A slot whose bytes are not readable item NBT is counted but not listed.
+     *
+     * @param snapshot the snapshot
+     * @param amount   the number of items in it (the event's amount)
+     * @return the contents text
+     */
+    public @NotNull Component contents(@NotNull Payload.Snapshot snapshot, int amount) {
+        Component contents = Message.of(lookup.getSnapshotContents()).asComponent(
+                literal("stacks", Integer.toString(snapshot.slots().size())),
+                literal("amount", Integer.toString(amount)));
+        List<Component> items = new ArrayList<>(snapshot.slots().size());
+        snapshot.slots().stream().sorted(Comparator.comparingInt(Payload.Slot::index)).forEach(slot ->
+                ItemSummary.of(slot.item()).ifPresent(item -> items.add(Message.of(lookup.getSnapshotItem())
+                        .asComponent(
+                                literal("amount", Integer.toString(item.count())),
+                                literal("target", shortName(item.id())),
+                                literal("slot", Integer.toString(slot.index()))))));
+        if (snapshot.slots().isEmpty()) {
+            return contents.hoverEvent(HoverEvent.showText(Message.of(lookup.getSnapshotEmpty()).asComponent()));
+        }
+        return items.isEmpty() ? contents
+                : contents.hoverEvent(HoverEvent.showText(Component.join(JoinConfiguration.newlines(), items)));
     }
 
     /**
@@ -121,27 +154,37 @@ public record EventLines(@NotNull LookupMessages lookup, @NotNull ActionMessages
     }
 
     /**
-     * {@code <text>}: the chat message or command line, or the sign lines after an edit (only the side
-     * that changed, when only one did).
+     * {@code <text>}: the chat message or command line, the sign lines after an edit (only the side
+     * that changed, when only one did), or an inventory snapshot's detail (where a teleport went, the
+     * death message).
      *
      * @param event the event
      * @return the text, or empty when the event carries none
      */
     public static @NotNull Optional<Component> text(@NotNull StoredEvent event) {
-        Optional<Payload> payload;
-        try {
-            payload = event.payload();
-        } catch (RuntimeException e) {
-            return Optional.empty();
-        }
-        return payload.flatMap(value -> switch (value) {
+        return payload(event).flatMap(EventLines::payloadText);
+    }
+
+    private static @NotNull Optional<Component> payloadText(@NotNull Payload payload) {
+        return switch (payload) {
             case Payload.Text text -> Optional.of(Component.text(text.text()));
             case Payload.Sign sign -> signText(sign);
             case Payload.Item item -> Optional.empty();
             case Payload.Inventory inventory -> Optional.empty();
             case Payload.Entity entity -> Optional.empty();
             case Payload.EntityRef ref -> Optional.empty();
-        });
+            case Payload.Snapshot snapshot -> snapshot.detail().isBlank() ? Optional.empty()
+                    : Optional.of(Component.text(snapshot.detail()));
+        };
+    }
+
+    /** The event's payload, or empty when it has none or the stored bytes cannot be decoded. */
+    private static @NotNull Optional<Payload> payload(@NotNull StoredEvent event) {
+        try {
+            return event.payload();
+        } catch (RuntimeException e) {
+            return Optional.empty();
+        }
     }
 
     private @NotNull String template(@NotNull StoredEvent event) {
@@ -175,6 +218,10 @@ public record EventLines(@NotNull LookupMessages lookup, @NotNull ActionMessages
             case GAMEMODE_CHANGE -> actions.getGamemodeChange();
             case JOIN -> actions.getJoin();
             case QUIT -> actions.getQuit();
+            case SNAPSHOT_JOIN -> actions.getSnapshotJoin();
+            case SNAPSHOT_QUIT -> actions.getSnapshotQuit();
+            case SNAPSHOT_TELEPORT -> actions.getSnapshotTeleport();
+            case SNAPSHOT_DEATH -> actions.getSnapshotDeath();
         };
     }
 

@@ -71,7 +71,7 @@ public final class PlanBuilder {
             case CONTAINER -> addItems(event);
             case ENTITY -> addEntity(event);
             default -> {
-                // Item, message and session actions are never reversible.
+                // Item, message, session and snapshot actions are never reversible.
             }
         }
     }

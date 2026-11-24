@@ -11,9 +11,10 @@ import org.junit.jupiter.api.Test;
 public class EventOrderTest {
 
     @Test
-    public void messageAndSessionActionsAreOrderedByTimeAndEveryOtherActionByPlace() {
+    public void messageSessionAndSnapshotActionsAreOrderedByTimeAndEveryOtherActionByPlace() {
         for (Action action : Action.values()) {
-            boolean aboutAPlayer = action.family() == ActionFamily.MESSAGE || action.family() == ActionFamily.SESSION;
+            boolean aboutAPlayer = action.family() == ActionFamily.MESSAGE || action.family() == ActionFamily.SESSION
+                    || action.family() == ActionFamily.SNAPSHOT;
             assertEquals(!aboutAPlayer, EventOrder.byPlace(action.code()), action.name());
         }
     }

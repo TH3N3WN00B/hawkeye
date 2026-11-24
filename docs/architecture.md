@@ -42,10 +42,10 @@ Every event has a 64-bit id, issued on the server that captured it, without a da
   *rank*). The rank fills the sequence bits and then the millisecond bits, so an id is
   `slot * 1000 ms + rank` and is never more than a second off; a slot holds 4,096,000 events.
 - **The order inside a second.** Events about a player rather than a place (chat, commands, books,
-  game modes, sessions; action codes 40..59) come first, in capture order; every other event follows
-  by world name, packed position and capture order. The archive stores rows in exactly this order, so
-  it rebuilds every rank from the stored rows and never stores one. Changes to one block keep their
-  order, and a conversation reads in order.
+  game modes, sessions, inventory snapshots; action codes 40..59) come first, in capture order; every
+  other event follows by world name, packed position and capture order. The archive stores rows in
+  exactly this order, so it rebuilds every rank from the stored rows and never stores one. Changes to
+  one block keep their order, and a conversation reads in order.
 - Late events of a slot continue its numbering (the counters of the last 120 slots are kept); the
   writer starts after the newest stored slot on restart, so no id is ever issued twice.
 
@@ -107,7 +107,10 @@ All tables carry the configured prefix (default `hawkeye_`).
   written already rolled back (`PendingEvent.rolledBack`: imported history whose source had undone it).
 - **`data`.** An optional payload, tagged by its first byte (`util.codec.PayloadCodec`): text (chat,
   commands), sign sides (before and after), an item (only when the item has components), an inventory
-  snapshot (a broken container), or an entity (for kill and removal rollback). Items and entities are
+  snapshot (a broken container), an entity (for kill and removal rollback), or a player inventory
+  snapshot (tag 7: a detail text such as where a teleport went or the death message, then the
+  non-empty slots by `PlayerInventory#getContents()` index, 41 for the cursor; `amount` holds the item
+  count). Items and entities are
   the NBT of Paper's version-safe serialization (it carries the data version, so the server's data
   fixers upgrade old rows), stored uncompressed (`util.serialize.ItemBytes`, `util.serialize.EntityBytes`) so the archive,
   which compresses many rows together, finds what repeats between snapshots; rows in Paper's own gzip
