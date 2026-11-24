@@ -68,5 +68,7 @@ public enum LogCategory {
     /** A copy of a player's whole inventory when they teleport or change worlds. */
     TELEPORT_SNAPSHOTS,
     /** A copy of the whole inventory a player died with. */
-    DEATH_SNAPSHOTS
+    DEATH_SNAPSHOTS,
+    /** Items players put into and take out of ender chests, plugin inventories and other players' inventories. */
+    VIRTUAL_CONTAINERS
 }

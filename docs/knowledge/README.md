@@ -229,6 +229,11 @@ update them in the same change when you learn something durable or an entry stop
   lectern states count as `Container`; the state of a block set with `setBlockData` reads as air (set
   the data on the state in tests); `getState()` is live and `getState(false)` a copy (the reverse of
   Paper); nearby entities are found by position, not bounding box.
+- MockBukkit 4.120 `InventoryMock#getHolder(boolean)` throws `UnimplementedOperationException` for every
+  inventory it builds, `getEnderChest()` and `createInventory` included; tests open `listener.HeldInventories`
+  (`chest`, `hopper`, `dropper`, `typed(holder, type)`, `chest(holder, title)`) instead. A view's title is the
+  inventory's `getTitle()` (its custom title, else the type's default title), and `InventoryView#title()` is
+  Paper's default (the legacy title deserialized).
 - `Recorded.events()` in listener tests includes the JOIN and the (empty) SNAPSHOT_JOIN that
   `server.addPlayer` records; tests that count every event turn `sessions` and `join-snapshots` off.
 - MockBukkit 4.120 `PlayerMock#teleport` fires `PlayerTeleportEvent` (cause `PLUGIN` unless given) and,
@@ -274,6 +279,17 @@ update them in the same change when you learn something durable or an entry stop
     `PlayerPortalEvent` declares its own handler list, so a `PlayerTeleportEvent` handler sees each portal
     trip exactly once; handling both would record it twice. A respawn in another world fires no teleport
     event, only `PlayerChangedWorldEvent`.
+  - Ender chests and container drops (checked 2026-11-24): `CraftInventory#getType()` is `ENDER_CHEST` for a
+    `PlayerEnderChestContainer` (a plugin inventory with its own holder is checked first and keeps its own
+    type), and `getHolder(false)` of any inventory that is not a block entity returns the container's
+    `getOwner()`, which for an ender chest is its owner player (not the ender chest block; its `getLocation()`
+    is the block only while one is open). `CraftInventory#equals` compares the underlying container, so two
+    viewers' views of one plugin inventory compare equal. The drop key on a slot (`ContainerInput.THROW` in
+    `AbstractContainerMenu#doClick`, after the `InventoryClickEvent`) takes the stack with `Slot.safeTake` and
+    calls `Player#drop(stack, true, PREDICTED)`, and so does dropping the cursor stack outside the window; that
+    reaches `LivingEntity#drop(..., callEvent = true, ...)`, which fires `PlayerDropItemEvent` once the item
+    entity exists. A cancelled drop goes back into the main hand or the inventory. The item never passes
+    through the player's inventory, which is why `VirtualContainerListener` counts drops as still held.
   - Handler lists are per event class: `BlockSpreadEvent`, `BlockFertilizeEvent`, `BlockGrowEvent`,
     `EntityPlaceEvent` and `BlockDestroyEvent` have their own and never reach a parent's handler;
     `EntityBlockFormEvent`, `BlockMultiPlaceEvent`, `EntityBreakDoorEvent`, `PlayerDeathEvent` and

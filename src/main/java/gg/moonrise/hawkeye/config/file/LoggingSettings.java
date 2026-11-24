@@ -114,6 +114,10 @@ public final class LoggingSettings {
     @Comment("The same copy when they die, before their items drop, with the death message.")
     private boolean deathSnapshots = true;
 
+    @Comment({"Players putting items into and taking them out of ender chests and plugin inventories (player vaults,",
+            "backpacks, another player's inventory). Recorded where the player stands; rollbacks never change them."})
+    private boolean virtualContainers = true;
+
     @Comment({"Blame flowing water and lava on the player who poured it (and on its flow), instead of #water or",
             "#lava, so /hawkeye rollback u:<player> also removes the flow."})
     private boolean liquidTracking = true;
@@ -170,6 +174,7 @@ public final class LoggingSettings {
             case QUIT_SNAPSHOTS -> quitSnapshots;
             case TELEPORT_SNAPSHOTS -> teleportSnapshots;
             case DEATH_SNAPSHOTS -> deathSnapshots;
+            case VIRTUAL_CONTAINERS -> virtualContainers;
         };
     }
 

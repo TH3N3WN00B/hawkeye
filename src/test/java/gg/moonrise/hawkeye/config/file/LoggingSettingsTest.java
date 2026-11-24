@@ -1,6 +1,7 @@
 package gg.moonrise.hawkeye.config.file;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
@@ -39,12 +40,23 @@ public class LoggingSettingsTest {
     }
 
     @Test
-    public void theSnapshotSwitchesFollowTheConsoleCommandsSwitch() {
+    public void theSnapshotAndVirtualContainerSwitchesFollowTheConsoleCommandsSwitch() {
         // ConfigLib writes keys in field order; existing keys keep their place.
         List<String> names = Arrays.stream(LoggingSettings.class.getDeclaredFields()).map(Field::getName)
                 .toList();
         int console = names.indexOf("consoleCommands");
         assertEquals(List.of("joinSnapshots", "quitSnapshots", "teleportSnapshots", "deathSnapshots",
-                "liquidTracking"), names.subList(console + 1, console + 6));
+                "virtualContainers", "liquidTracking"), names.subList(console + 1, console + 7));
+    }
+
+    @Test
+    public void virtualContainersAreOnByDefaultAndHaveTheirOwnSwitch() throws ReflectiveOperationException {
+        LoggingSettings settings = new LoggingSettings();
+        assertTrue(settings.enabled(LogCategory.VIRTUAL_CONTAINERS));
+        Field field = LoggingSettings.class.getDeclaredField("virtualContainers");
+        field.setAccessible(true);
+        field.setBoolean(settings, false);
+        assertFalse(settings.enabled(LogCategory.VIRTUAL_CONTAINERS));
+        assertTrue(settings.enabled(LogCategory.CONTAINERS));
     }
 }

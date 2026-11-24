@@ -132,12 +132,13 @@ falls off a wall for the player who broke the wall.
 | Items | Drops (and death drops), pickups (and arrows), crafting, thrown and shot items, worn-out tools, villager trades |
 | Chat, commands, books | Chat, commands, sign-click commands (`[sign]`), console commands (`#console`) and remote console commands (`#rcon`); `logging.redacted-commands` are stored without their arguments; written and signed books |
 | Sessions and modes | Joins, quits (with the kick reason), game mode changes |
+| Ender chests and plugin inventories | Items put into and taken out of an ender chest, another player's inventory (an /invsee view) or a plugin's storage inventory (player vaults, backpacks: a chest, barrel, shulker box, hopper, dispenser or dropper inventory that belongs to no block or entity), one event per kind of item, where the player stands, with the inventory's name (`ender_chest`, `ender_chest (Steve)`, `inventory (Steve)`, or the inventory's title) (`virtual-containers`). Only what the player's own items show is recorded: a change of the inventory counts as far as what the player holds (inventory, cursor, and items they drop from it) changed the opposite way, so plugin menus changing their own contents record nothing |
 | Inventory snapshots | A copy of a player's whole inventory (armour, off hand and cursor included) when they join, leave, teleport and die (`join-snapshots`, `quit-snapshots`, `teleport-snapshots`, `death-snapshots`). A teleport is recorded where the player left, with its cause and destination (portals included); a world change without a teleport (a respawn in another world) where they arrived; position corrections, dismounts and leaving a bed are skipped, and within one world at most one a second per player. A death is recorded before the items drop, with the death message. A lookup line shows the item count, its hover the items |
 
 A rollback reverses blocks, container items (also in minecarts, chest boats and pack animals still
 standing in the recorded block), item-frame/armour-stand items, kills and destroyed entities (respawned)
 and placed or spawned entities (removed while they are still in the world); interactions, growth, items,
-chat, sessions and inventory snapshots are history only.
+chat, sessions, inventory snapshots and ender chest or plugin inventory transactions are history only.
 
 ## Configuration
 
@@ -152,7 +153,7 @@ previous configuration.
 | `server` | `name` (unique per database), `world-scope` (shared by servers that share world files, e.g. MultiPaper) |
 | `storage` | `type` (`SQLITE`, `MYSQL`, `MARIADB`, `POSTGRESQL`), connection (`username` and `password` from environment variables by default), `parameters`, `table-prefix`, `pool-size` |
 | `writer` | `flush-interval-millis` (500), `batch-size`, `queue-capacity`, `shutdown-timeout-seconds` |
-| `logging` | One switch per category (inventory snapshots: `join-snapshots`, `quit-snapshots`, `teleport-snapshots`, `death-snapshots`), `crop-growth-stages`, `liquid-tracking`, `attached-blocks`, `disabled-worlds`, `redacted-commands` (logged without arguments) |
+| `logging` | One switch per category (inventory snapshots: `join-snapshots`, `quit-snapshots`, `teleport-snapshots`, `death-snapshots`; ender chests and plugin inventories: `virtual-containers`), `crop-growth-stages`, `liquid-tracking`, `attached-blocks`, `disabled-worlds`, `redacted-commands` (logged without arguments) |
 | `lookup` | `page-size`, `near-radius`, `max-radius`, session and timeout limits |
 | `rollback` | `default-radius`, `max-radius`, `blocks-per-tick`, `concurrent-chunks`, `max-events`, preview expiry |
 | `purge` | `retention-days` (automatic purge, 0 = keep everything), `player-minimum-days` |
