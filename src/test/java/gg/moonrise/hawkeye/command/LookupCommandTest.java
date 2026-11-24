@@ -43,8 +43,8 @@ public class LookupCommandTest {
     public void setUp() {
         server = MockBukkit.mock();
         TestHawkeyePlugin plugin = TestPlugins.load();
-        // Only the events each test records: no join event for the player added below.
-        TestPlugins.writeConfig(plugin, "logging:\n  sessions: false\n");
+        // Only the events each test records: no join events for the player added below.
+        TestPlugins.writeConfig(plugin, "logging:\n  sessions: false\n  join-snapshots: false\n");
         TestPlugins.reload();
         TestPlugins.awaitStorage();
         commands = TestPlugins.commands();

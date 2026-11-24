@@ -132,11 +132,12 @@ falls off a wall for the player who broke the wall.
 | Items | Drops (and death drops), pickups (and arrows), crafting, thrown and shot items, worn-out tools, villager trades |
 | Chat, commands, books | Chat, commands, sign-click commands (`[sign]`), console commands (`#console`) and remote console commands (`#rcon`); `logging.redacted-commands` are stored without their arguments; written and signed books |
 | Sessions and modes | Joins, quits (with the kick reason), game mode changes |
+| Inventory snapshots | A copy of a player's whole inventory (armour, off hand and cursor included) when they join, leave, teleport and die (`join-snapshots`, `quit-snapshots`, `teleport-snapshots`, `death-snapshots`). A teleport is recorded where the player left, with its cause and destination (portals included); a world change without a teleport (a respawn in another world) where they arrived; position corrections, dismounts and leaving a bed are skipped, and within one world at most one a second per player. A death is recorded before the items drop, with the death message. A lookup line shows the item count, its hover the items |
 
 A rollback reverses blocks, container items (also in minecarts, chest boats and pack animals still
 standing in the recorded block), item-frame/armour-stand items, kills and destroyed entities (respawned)
 and placed or spawned entities (removed while they are still in the world); interactions, growth, items,
-chat and sessions are history only.
+chat, sessions and inventory snapshots are history only.
 
 ## Configuration
 
@@ -151,7 +152,7 @@ previous configuration.
 | `server` | `name` (unique per database), `world-scope` (shared by servers that share world files, e.g. MultiPaper) |
 | `storage` | `type` (`SQLITE`, `MYSQL`, `MARIADB`, `POSTGRESQL`), connection (`username` and `password` from environment variables by default), `parameters`, `table-prefix`, `pool-size` |
 | `writer` | `flush-interval-millis` (500), `batch-size`, `queue-capacity`, `shutdown-timeout-seconds` |
-| `logging` | One switch per category, `crop-growth-stages`, `liquid-tracking`, `attached-blocks`, `disabled-worlds`, `redacted-commands` (logged without arguments) |
+| `logging` | One switch per category (inventory snapshots: `join-snapshots`, `quit-snapshots`, `teleport-snapshots`, `death-snapshots`), `crop-growth-stages`, `liquid-tracking`, `attached-blocks`, `disabled-worlds`, `redacted-commands` (logged without arguments) |
 | `lookup` | `page-size`, `near-radius`, `max-radius`, session and timeout limits |
 | `rollback` | `default-radius`, `max-radius`, `blocks-per-tick`, `concurrent-chunks`, `max-events`, preview expiry |
 | `purge` | `retention-days` (automatic purge, 0 = keep everything), `player-minimum-days` |

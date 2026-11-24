@@ -4,6 +4,7 @@ import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.config.file.LogCategory;
 import gg.moonrise.hawkeye.config.file.LoggingSettings;
 import gg.moonrise.hawkeye.core.service.capture.container.InventoryDiff;
+import gg.moonrise.hawkeye.core.service.capture.container.PlayerContents;
 import gg.moonrise.hawkeye.core.queue.event.EventQueue;
 import gg.moonrise.hawkeye.core.time.EventClock;
 import gg.moonrise.hawkeye.entity.action.Action;
@@ -246,6 +247,23 @@ public final class EventRecorder {
         requireFamily(action, ActionFamily.SESSION);
         record(action, actor, location.getWorld(), location.getBlockX(), location.getBlockY(), location.getBlockZ(),
                 "", null, 0, null);
+    }
+
+    /**
+     * Records a copy of a player's whole inventory (armour, off hand and the cursor stack included).
+     * An empty inventory is recorded too, so the moment is kept.
+     *
+     * @param action a snapshot-family action
+     * @param player the player, whose inventory is read now
+     * @param at     where the moment happened (for a teleport, where the player left from)
+     * @param detail what the moment was (where a teleport went, the death message), or empty
+     */
+    public void snapshot(@NotNull Action action, @NotNull Player player, @NotNull Location at,
+            @NotNull String detail) {
+        requireFamily(action, ActionFamily.SNAPSHOT);
+        PlayerContents contents = PlayerContents.of(player);
+        record(action, Actors.of(player), at.getWorld(), at.getBlockX(), at.getBlockY(), at.getBlockZ(), "", null,
+                contents.amount(), new Payload.Snapshot(detail, contents.slots()));
     }
 
     /**
