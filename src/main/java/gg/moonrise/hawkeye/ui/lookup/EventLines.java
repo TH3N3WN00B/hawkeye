@@ -155,8 +155,8 @@ public record EventLines(@NotNull LookupMessages lookup, @NotNull ActionMessages
 
     /**
      * {@code <text>}: the chat message or command line, the sign lines after an edit (only the side
-     * that changed, when only one did), or an inventory snapshot's detail (where a teleport went, the
-     * death message).
+     * that changed, when only one did), an inventory snapshot's detail (where a teleport went, the
+     * death message), or the inventory of a virtual container transaction.
      *
      * @param event the event
      * @return the text, or empty when the event carries none
@@ -175,6 +175,7 @@ public record EventLines(@NotNull LookupMessages lookup, @NotNull ActionMessages
             case Payload.EntityRef ref -> Optional.empty();
             case Payload.Snapshot snapshot -> snapshot.detail().isBlank() ? Optional.empty()
                     : Optional.of(Component.text(snapshot.detail()));
+            case Payload.VirtualItem virtual -> Optional.of(Component.text(virtual.container()));
         };
     }
 
@@ -197,6 +198,8 @@ public record EventLines(@NotNull LookupMessages lookup, @NotNull ActionMessages
             case BLOCK_GROW -> actions.getBlockGrow();
             case CONTAINER_DEPOSIT -> actions.getContainerDeposit();
             case CONTAINER_WITHDRAW -> actions.getContainerWithdraw();
+            case VIRTUAL_DEPOSIT -> actions.getVirtualDeposit();
+            case VIRTUAL_WITHDRAW -> actions.getVirtualWithdraw();
             case ITEM_DROP -> actions.getItemDrop();
             case ITEM_PICKUP -> actions.getItemPickup();
             case ITEM_CRAFT -> actions.getItemCraft();

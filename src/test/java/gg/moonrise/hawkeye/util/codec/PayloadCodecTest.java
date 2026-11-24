@@ -29,7 +29,10 @@ public class PayloadCodecTest {
                         new byte[] {10, 0, 0}), new Payload.Slot(40, new byte[] {6}),
                         new Payload.Slot(Payload.Snapshot.CURSOR, new byte[] {5, 4}))),
                 new Payload.Snapshot("", List.of(new Payload.Slot(36, new byte[] {1}))),
-                new Payload.Snapshot("", List.of()));
+                new Payload.Snapshot("", List.of()),
+                new Payload.VirtualItem("ender_chest (Steve)", new byte[] {10, 0, 0, 8}),
+                new Payload.VirtualItem("Vault #1", new byte[0]),
+                new Payload.VirtualItem("", new byte[0]));
         for (Payload payload : payloads) {
             assertEquals(payload, PayloadCodec.decode(PayloadCodec.encode(payload)), payload.toString());
         }
@@ -57,6 +60,18 @@ public class PayloadCodecTest {
         assertEquals(7, encoded[0]);
         assertTrue(encoded.length > 300 + 2 * item.length, "not deflated: " + encoded.length + " bytes");
         assertArrayEquals(new byte[] {7, 0, 0}, PayloadCodec.encode(new Payload.Snapshot("", List.of())));
+    }
+
+    @Test
+    public void aVirtualItemIsTaggedEightWithTheLabelThenTheRawItem() {
+        byte[] item = {10, 0, 0, 8, 0, 2, 'i', 'd', 0, 1, 'x', 0};
+        byte[] encoded = PayloadCodec.encode(new Payload.VirtualItem("ec", item));
+        assertArrayEquals(new byte[] {8, 2, 'e', 'c'}, PayloadCodec.encode(new Payload.VirtualItem("ec", new byte[0])));
+        assertEquals(8, encoded[0]);
+        assertEquals(4 + item.length, encoded.length, "not deflated");
+        assertEquals(new Payload.VirtualItem("ec", item), PayloadCodec.decode(encoded));
+        assertEquals(new Payload.VirtualItem("x".repeat(300), item),
+                PayloadCodec.decode(PayloadCodec.encode(new Payload.VirtualItem("x".repeat(300), item))));
     }
 
     @Test

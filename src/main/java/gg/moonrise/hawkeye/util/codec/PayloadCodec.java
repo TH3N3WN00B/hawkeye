@@ -19,8 +19,8 @@ import org.jetbrains.annotations.NotNull;
  * Encodes {@link Payload}s for the {@code data} column. The first byte is the tag (the payload type
  * in the low bits, {@link #DEFLATED} when the body is deflated); the body follows. Text and sign
  * bodies of at least {@link #COMPRESS_THRESHOLD} bytes are deflated when that makes them smaller.
- * Item and entity bytes (raw NBT, or Paper's gzip NBT in rows from earlier builds), inventories and
- * player inventory snapshots included, are stored as they are handed over: compressing each one alone
+ * Item and entity bytes (raw NBT, or Paper's gzip NBT in rows from earlier builds), inventories, player
+ * inventory snapshots and virtual container items included, are stored as they are handed over: compressing each one alone
  * would hide the repetition between snapshots from the archive, which compresses many rows together. The format is a data contract: tags are never reused.
  */
 public final class PayloadCodec {
@@ -38,6 +38,7 @@ public final class PayloadCodec {
     private static final int ENTITY = 5;
     private static final int ENTITY_REF = 6;
     private static final int SNAPSHOT = 7;
+    private static final int VIRTUAL_ITEM = 8;
     private static final int DEFLATED = 0x80;
     private static final int TYPE_MASK = 0x7F;
 
@@ -71,6 +72,9 @@ public final class PayloadCodec {
                 writeSlots(body, snapshot.slots());
                 yield tagged(SNAPSHOT, body.toByteArray());
             }
+            case Payload.VirtualItem virtual -> tagged(VIRTUAL_ITEM,
+                    new ByteWriter(virtual.container().length() + virtual.item().length + 4)
+                            .writeString(virtual.container()).writeRaw(virtual.item()).toByteArray());
             case Payload.Entity entity -> tagged(ENTITY, entity.bytes());
             case Payload.EntityRef ref -> tagged(ENTITY_REF, new ByteWriter(16)
                     .writeLong(ref.uuid().getMostSignificantBits())
@@ -96,6 +100,7 @@ public final class PayloadCodec {
             case ITEM -> new Payload.Item(body);
             case INVENTORY -> new Payload.Inventory(readSlots(in));
             case SNAPSHOT -> new Payload.Snapshot(in.readString(), readSlots(in));
+            case VIRTUAL_ITEM -> new Payload.VirtualItem(in.readString(), in.readRemaining());
             case ENTITY -> new Payload.Entity(body);
             case ENTITY_REF -> new Payload.EntityRef(new UUID(in.readLong(), in.readLong()));
             default -> throw new CodecException("unknown payload tag " + tag);

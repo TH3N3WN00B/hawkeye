@@ -132,6 +132,34 @@ public sealed interface Payload {
     }
 
     /**
+     * The inventory of a virtual container transaction (an ender chest, a plugin's inventory, another
+     * player's inventory) and the item that moved.
+     *
+     * @param container the inventory's label ({@code ender_chest}, {@code ender_chest (Steve)},
+     *                  {@code inventory (Steve)}, or a plugin inventory's title)
+     * @param item      the item's NBT, or empty for a plain stack (the material and amount columns describe
+     *                  it)
+     */
+    record VirtualItem(@NotNull String container, byte @NotNull [] item) implements Payload {
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof VirtualItem virtual && container.equals(virtual.container)
+                    && Arrays.equals(item, virtual.item);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * container.hashCode() + Arrays.hashCode(item);
+        }
+
+        @Override
+        public @NotNull String toString() {
+            return "VirtualItem[" + container + ", " + item.length + " bytes]";
+        }
+    }
+
+    /**
      * One inventory slot.
      *
      * @param index the slot index

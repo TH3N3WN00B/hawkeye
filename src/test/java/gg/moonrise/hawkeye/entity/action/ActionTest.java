@@ -46,6 +46,19 @@ public class ActionTest {
     }
 
     @Test
+    public void virtualContainerActionsAreContainerActionsThatAreNeverRolledBack() {
+        assertEquals(12, Action.VIRTUAL_DEPOSIT.code());
+        assertEquals(13, Action.VIRTUAL_WITHDRAW.code());
+        assertArrayEquals(new Action[] {Action.CONTAINER_DEPOSIT, Action.CONTAINER_WITHDRAW, Action.VIRTUAL_DEPOSIT,
+                Action.VIRTUAL_WITHDRAW}, Action.of(ActionFamily.CONTAINER));
+        assertTrue(Action.CONTAINER_DEPOSIT.reversible() && Action.CONTAINER_WITHDRAW.reversible());
+        for (Action action : new Action[] {Action.VIRTUAL_DEPOSIT, Action.VIRTUAL_WITHDRAW}) {
+            assertFalse(action.reversible(), action.name());
+            assertTrue(EventOrder.byPlace(action.code()), action.name());
+        }
+    }
+
+    @Test
     public void familiesSayWhatTheSubjectIs() {
         assertTrue(ActionFamily.BLOCK.hasSubject());
         assertTrue(!ActionFamily.MESSAGE.hasSubject());

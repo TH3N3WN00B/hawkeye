@@ -102,7 +102,10 @@ All tables carry the configured prefix (default `hawkeye_`).
   broken block for a break, the placed block for a place) and `secondary` is the other side of the
   change (the block left behind after a break, the block replaced by a place). Rollback restores
   `subject` for a break and `secondary` for a place; restore does the opposite. For item actions
-  `subject` is the material and `amount` the count; for kills it is the entity type.
+  `subject` is the material and `amount` the count; for kills it is the entity type. Container
+  actions 10 and 11 (a container block or an entity carrying one) are reversible; 12 and 13 (an ender
+  chest, a plugin's inventory, another player's inventory: recorded where the player stood) are
+  history only, so a rollback never changes the world for them.
 - **`flags`.** Bit 0: rolled back. Archived events keep it in `segment_flag` instead. An event can be
   written already rolled back (`PendingEvent.rolledBack`: imported history whose source had undone it).
 - **`data`.** An optional payload, tagged by its first byte (`util.codec.PayloadCodec`): text (chat,
@@ -110,7 +113,8 @@ All tables carry the configured prefix (default `hawkeye_`).
   snapshot (a broken container), an entity (for kill and removal rollback), or a player inventory
   snapshot (tag 7: a detail text such as where a teleport went or the death message, then the
   non-empty slots by `PlayerInventory#getContents()` index, 41 for the cursor; `amount` holds the item
-  count). Items and entities are
+  count), or a virtual container item (tag 8: the inventory's label, then the item's raw NBT as the
+  rest of the body, empty for a plain stack). Items and entities are
   the NBT of Paper's version-safe serialization (it carries the data version, so the server's data
   fixers upgrade old rows), stored uncompressed (`util.serialize.ItemBytes`, `util.serialize.EntityBytes`) so the archive,
   which compresses many rows together, finds what repeats between snapshots; rows in Paper's own gzip

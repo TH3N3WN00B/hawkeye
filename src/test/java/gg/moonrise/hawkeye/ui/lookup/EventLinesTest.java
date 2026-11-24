@@ -77,6 +77,16 @@ public class EventLinesTest {
     }
 
     @Test
+    public void aVirtualContainerLineNamesTheInventory() {
+        assertEquals("added 5x diamond to ender_chest", plain(lines.action(event(Action.VIRTUAL_DEPOSIT,
+                "minecraft:diamond", 5, new Payload.VirtualItem("ender_chest", new byte[0])))));
+        assertEquals("removed 2x iron_ingot from Vault #1", plain(lines.action(event(Action.VIRTUAL_WITHDRAW,
+                "minecraft:iron_ingot", 2, new Payload.VirtualItem("Vault #1", new byte[] {10, 0, 0})))));
+        assertEquals("Vault #1", plain(EventLines.text(event(Action.VIRTUAL_WITHDRAW, "minecraft:iron_ingot", 2,
+                new Payload.VirtualItem("Vault #1", new byte[0]))).orElseThrow()));
+    }
+
+    @Test
     public void aSignEditShowsTheEditedSideAfterTheEdit() {
         SignSides before = new SignSides(List.of(json("old"), json("")), List.of(json("back")));
         SignSides after = new SignSides(List.of(json("Hello"), json("World")), List.of(json("back")));
