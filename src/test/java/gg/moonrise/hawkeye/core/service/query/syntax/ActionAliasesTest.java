@@ -60,6 +60,20 @@ public class ActionAliasesTest {
     }
 
     @Test
+    public void snapshotsAreLookedUpTogetherOrOneMomentAtATime() {
+        Set<Action> all = Set.of(Action.SNAPSHOT_JOIN, Action.SNAPSHOT_QUIT, Action.SNAPSHOT_TELEPORT,
+                Action.SNAPSHOT_DEATH);
+        assertEquals(all, ActionAliases.of("snapshot").orElseThrow());
+        assertEquals(all, ActionAliases.of("#Snapshots").orElseThrow());
+        assertEquals(Set.of(Action.SNAPSHOT_JOIN), ActionAliases.of("join-snapshot").orElseThrow());
+        assertEquals(Set.of(Action.SNAPSHOT_QUIT), ActionAliases.of("quit-snapshot").orElseThrow());
+        assertEquals(Set.of(Action.SNAPSHOT_TELEPORT), ActionAliases.of("teleport-snapshot").orElseThrow());
+        assertEquals(Set.of(Action.SNAPSHOT_DEATH), ActionAliases.of("death-snapshot").orElseThrow());
+        assertEquals(Set.of(Action.JOIN, Action.QUIT), ActionAliases.of("session").orElseThrow());
+        assertTrue(ActionAliases.of("inventory").isEmpty(), "CoreProtect's a:inventory means something else");
+    }
+
+    @Test
     public void depositAndWithdrawStayUnknown() {
         assertTrue(ActionAliases.of("deposit").isEmpty());
         assertTrue(ActionAliases.of("withdraw").isEmpty());
@@ -68,8 +82,10 @@ public class ActionAliasesTest {
     @Test
     public void suggestionsListOnlyTheCanonicalNames() {
         List<String> names = ActionAliases.names();
-        assertEquals(28, names.size());
+        assertEquals(33, names.size());
         assertTrue(names.contains("-block"));
+        assertTrue(names.contains("snapshot"));
+        assertFalse(names.contains("snapshots"));
         SYNONYMS.values().forEach(spellings -> spellings.forEach(spelling ->
                 assertFalse(names.contains(spelling), spelling)));
     }

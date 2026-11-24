@@ -124,7 +124,8 @@ second release in a quarter).
   items drop, with the death message. New actions 52-55 (stored data: payload tag 7) and messages
   (`actions.snapshot-join`, `snapshot-quit`, `snapshot-teleport`, `snapshot-death`, placeholder
   `<contents>`; `lookup.snapshot-contents`, `snapshot-item`, `snapshot-empty`): a lookup line shows the item
-  and stack count, its hover every item. Snapshots are history only.
+  and stack count, its hover every item. Snapshots are history only. `a:snapshot` (or `snapshots`) looks
+  them all up, `a:join-snapshot`, `quit-snapshot`, `teleport-snapshot` and `death-snapshot` one kind.
 ### Changed
 
 - Versions are year.quarter: a stable release is `26.4`, a Jenkins build `26.4.B<build>` (`26.4.B25`), any other
