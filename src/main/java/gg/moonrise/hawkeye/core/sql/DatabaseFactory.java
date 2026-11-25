@@ -97,6 +97,14 @@ public final class DatabaseFactory {
         properties.putAll(login.parameters());
         // Connector/J's connect timeout is in milliseconds.
         defaultIfAbsent(properties, "connectTimeout", Long.toString(loginTimeoutSeconds(settings) * 1000L));
+        // Connector/J 4 turned TLS on by default (sslMode verify-full), which refuses any server without a
+        // certificate from a trusted CA. Unless the operator chooses (sslMode, or the legacy useSsl), the
+        // connection stays unencrypted as with Connector/J 3, and MySQL 8's caching_sha2_password may fetch
+        // the server's RSA key to send the password over it, as the CoreProtect import does.
+        if (!isPresent(properties, "sslMode") && !isPresent(properties, "useSsl")) {
+            properties.setProperty("sslMode", "disable");
+        }
+        defaultIfAbsent(properties, "allowPublicKeyRetrieval", "true");
         // The name clashes with java.sql.Driver.
         Driver driver = new org.mariadb.jdbc.Driver();
         config.setDataSource(new RedactingDataSource(driver, "jdbc:mariadb://" + settings.host() + ":"
@@ -132,10 +140,14 @@ public final class DatabaseFactory {
 
     /** Sets a property unless the operator's parameters name it already, in any case. */
     private static void defaultIfAbsent(@NotNull Properties properties, @NotNull String key, @NotNull String value) {
-        boolean present = properties.stringPropertyNames().stream()
-                .anyMatch(name -> name.toLowerCase(Locale.ROOT).equals(key.toLowerCase(Locale.ROOT)));
-        if (!present) {
+        if (!isPresent(properties, key)) {
             properties.setProperty(key, value);
         }
+    }
+
+    /** Whether the properties name the key, in any case ({@code useSSL} is {@code useSsl}). */
+    private static boolean isPresent(@NotNull Properties properties, @NotNull String key) {
+        return properties.stringPropertyNames().stream()
+                .anyMatch(name -> name.toLowerCase(Locale.ROOT).equals(key.toLowerCase(Locale.ROOT)));
     }
 }

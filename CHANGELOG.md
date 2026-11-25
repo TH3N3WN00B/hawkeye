@@ -156,12 +156,18 @@ second release in a quarter).
 - Versions are year.quarter: a stable release is `26.4`, a Jenkins build `26.4.B<build>` (`26.4.B25`), any other
   build `26.4-SNAPSHOT`. Release tags are `26.4` (or `26.4.1` for a second release in a quarter) instead of
   `vX.Y.Z`. The jar is named after its version (`Hawkeye-26.4.jar`, `Hawkeye-26.4.B12.jar`).
-- `Jenkinsfile` builds and tests every push and archives only that build's jar. GitHub Actions no longer builds
-  every push or publishes to the Moonrise Nexus: `release.yml` only attaches the jar to a published release.
+- `Jenkinsfile` builds and tests every push and archives only that build's jar. On GitHub Actions, `ci.yml`
+  builds and tests pushes to `main` and pull requests, with the integration tests against real MySQL, MariaDB,
+  PostgreSQL, ClickHouse and DuckDB databases and the Paper API linkage check, and `release.yml` attaches the
+  jar to a published release. Nothing publishes to the Moonrise Nexus.
 - plugin-engine 1.10.2 and Moss 1.2.3 come from Maven Central; the build no longer uses
   `repo.moonrise.gg`, and at server start the engine downloads its libraries from Maven Central only.
 - Runtime libraries the plugin loader downloads at server start: HikariCP 7.1.0, sqlite-jdbc 3.54.1.0,
   MariaDB Connector/J 4.0.0, PostgreSQL JDBC 42.7.14, Caffeine 3.3.1, Lettuce 7.9.0 and zstd-jni 1.5.7-28.
+  Connector/J 4 defaults to TLS with a verified certificate (`sslMode=verify-full`); a MySQL or MariaDB
+  storage connection keeps the former default instead, `sslMode=disable`, plus `allowPublicKeyRetrieval=true`
+  so MySQL 8's `caching_sha2_password` works over it. Set `sslMode` (or the legacy `useSsl`) in
+  `storage.parameters` to encrypt, for example `sslMode: verify-full` or `sslMode: trust`.
   Built with Gradle 9.9.2. Paper API stays at 26.3 build 249: build 256 adds the `minecraft:world_clock`
   registry, which no MockBukkit release up to 4.125.0 has data for, so every MockBukkit test fails on it.
 
