@@ -233,3 +233,6 @@ second release in a quarter).
 - MockBukkit, SQLite and opt-in MySQL/PostgreSQL integration tests, an ArchUnit layer check, a
   storage footprint guard, `verifyPluginJar`, and real-server smoke tests (`scripts/smoke`: TNT and
   kill rollbacks).
+- Version support: `scripts/compat/api_links.py` checks every Paper call against a server's paper-api jar;
+  `scripts/smoke/kill-rollback-basic.txt` and `coreprotect-generate-1.21.txt` run on 1.21.x servers too, and
+  `run.py` ignores console colour codes.

@@ -9,12 +9,15 @@ full console log is written to <server-dir>/smoke.log.
 """
 import glob
 import os
+import re
 import subprocess
 import sys
 import threading
 import time
 
 COMMAND_WAIT_SECONDS = 3
+# Paper colours console output on a terminal that supports it (Windows does): matched text drops the codes.
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
 START_TIMEOUT_SECONDS = 300
 
 
@@ -23,15 +26,19 @@ def main():
     java = sys.argv[3] if len(sys.argv) > 3 else (glob.glob(
         os.path.expanduser("~/.gradle/jdks/eclipse_adoptium-25*/bin/java")) or ["java"])[0]
     steps = []
-    for line in open(scenario_file):
+    for line in open(scenario_file, encoding="utf-8"):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         command, _, expected = line.partition(" => ")
         steps.append((command.strip(), expected.strip()))
 
-    process = subprocess.Popen([java, "-Xmx2G", "-jar", "paper.jar", "--nogui"], cwd=server_dir,
-                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    # Java writes a pipe in the platform encoding (cp1252 on Windows) unless told otherwise, and a reader that
+    # dies on an undecodable byte leaves the pipe full and the server's logging blocked: ask for UTF-8 and
+    # replace whatever still does not decode.
+    process = subprocess.Popen([java, "-Xmx2G", "-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8", "-jar",
+                                "paper.jar", "--nogui"], cwd=server_dir, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
     lines = []
     started = threading.Event()
 
@@ -54,7 +61,7 @@ def main():
             process.stdin.write(command + "\n")
             process.stdin.flush()
             time.sleep(COMMAND_WAIT_SECONDS)
-            reply = "".join(lines[mark + 1:])
+            reply = ANSI.sub("", "".join(lines[mark + 1:]))
             if expected and expected not in reply:
                 failures.append(f"{command!r}: expected {expected!r}")
         process.stdin.write("stop\n")
@@ -65,7 +72,7 @@ def main():
         process.kill()
         failures.append("the server did not stop")
     reader.join(5)
-    with open(os.path.join(server_dir, "smoke.log"), "w") as out:
+    with open(os.path.join(server_dir, "smoke.log"), "w", encoding="utf-8") as out:
         out.writelines(lines)
     errors = [line for line in lines if "[Hawkeye]" in line and ("ERROR" in line or "Exception" in line)]
     failures.extend("console: " + line.strip() for line in errors)

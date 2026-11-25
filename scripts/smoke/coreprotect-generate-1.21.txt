@@ -1,0 +1,27 @@
+# coreprotect-generate.txt for Minecraft 1.21.1 to 1.21.4, whose item components take a JSON text name and
+# wrap enchantments in `levels` (1.21.5 changed both). Run it on a server that has CoreProtect and not
+# Hawkeye, with a flat overworld, then copy plugins/CoreProtect (config.yml and database.db) to the Hawkeye
+# server and run coreprotect-import.txt there. Set `database-type: sqlite` in CoreProtect's config.yml first
+# (CoreProtect 25 defaults to DuckDB). coreprotect-import.txt's first total (19 events) is that of its 26.2
+# database; a flat world here may hold a lava feature whose flow CoreProtect logs as #lava (CoreProtect 25.0
+# on Paper 1.21.1 wrote 163 rows, 140 of them #lava), so expect this database's own total there.
+forceload add 0 0
+fill 0 -60 0 6 -57 6 minecraft:stone
+setblock 2 -56 2 minecraft:oak_stairs[facing=east,half=top]
+setblock 4 -56 4 minecraft:oak_stairs
+summon minecraft:tnt 3 -56 3 {fuse:1}
+execute if block 3 -57 3 minecraft:stone => Test failed
+setblock 20 -60 20 minecraft:chest
+setblock 20 -59 20 minecraft:hopper[facing=down]
+setblock 20 -58 20 minecraft:chest{Items:[{Slot:0b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:custom_name":'"Excalibur"',"minecraft:enchantments":{levels:{"minecraft:sharpness":5}}}},{Slot:1b,id:"minecraft:stick",count:3},{Slot:2b,id:"minecraft:potion",count:1,components:{"minecraft:potion_contents":{potion:"minecraft:swiftness",custom_color:16711680}}}]}
+summon minecraft:zombie 10 -60 10 {NoAI:1b}
+summon minecraft:cow 12 -60 12 {NoAI:1b}
+say waiting for the hopper
+say waiting for the hopper
+say waiting for the hopper
+data get block 20 -60 20 Items => Excalibur
+kill @e[type=minecraft:zombie]
+kill @e[type=minecraft:cow]
+say waiting for CoreProtect to write
+say waiting for CoreProtect to write
+say waiting for CoreProtect to write

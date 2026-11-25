@@ -140,7 +140,8 @@ update them in the same change when you learn something durable or an entry stop
   passed `EntitySerializationFlag.FORCE`, and a mob in its `EntityDeathEvent` is no longer valid.
   `ForcedEntitySerializer` passes it (before, `/kill`ed zombies, villagers, cows and skeletons were
   stored without entity bytes; armour stands worked). The flags exist from Paper 1.21.4; before,
-  `PlainEntitySerializer` calls `serializeEntity(entity)`.
+  `PlainEntitySerializer` calls `serializeEntity(entity)`, which on 1.21.1 (`CraftMagicNumbers`, server
+  bytecode) checks nothing but the type and saves the entity as it is, a dying mob included.
 - Item and entity payloads (verified 2026-11-16): `ItemStack#serializeAsBytes` and `serializeEntity`
   return gzip NBT (`1f 8b`), and `deserializeBytes`/`deserializeEntity` read only gzip. Hawkeye stores
   raw NBT (`0a`) and gzips it again on read (`util.nbt.NbtGzip`); gzip rows from earlier builds read
@@ -324,14 +325,48 @@ update them in the same change when you learn something durable or an entry stop
   `Class#method` for a method added to an older class.
 - `api_links.py` on 2026-11-25, main and newerApi against paper-api 1.21.1, 1.21.3, 1.21.4, 1.21.5, 1.21.6,
   1.21.8, 1.21.9, 1.21.10, 1.21.11, 26.1.2, 26.2 and 26.3 (build 249): no problems, and the gated classes
-  active per version are the ones the version table expects. The plugin-engine 1.10.2 and Moss 1.2.3 jars,
-  checked the same way (`main` set to their unpacked classes), link on all of them. Every runtime library
+  active per version are the ones the version table expects. Moss 1.2.3, checked the same way (`main` set to
+  its unpacked classes), links on all of them. plugin-engine 1.10.2 links from 1.21.8 on; before, only its
+  dialog classes (`paper.dialog`, Paper's dialog API) and `paper.item.ItemBuilder` (from 1.21.5) do not,
+  and Hawkeye uses neither. `PaperPlugin#onEnable`/`onDisable` start and stop `DialogCanvasRuntime`, which
+  links on 1.21.1 and ran without an error there. (Git Bash does not translate a comma-joined path list for a
+  native program: pass each folder as its own argument.) Every runtime library
   the loaders download is Java 21 bytecode or older (engine and Moss 21, Spring 6.2, ConfigLib and MariaDB
   Connector/J 4.0 17, HikariCP and Caffeine 11, the rest 8).
 - `verifyPluginJar` requires `api-version` to be the Minecraft version of `paperOldest`, so moving one
   without the other (a Dependabot bump of `paperOldest`) fails the build.
 - MockBukkit 4.122 `SimpleInventoryViewMock#convertSlot` throws `UnimplementedOperationException`, and
   `InventoryClickEvent`'s constructor calls it; `CraftClickListenerTest` overrides it.
+- Real servers, 2026-11-25 on Windows, one jar (Java 21 bytecode, `api-version: '1.21.1'`): Paper 1.21.1
+  build 133, 1.21.4 build 232 and 1.21.11 build 132 on Java 21; 26.1.2 build 74 and 26.3 build 262 on Java 25.
+  On every one the plugin enabled (libraries resolved, commands registered), and `tnt-rollback.txt`,
+  `kill-rollback-basic.txt` and `coreprotect-import.txt` passed, the import from a SQLite database CoreProtect
+  25.0 wrote on Paper 1.21.1 (`coreprotect-generate-1.21.txt`; 163 rows, so its first count was 163, not 19):
+  both stair states, the named Sharpness V sword and the coloured potion came back on all five, upgraded to
+  the server's component format on 26.x. Not run on 1.21.x: `kill-rollback.txt` and
+  `growth-and-physics.txt` (26.x commands); not run anywhere: Folia.
+- CoreProtect item metadata is rebuilt by the running server's `ConfigurationSerialization`, which knows only
+  its own Minecraft version's ids and component format plus what its data fixers upgrade. The newest rows of
+  a production CoreProtect 25 database (2026-11-01 to 11-25, CoreProtect schema 2.24.1; 54,924 item blobs
+  in 60,000 container and 40,000 item rows) imported 124,950 events on each version, with blobs that could
+  not be rebuilt: 1.21.1 14,312 (it does not know `minecraft:max_health` without `generic.`, `white_bundle`),
+  1.21.4 4,929, 1.21.11, 26.1.2 and 26.3 5,436 each (they reject the 1.21.2-1.21.4 format: attribute
+  `modifiers` lists, enchantment `levels`, `hide_additional_tooltip`). On 1.21.4 Paper logged no
+  deserialization error at all, so those rows were written by a 1.21.2-1.21.4 server, and the 4,929 left
+  there fail Hawkeye's own checks before Paper sees them (`ServerItemDecoder` logs those at DEBUG only).
+- Paper 1.21.1 (server bytecode): `MobBucketItem` spawns with `MobSpawnType.BUCKET`, and
+  `EntityType#spawn` turns every type but `DISPENSER` into `SpawnReason.SPAWNER_EGG`, so a mob from a
+  bucket arrives as from a spawn egg (still recorded, under the remembered bucket user else `#spawn_egg`).
+- Smoke runs on this Windows host: `run.py` passes no JVM options, so `JAVA_TOOL_OPTIONS` carries
+  `-Djdk.net.unixdomain.tmpdir=<plain folder> -Djava.io.tmpdir=<plain folder>` (otherwise Paper crashes in
+  its tick loop on Git Bash's 8.3 `TEMP`). Paper colours console output here, so `run.py` strips ANSI codes
+  before matching. Java writes a pipe in the platform encoding (cp1252 on Windows): before `run.py` asked for
+  `-Dstdout.encoding=UTF-8` and decoded with `errors="replace"`, the first non-ASCII item name an import logged
+  killed its reader thread, the pipe filled, and Log4j's console appender blocked every later log line (a
+  thread dump showed the server ticking and the import running), which looked like a hung server. 1.21.x logs `ERROR: No key
+  layers in MapLike[{}]` when it creates a flat world from `level-type=minecraft:flat` with no
+  `generator-settings`; the world is the classic flat one all the same. CoreProtect 25.0 defaults to
+  `database-type: duckdb` (`database.duckdb`); `sqlite` gives the `database.db` the import scenarios use.
 
 ## Credential facts (verified 2026-11-21)
 
