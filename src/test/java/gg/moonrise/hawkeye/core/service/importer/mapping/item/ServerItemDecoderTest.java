@@ -23,6 +23,7 @@ import java.util.UUID;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Color;
 import org.bukkit.DyeColor;
+import org.bukkit.FireworkEffect;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Registry;
@@ -35,6 +36,10 @@ import org.bukkit.enchantments.Enchantment;
 import org.bukkit.inventory.EquipmentSlotGroup;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BannerMeta;
+import org.bukkit.inventory.meta.BundleMeta;
+import org.bukkit.inventory.meta.CrossbowMeta;
+import org.bukkit.inventory.meta.FireworkEffectMeta;
+import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
 import org.bukkit.inventory.meta.MapMeta;
@@ -146,6 +151,82 @@ public class ServerItemDecoderTest {
                 List.of(Color.fromRGB(0x00FF00).serialize()))));
 
         assertEquals(Color.fromRGB(0x00FF00), ((MapMeta) decoded.getItemMeta()).getColor());
+    }
+
+    @Test
+    public void aFireworkRocketGetsItsEffects() throws IOException {
+        FireworkMeta base = (FireworkMeta) new ItemStack(Material.FIREWORK_ROCKET).getItemMeta();
+        base.setPower(2);
+        FireworkEffect ball = FireworkEffect.builder().with(FireworkEffect.Type.BALL_LARGE).withColor(Color.RED)
+                .build();
+        FireworkEffect star = FireworkEffect.builder().with(FireworkEffect.Type.STAR).flicker(true).trail(true)
+                .withColor(Color.BLUE, Color.WHITE).withFade(Color.YELLOW).build();
+        List<List<Map<String, Object>>> lists = lists(List.of(base.serialize()));
+        lists.addAll(effectLists(ball));
+        lists.addAll(effectLists(star));
+        lists.add(new ArrayList<>(List.of(map("slot", 0))));
+
+        ItemStack decoded = decoded("minecraft:firework_rocket", blob(lists));
+
+        FireworkMeta meta = (FireworkMeta) decoded.getItemMeta();
+        assertEquals(2, meta.getPower());
+        assertEquals(List.of(ball, star), meta.getEffects());
+    }
+
+    @Test
+    public void aFireworkStarGetsItsEffect() throws IOException {
+        FireworkEffectMeta base = (FireworkEffectMeta) new ItemStack(Material.FIREWORK_STAR).getItemMeta();
+        FireworkEffect creeper = FireworkEffect.builder().with(FireworkEffect.Type.CREEPER).withColor(Color.LIME)
+                .withFade(Color.BLACK).build();
+        List<List<Map<String, Object>>> lists = lists(List.of(base.serialize()));
+        lists.addAll(effectLists(creeper));
+
+        ItemStack decoded = decoded("minecraft:firework_star", blob(lists));
+
+        assertEquals(creeper, ((FireworkEffectMeta) decoded.getItemMeta()).getEffect());
+    }
+
+    @Test
+    public void aBundleGetsItsItems() throws IOException {
+        BundleMeta base = (BundleMeta) new ItemStack(Material.BUNDLE).getItemMeta();
+        ItemStack gem = new ItemStack(Material.DIAMOND);
+        ItemMeta gemMeta = gem.getItemMeta();
+        gemMeta.displayName(Component.text("Gem"));
+        gem.setItemMeta(gemMeta);
+        ItemStack stone = new ItemStack(Material.STONE, 5);
+
+        ItemStack decoded = decoded("minecraft:bundle", blob(lists(List.of(base.serialize()),
+                List.of(contained(stone, lists()), contained(gem, lists(List.of(gemMeta.serialize())))))));
+
+        assertEquals(List.of(stone, gem), ((BundleMeta) decoded.getItemMeta()).getItems());
+    }
+
+    @Test
+    public void aCrossbowGetsItsChargedProjectiles() throws IOException {
+        CrossbowMeta base = (CrossbowMeta) new ItemStack(Material.CROSSBOW).getItemMeta();
+        base.displayName(Component.text("Bolt thrower"));
+        ItemStack arrow = new ItemStack(Material.ARROW);
+        ItemStack spectral = new ItemStack(Material.SPECTRAL_ARROW);
+
+        // Paper 1.21.4 wrote the items inside as {v, type}; newer servers write a schema_version map instead.
+        ItemStack decoded = decoded("minecraft:crossbow", blob(lists(List.of(base.serialize()),
+                List.of(contained1214("ARROW"), contained1214("SPECTRAL_ARROW")))));
+
+        CrossbowMeta meta = (CrossbowMeta) decoded.getItemMeta();
+        assertEquals(Component.text("Bolt thrower"), meta.displayName());
+        assertEquals(List.of(arrow, spectral), meta.getChargedProjectiles());
+    }
+
+    @Test
+    public void anItemInsideThatTheServerCannotRebuildIsLeftOut() throws IOException {
+        BundleMeta base = (BundleMeta) new ItemStack(Material.BUNDLE).getItemMeta();
+        ItemStack stone = new ItemStack(Material.STONE);
+
+        ItemStack decoded = decoded("minecraft:bundle", blob(lists(List.of(base.serialize()),
+                List.of(contained1214("NO_SUCH_ITEM"), contained(stone, lists())))));
+
+        assertEquals(List.of(stone), ((BundleMeta) decoded.getItemMeta()).getItems());
+        assertEquals(0, decoder.failures());
     }
 
     @Test
@@ -299,6 +380,44 @@ public class ServerItemDecoderTest {
             out.add(copy);
         }
         return out;
+    }
+
+    /** A firework effect as CoreProtect's {@code ItemMetaHandler} lists it: flags, colours, fade colours. */
+    private static @NotNull List<List<Map<String, Object>>> effectLists(@NotNull FireworkEffect effect) {
+        Map<String, Object> flags = new HashMap<>();
+        flags.put("type", effect.getType());
+        flags.put("flicker", effect.hasFlicker());
+        flags.put("trail", effect.hasTrail());
+        return new ArrayList<>(List.of(new ArrayList<>(List.of(flags)), colours(effect.getColors()),
+                colours(effect.getFadeColors())));
+    }
+
+    private static @NotNull List<Map<String, Object>> colours(@NotNull List<Color> colours) {
+        List<Map<String, Object>> maps = new ArrayList<>();
+        colours.forEach(colour -> maps.add(new HashMap<>(colour.serialize())));
+        return maps;
+    }
+
+    /** An item inside another, as CoreProtect's {@code ItemUtils.serializeItemStack} writes it. */
+    private static @NotNull Map<String, Object> contained(@NotNull ItemStack item,
+            @NotNull List<List<Map<String, Object>>> metadata) {
+        ItemStack plain = item.clone();
+        plain.setItemMeta(null);
+        Map<String, Object> map = new HashMap<>();
+        map.put("0", new HashMap<>(plain.serialize()));
+        map.put("1", metadata);
+        return map;
+    }
+
+    /** An item inside another without meta, as CoreProtect wrote it on Paper 1.21.4 (data version 4189). */
+    private static @NotNull Map<String, Object> contained1214(@NotNull String type) {
+        Map<String, Object> item = new HashMap<>();
+        item.put("v", 4189);
+        item.put("type", type);
+        Map<String, Object> map = new HashMap<>();
+        map.put("0", item);
+        map.put("1", new ArrayList<>());
+        return map;
     }
 
     private static @NotNull Map<String, Object> map(@NotNull String key, @NotNull Object value) {

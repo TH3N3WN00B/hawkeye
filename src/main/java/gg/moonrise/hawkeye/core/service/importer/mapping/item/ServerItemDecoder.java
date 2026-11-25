@@ -7,7 +7,6 @@ import java.io.ObjectInputFilter;
 import java.io.ObjectInputFilter.FilterInfo;
 import java.io.ObjectInputFilter.Status;
 import java.io.Serializable;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -84,7 +83,7 @@ public final class ServerItemDecoder implements ItemDecoder {
             return failed(material, "the server has no such item", null);
         }
         try {
-            List<List<Map<String, Object>>> lists = lists(read(metadata));
+            List<List<Map<String, Object>>> lists = ItemExtras.lists(read(metadata));
             ItemStack item = new ItemStack(type);
             ItemExtras.apply(item, lists);
             return Optional.of(item);
@@ -116,25 +115,6 @@ public final class ServerItemDecoder implements ItemDecoder {
             in.setObjectInputFilter(FILTER);
             return in.readObject();
         }
-    }
-
-    /** Checks the shape CoreProtect writes and copies it with types the rest can rely on. */
-    private static @NotNull List<List<Map<String, Object>>> lists(@NotNull Object root) {
-        if (!(root instanceof List<?> outer)) {
-            throw new IllegalArgumentException("not a list but " + root.getClass().getSimpleName());
-        }
-        List<List<Map<String, Object>>> lists = new ArrayList<>(outer.size());
-        for (Object inner : outer) {
-            if (!(inner instanceof List<?> maps)) {
-                throw new IllegalArgumentException("an entry is not a list (an older CoreProtect format)");
-            }
-            List<Map<String, Object>> list = new ArrayList<>(maps.size());
-            for (Object map : maps) {
-                list.add(ItemExtras.stringKeys(map));
-            }
-            lists.add(list);
-        }
-        return lists;
     }
 
     private <T> @NotNull Optional<T> failed(@NotNull String material, @NotNull String reason,

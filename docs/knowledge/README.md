@@ -493,6 +493,20 @@ update them in the same change when you learn something durable or an entry stop
   `CustomModelData` resolves to `org.bukkit.craftbukkit.inventory.components.CraftCustomModelDataComponent`
   and passed. MockBukkit's `SkullMetaMock` writes its profile as a plain map, so tests register
   `PlayerProfileMock` with `ConfigurationSerialization` to get a wrapped one.
+- CoreProtect's item lists beyond the meta (`ItemMetaHandler.serialize`, read back by `RollbackUtil
+  .populateItemStack`, CoreProtect 25): a firework rocket or star clears its effects from the meta and
+  appends three lists per effect, `[{type: FireworkEffect.Type, flicker, trail}]`, the colours and the fade
+  colours (an empty list when there are none; CoreProtect counts lists, so the empty one matters). A bundle
+  (`Bukkit_v1_17.getItemMeta`) or crossbow clears its contents and appends one list of
+  `ItemUtils.serializeItemStack` maps: `"0"` is `ItemStack#serialize()` of the item without its meta and
+  `"1"` its own metadata lists. `slot`, `facing` and `modifiers` lists always come last. A blob whose
+  entries are not lists is CoreProtect's oldest format (banner patterns or shulker items straight in the
+  root list); the newest rows of a production database had none.
+- Paper 26.3's `ItemStack.deserialize` hands a map with `schema_version` to `UnsafeValues#deserializeStack`
+  and reads only older maps by `v` (data version) and `type`; CoreProtect wrote nested items on Paper 1.21.4
+  as `{type: ARROW, v: 4189}` (no `amount` when it is 1). MockBukkit's `ItemStack#serialize()` writes the
+  `schema_version` form, so a test of the older form builds the map by hand. An unknown `type` ends in the
+  `ItemStack` constructor's `IllegalArgumentException`.
 - `ImportServiceIntegrationTest` runs the whole import (`ImportScenario`, every row kind) from real engines
   with the same variables as `CoreProtectSourceIntegrationTest`; the server engines are found through a
   written CoreProtect `config.yml`. It hard-links the cached driver jars from `~/.cache/hawkeye-ref/drivers`

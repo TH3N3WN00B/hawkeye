@@ -448,8 +448,10 @@ one `server` row and one `import_state` row per source.
   `ObjectInputFilter` that allows the stream's own objects only `java.lang`, `java.util`, Guava collections
   and `org.bukkit` classes, at most 4 MB; what `ConfigurationSerialization` rebuilds from a wrapped map (a
   head's profile is Paper's `CraftPlayerProfile`) passes when its class is `ConfigurationSerializable` and
-  not `Serializable`, which the stream cannot construct itself. One that does not decode leaves the event
-  without a payload.
+  not `Serializable`, which the stream cannot construct itself. `ItemExtras` puts back what CoreProtect
+  lists beside the meta (colours, effects, patterns, modifiers, firework explosions, and the items inside a
+  bundle or crossbow, each rebuilt the same way). One that does not decode leaves the event without a
+  payload.
 - **Batching.** Mapped events collect into a batch that closes when it holds `archive.segment-events`
   events, when a million rows were consumed without filling one, when every table is read to its end,
   or on cancel. Except at the end it closes only between two seconds of the source (it never splits a
