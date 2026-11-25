@@ -650,8 +650,10 @@ update them in the same change when you learn something durable or an entry stop
 - Jenkins (`ci.moonrise.gg`, `Jenkinsfile`) builds and tests every push. GitHub Actions runs `ci.yml` on
   pushes to `main`, pull requests and by hand (`gh workflow run ci.yml`): the build with every opt-in
   integration test enabled against service containers (MySQL 8.4, MariaDB 11.4, PostgreSQL 17, ClickHouse
-  25.8, DuckDB), then `api_links.py` against each supported paper-api, fetched with Maven. It reaches the
-  servers by `127.0.0.1`, since the test JVM resolves names from `src/test/hosts` only. No real Paper
+  25.8, DuckDB), then `api_links.py` against each supported paper-api, fetched with Maven. The test JVM resolves names from
+  `src/test/hosts` only, so the job reaches the servers by `127.0.0.1` and fetches the DuckDB and ClickHouse
+  drivers (`DriverArtifact`) into `~/.cache/hawkeye-ref/drivers` before the tests; downloading them from a
+  test fails with `UnknownHostException`. No real Paper
   server runs there: the smoke scenarios stay local. `release.yml` only builds release jars.
 - A release is: publish a GitHub release tagged `26.4` (`v26.4` also works). `release.yml` builds
   `-Pversion=26.4` (jar and `verifyPluginJar`, no tests: Jenkins ran them) and attaches `Hawkeye-26.4.jar`.

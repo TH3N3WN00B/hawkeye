@@ -89,7 +89,28 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
 
-      # The test JVM resolves names from src/test/hosts only, so the servers are reached by address.
+      # The test JVM resolves names from src/test/hosts only (localhost), so it cannot download the on-demand
+      # DuckDB and ClickHouse drivers itself: they go into the folder the integration tests read
+      # (~/.cache/hawkeye-ref/drivers), as named and checksummed in DriverArtifact.
+      - name: Fetch the on-demand JDBC drivers
+        shell: python3 {0}
+        run: |
+          import hashlib, pathlib, re, urllib.request
+          source = pathlib.Path("src/main/java/gg/moonrise/hawkeye/core/repository/coreprotect/driver/DriverArtifact.java")
+          pattern = re.compile(r'new DriverArtifact\(\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]+)",\s*"([^"]*)",\s*"([0-9a-fA-F]{64})"')
+          artifacts = pattern.findall(source.read_text(encoding="utf-8"))
+          assert artifacts, "no DriverArtifact constants found"
+          folder = pathlib.Path.home() / ".cache" / "hawkeye-ref" / "drivers"
+          folder.mkdir(parents=True, exist_ok=True)
+          for group, artifact, version, classifier, sha256 in artifacts:
+              name = f"{artifact}-{version}" + (f"-{classifier}" if classifier else "") + ".jar"
+              url = f"https://repo1.maven.org/maven2/{group.replace('.', '/')}/{artifact}/{version}/{name}"
+              data = urllib.request.urlopen(url, timeout=120).read()
+              assert hashlib.sha256(data).hexdigest() == sha256.lower(), f"checksum mismatch for {name}"
+              (folder / name).write_bytes(data)
+              print(f"{name}: {len(data)} bytes")
+
+      # The servers are reached by address for the same reason.
       - name: Build and test
         env:
           HAWKEYE_TEST_MYSQL: mysql://hawkeye:hawkeye@127.0.0.1:3306/hawkeye
