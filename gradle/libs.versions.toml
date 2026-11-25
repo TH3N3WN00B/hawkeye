@@ -1,6 +1,10 @@
 [versions]
 shadow = "9.6.1"
+# The newest Paper API: the newerApi source set and the tests compile against it.
 paper = "26.3.build.249-stable"
+# The oldest supported Paper API: main compiles against it, and paper-plugin.yml's api-version names it
+# (verifyPluginJar checks both agree). Raising it drops support for the servers below it.
+paperOldest = "1.21.1-R0.1-SNAPSHOT"
 lombok = "1.18.48"
 jetbrainsAnnotations = "26.1.0"
 
@@ -32,6 +36,7 @@ archunit = "1.5.1"
 
 [libraries]
 paper = { module = "io.papermc.paper:paper-api", version.ref = "paper" }
+paperOldest = { module = "io.papermc.paper:paper-api", version.ref = "paperOldest" }
 lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
 jetbrainsAnnotations = { module = "org.jetbrains:annotations", version.ref = "jetbrainsAnnotations" }
 

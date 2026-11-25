@@ -6,7 +6,7 @@
 
 **Dev builds:** https://ci.moonrise.gg/job/hawkeye/job/main/lastSuccessfulBuild/
 
-Block and action logging for Paper and Folia 26.3, with lookups, an inspector, rollbacks and
+Block and action logging for Paper and Folia 1.21.1 to 26.3, with lookups, an inspector, rollbacks and
 restores, on one server or across a network of servers. A ground-up alternative to CoreProtect
 focused on clean code, compact storage, multi-server operation and fast reads.
 
@@ -31,12 +31,34 @@ types and timing (the worst case for compression), written in each layout on SQL
 
 ## Requirements
 
-- Paper or Folia 26.3 (`api-version: '26.3'`), Java 25.
+- Paper or Folia 1.21.1 to 1.21.11, 26.1.2 or 26.3, all from the same jar (`api-version: '1.21.1'`), on the
+  Java the server needs: 21 for 1.21.x, 25 for 26.x. Newer API is used where the server has it; see
+  [Server versions](#server-versions) for what an older server records differently.
 - Nothing else for a single server: the default database is an SQLite file in the plugin folder.
 - MySQL 8+, MariaDB 10.6+ or PostgreSQL 13+ to share a database between servers; Redis (optional)
   for instant network jobs.
 - On first start the server downloads Hawkeye's libraries (Spring, Moss, Cloud, ConfigLib, HikariCP,
   the JDBC drivers, Caffeine, Lettuce) through Paper's library loader; nothing is shaded into the jar.
+
+### Server versions
+
+Hawkeye decides once at startup which Paper API the server has. On 26.3 everything below is recorded
+in full; an older server records the same actions, with these differences:
+
+| What | Full from | On older servers |
+|---|---|---|
+| Mobs released from a bucket by a dispenser | 1.21.4 (the `BUCKET` spawn reason) | recorded under `#spawn_egg` instead of `#dispenser` (a player's bucket is still blamed on the player) |
+| Items on shelves | 1.21.9 (the block) | nothing to record: shelves do not exist |
+| Crafted items | 1.21.11 (Paper's crafted-item event) | counted from the click: exact for a click, a number key, the off-hand key and the drop key; a shift-click counts the crafts the ingredients and the free inventory space allow; control-drop counts one craft |
+| Boats and minecarts destroyed without an attacker | 26.1.2 (the damage source) | blamed on `#unknown` instead of the damage type (`#lava`, `#cactus`) |
+| Golems and withers built by a player | 26.2 (the construct event) | the entity is recorded as spawned by its builder and tagged with them, as on 26.2, but the pattern blocks the build used up are not recorded as broken |
+| Cushions | 26.3 | nothing to record: cushions do not exist |
+
+Item and entity data carry the Minecraft version that wrote them and are upgraded when a newer server
+reads them; an older server cannot read data from a newer one. On a network of mixed versions, roll back
+items and entities (container contents, kills, removed entities) on a server at least as new as the one
+that recorded them. The CoreProtect import rebuilds CoreProtect's item metadata with the running server,
+so a database CoreProtect wrote under 1.21.1 imports most faithfully on a 1.21.1 server.
 
 ## Commands
 
@@ -300,6 +322,15 @@ tests are skipped without them.
 `scripts/smoke/run.py <server-dir> scripts/smoke/tnt-rollback.txt` boots a real Paper server with the
 jar and runs a console scenario: TNT damage is recorded, looked up, rolled back, restored and undone,
 with the world checked by `/execute if block` after each step.
+
+One jar serves every supported server. `src/main` compiles against the oldest supported Paper API
+(paper-api 1.21.1, `paperOldest` in `gradle/libs.versions.toml`) for Java 21, so it cannot use anything
+newer. Code that needs a newer API lives in `src/newerApi`, compiles against the newest API, and carries
+`@ConditionalOnApi` naming what it needs (`util.compat.NewerApi`); Spring registers it only on a server
+that has it, and a fallback in `src/main` carries `@ConditionalOnMissingApi`. The tests run on the newest
+API. `verifyPluginJar` checks that every class is Java 21 bytecode and that `api-version` names the
+oldest API; `scripts/compat/api_links.py` checks that every Paper call in the build output exists on a
+given server's API.
 
 ### CI and releases
 

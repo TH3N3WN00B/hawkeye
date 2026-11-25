@@ -139,7 +139,19 @@ second release in a quarter).
   action other than `CONTAINER_DEPOSIT` and `CONTAINER_WITHDRAW`. `a:container`, `+container` and
   `-container` include them (a rollback still changes only container blocks and entities); `a:virtual`,
   `+virtual` and `-virtual` (also `enderchest`, `ender-chest`, `vault`, `vaults`) look up only them.
+- Paper and Folia 1.21.1 to 1.21.11 and 26.1.2, besides 26.3, from the same jar. Hawkeye decides once at
+  startup which newer API the server has, so the capture path checks nothing per event. On older servers:
+  a mob a dispenser releases from a bucket is recorded under `#spawn_egg` before 1.21.4; crafted items are
+  counted from the click before 1.21.11 (a shift-click counts the crafts the ingredients and the free
+  inventory space allow, control-drop one craft); a boat or minecart destroyed without an attacker is
+  blamed on `#unknown` before 26.1.2; a golem or wither built by a player is recorded as spawned by them,
+  without the pattern blocks it used up, before 26.2. Shelves (1.21.9) and cushions (26.3) are recorded
+  where they exist. README's "Server versions" lists it.
 ### Changed
+
+- `paper-plugin.yml` declares `api-version: '1.21.1'` (was `26.3`), and every class is Java 21 bytecode so
+  the jar loads on Java 21 (1.21.x servers). The build still runs on Java 25: `src/main` compiles against
+  paper-api 1.21.1, the new `src/newerApi` and the tests against 26.3.
 
 - Versions are year.quarter: a stable release is `26.4`, a Jenkins build `26.4.B<build>` (`26.4.B25`), any other
   build `26.4-SNAPSHOT`. Release tags are `26.4` (or `26.4.1` for a second release in a quarter) instead of

@@ -37,6 +37,7 @@ import org.jetbrains.annotations.Nullable;
 public final class BlockItemListener implements Listener {
 
     private final @NotNull EventRecorder recorder;
+    private final @NotNull BlockItems blockItems;
     private final @NotNull ServerThreads threads;
     private final Set<PendingBlock> pending = ConcurrentHashMap.newKeySet();
 
@@ -49,11 +50,11 @@ public final class BlockItemListener implements Listener {
     public void onInteract(@NotNull PlayerInteractEvent event) {
         Block block = event.getClickedBlock();
         if (block == null || event.getAction() != org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK
-                || event.useInteractedBlock() == Event.Result.DENY || !BlockItems.holdsItems(block.getType())
+                || event.useInteractedBlock() == Event.Result.DENY || !blockItems.holdsItems(block.getType())
                 || !recorder.enabled(LogCategory.CONTAINERS, block.getWorld())) {
             return;
         }
-        Optional<@Nullable ItemStack @NotNull []> contents = BlockItems.contents(block.getState());
+        Optional<@Nullable ItemStack @NotNull []> contents = blockItems.contents(block.getState());
         World world = block.getWorld();
         PendingBlock key = new PendingBlock(world.getUID(), block.getX(), block.getY(), block.getZ());
         if (contents.isEmpty() || !pending.add(key)) {
@@ -63,7 +64,7 @@ public final class BlockItemListener implements Listener {
         Actor actor = Actors.of(event.getPlayer());
         threads.runAtChunk(world, block.getX() >> 4, block.getZ() >> 4, () -> {
             pending.remove(key);
-            BlockItems.contents(block.getState()).ifPresent(after -> record(actor, block, before, after));
+            blockItems.contents(block.getState()).ifPresent(after -> record(actor, block, before, after));
         });
     }
 

@@ -21,7 +21,8 @@ public class PaperPluginYmlTest {
         Map<String, Object> yml = load();
         assertEquals(HawkeyePlugin.class.getName(), yml.get("main"));
         assertEquals(HawkeyePluginLoader.class.getName(), yml.get("loader"));
-        assertEquals("26.3", yml.get("api-version"));
+        // The oldest supported server: main compiles against its API (verifyPluginJar checks the two agree).
+        assertEquals("1.21.1", yml.get("api-version"));
         assertEquals(true, yml.get("folia-supported"));
         assertFalse(String.valueOf(yml.get("version")).contains("${"), "version is expanded");
     }

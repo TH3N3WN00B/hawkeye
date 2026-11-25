@@ -1,5 +1,9 @@
 package gg.moonrise.hawkeye.core.service.rollback.apply;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import org.bukkit.Art;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.BlockFace;
@@ -19,6 +23,13 @@ import org.jetbrains.annotations.NotNull;
 public final class RespawnLocations {
 
     private static final double HALF = 0.5;
+
+    /*
+     * Art turned from an enum into an interface in Paper 1.21.3: a call compiled against the oldest API is an
+     * invokevirtual that fails on an interface. Handles looked up once call it either way.
+     */
+    private static final MethodHandle ART_WIDTH = artSize("getBlockWidth");
+    private static final MethodHandle ART_HEIGHT = artSize("getBlockHeight");
 
     private RespawnLocations() {
     }
@@ -40,8 +51,8 @@ public final class RespawnLocations {
         }
         own.setWorld(world);
         if (entity instanceof Painting painting) {
-            return anchor(own, painting.getFacing(), painting.getArt().getBlockWidth(),
-                    painting.getArt().getBlockHeight());
+            Art art = painting.getArt();
+            return anchor(own, painting.getFacing(), size(ART_WIDTH, art), size(ART_HEIGHT, art));
         }
         return own;
     }
@@ -61,5 +72,21 @@ public final class RespawnLocations {
         double up = height % 2 == 0 ? HALF : 0;
         // Counter-clockwise of a horizontal facing (x, z) is (z, -x).
         return centre.clone().subtract(facing.getModZ() * along, up, -facing.getModX() * along);
+    }
+
+    private static @NotNull MethodHandle artSize(@NotNull String name) {
+        try {
+            return MethodHandles.publicLookup().findVirtual(Art.class, name, MethodType.methodType(int.class));
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Art#" + name + " is missing", e);
+        }
+    }
+
+    private static int size(@NotNull MethodHandle handle, @NotNull Art art) {
+        try {
+            return (int) handle.invokeExact(art);
+        } catch (Throwable e) {
+            throw new IllegalStateException("Could not read a painting's size", e);
+        }
     }
 }

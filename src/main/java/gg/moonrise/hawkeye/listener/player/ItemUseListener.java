@@ -5,7 +5,6 @@ import gg.moonrise.hawkeye.core.service.capture.Actors;
 import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
 import gg.moonrise.hawkeye.entity.action.Action;
 import gg.moonrise.moss.spring.SpringComponent;
-import io.papermc.paper.event.inventory.ItemCraftedEvent;
 import io.papermc.paper.event.player.PlayerTradeEvent;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -23,28 +22,16 @@ import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * Items players make, buy and use up, recorded where the player stands: crafted results they take
- * ({@link LogCategory#CRAFTING}), villager and wandering trader purchases ({@link LogCategory#TRADES}),
- * and ({@link LogCategory#ITEM_USE}) items they throw or shoot and tools that wear out.
+ * Items players buy and use up, recorded where the player stands: villager and wandering trader purchases
+ * ({@link LogCategory#TRADES}), and ({@link LogCategory#ITEM_USE}) items they throw or shoot and tools that
+ * wear out. Crafted items are recorded by {@code CraftListener} or, on servers before 1.21.11,
+ * {@link CraftClickListener}.
  */
 @SpringComponent
 @RequiredArgsConstructor
 public final class ItemUseListener implements Listener {
 
     private final @NotNull EventRecorder recorder;
-
-    /**
-     * Records a crafted item the player takes from the result slot, with the crafted count.
-     *
-     * @param event the event
-     */
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onCraft(@NotNull ItemCraftedEvent event) {
-        Player player = event.getPlayer();
-        if (recorder.enabled(LogCategory.CRAFTING, player.getWorld())) {
-            recorder.item(Action.ITEM_CRAFT, Actors.of(player), player.getLocation(), event.getCraftedItem());
-        }
-    }
 
     /**
      * Records the result of a trade, with its count.
@@ -91,7 +78,7 @@ public final class ItemUseListener implements Listener {
     private static @NotNull Optional<ItemStack> carried(@NotNull Projectile projectile) {
         return switch (projectile) {
             // Every elytra boost launches one; they would drown the throws.
-            case Firework _ -> Optional.empty();
+            case Firework firework -> Optional.empty();
             case AbstractArrow arrow -> Optional.of(arrow.getItemStack());
             case ThrowableProjectile thrown -> Optional.of(thrown.getItem());
             default -> Optional.empty();

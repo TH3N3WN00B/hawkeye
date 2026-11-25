@@ -8,14 +8,18 @@ import gg.moonrise.moss.spring.SpringComponent;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
+import org.bukkit.Registry;
 import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
@@ -47,6 +51,7 @@ public final class WorldWriter {
     private static final int SIGN_LINES = 4;
 
     private final @NotNull JavaPlugin plugin;
+    private final @NotNull EntityBytes entityBytes;
 
     /** What a change did. */
     public enum Effect {
@@ -181,8 +186,8 @@ public final class WorldWriter {
         }
     }
 
-    private static boolean spawn(@NotNull World world, @NotNull PlannedChange change, byte @NotNull [] bytes) {
-        Entity entity = EntityBytes.deserialize(bytes, world);
+    private boolean spawn(@NotNull World world, @NotNull PlannedChange change, byte @NotNull [] bytes) {
+        Entity entity = entityBytes.deserialize(bytes, world);
         if (!entity.spawnAt(RespawnLocations.of(entity, world, change.x(), change.y(), change.z()))) {
             return false;
         }
@@ -199,9 +204,17 @@ public final class WorldWriter {
         entity.setFallDistance(0);
         entity.setFireTicks(0);
         if (entity instanceof LivingEntity living && living.getHealth() <= 0) {
-            AttributeInstance maxHealth = living.getAttribute(Attribute.MAX_HEALTH);
-            living.setHealth(maxHealth == null ? 1 : maxHealth.getValue());
+            living.setHealth(maxHealth().map(living::getAttribute).map(AttributeInstance::getValue).orElse(1.0));
         }
+    }
+
+    /**
+     * The max health attribute, looked up by key: Minecraft 1.21.2 renamed it from {@code generic.max_health}
+     * to {@code max_health}, and Paper renamed the constant with it.
+     */
+    private static @NotNull Optional<Attribute> maxHealth() {
+        return Stream.of("max_health", "generic.max_health").map(NamespacedKey::minecraft)
+                .map(Registry.ATTRIBUTE::get).filter(Objects::nonNull).findFirst();
     }
 
     /** Removes an entity owned by the current region; players are never removed. */
