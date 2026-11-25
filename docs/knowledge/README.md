@@ -509,6 +509,14 @@ update them in the same change when you learn something durable or an entry stop
 - Moss lifecycle: `Loadable` (after the context refresh in `onLoad`), `Enableable`, `Disableable` and
   the engine's `Reloadable` (run by `PaperPlugin.reload()`); `@PostConstruct` works. Every `Listener`
   bean is registered at enable.
+- Dependabot bumps only `gradle/libs.versions.toml`. `HawkeyePluginLoader.LIBRARIES` holds the runtime
+  library coordinates by hand, so a Dependabot pull request that moves HikariCP, sqlite-jdbc, MariaDB,
+  PostgreSQL, Caffeine, Lettuce or zstd-jni fails `HawkeyePluginLoaderTest` until the loader moves with it
+  (verified 2026-11-25 on ericlmao/hawkeye#13).
+- paper-api `26.3.build.256-stable` adds the `minecraft:world_clock` registry; MockBukkit `mockbukkit-v26.3`
+  4.122.0 up to 4.125.0 has no data for it, so `MockBukkit.mock()` throws `InternalDataLoadException`
+  ("Null JSON element while retrieving `minecraft:world_clock`") and every MockBukkit test fails. paper-api
+  stays at build 249 until a MockBukkit release knows the registry (verified 2026-11-25).
 - `processResources` expands `${version}` in `paper-plugin.yml`; `release.yml` passes `-Pversion=<tag>`.
 - CI pins `gradle/actions/setup-gradle@v5` on purpose. v6 (2026-03) moved caching into the closed-source
   `gradle-actions-caching` component; using v6 accepts the Gradle Terms of Use. Dependabot ignores

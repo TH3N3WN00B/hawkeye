@@ -17,13 +17,13 @@ public final class HawkeyePluginLoader extends PaperPluginLoader {
 
     /** Hawkeye's runtime libraries, {@code group:artifact:version}. */
     public static final List<String> LIBRARIES = List.of(
-            "com.zaxxer:HikariCP:7.0.2",
-            "org.xerial:sqlite-jdbc:3.50.3.0",
-            "org.mariadb.jdbc:mariadb-java-client:3.5.1",
-            "org.postgresql:postgresql:42.7.13",
-            "com.github.ben-manes.caffeine:caffeine:3.2.3",
-            "io.lettuce:lettuce-core:6.5.1.RELEASE",
-            "com.github.luben:zstd-jni:1.5.7-6");
+            "com.zaxxer:HikariCP:7.1.0",
+            "org.xerial:sqlite-jdbc:3.54.1.0",
+            "org.mariadb.jdbc:mariadb-java-client:4.0.0",
+            "org.postgresql:postgresql:42.7.14",
+            "com.github.ben-manes.caffeine:caffeine:3.3.1",
+            "io.lettuce:lettuce-core:7.9.0.RELEASE",
+            "com.github.luben:zstd-jni:1.5.7-28");
 
     @Override
     public @NotNull List<String> libraries() {
