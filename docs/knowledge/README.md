@@ -346,14 +346,36 @@ update them in the same change when you learn something durable or an entry stop
   the server's component format on 26.x. Not run on 1.21.x: `kill-rollback.txt` and
   `growth-and-physics.txt` (26.x commands); not run anywhere: Folia.
 - CoreProtect item metadata is rebuilt by the running server's `ConfigurationSerialization`, which knows only
-  its own Minecraft version's ids and component format plus what its data fixers upgrade. The newest rows of
-  a production CoreProtect 25 database (2026-11-01 to 11-25, CoreProtect schema 2.24.1; 54,924 item blobs
-  in 60,000 container and 40,000 item rows) imported 124,950 events on each version, with blobs that could
-  not be rebuilt: 1.21.1 14,312 (it does not know `minecraft:max_health` without `generic.`, `white_bundle`),
-  1.21.4 4,929, 1.21.11, 26.1.2 and 26.3 5,436 each (they reject the 1.21.2-1.21.4 format: attribute
-  `modifiers` lists, enchantment `levels`, `hide_additional_tooltip`). On 1.21.4 Paper logged no
-  deserialization error at all, so those rows were written by a 1.21.2-1.21.4 server, and the 4,929 left
-  there fail Hawkeye's own checks before Paper sees them (`ServerItemDecoder` logs those at DEBUG only).
+  its own Minecraft version's ids and component format: a meta map carries no data version, so Paper runs no
+  data fixer on it (only a contained item's `v` is upgraded, never downgraded). The newest rows of a
+  production CoreProtect 25 database (2026-11-01 to 11-25, CoreProtect schema 2.24.1; 54,949 item blobs in
+  60,000 container, 40,000 item and 81 entity-container rows, written by a 1.21.2-1.21.4 server) imported
+  124,950 events on each version. Blobs that could not be rebuilt, before and after the head and
+  contents fixes (verified 2026-11-25):
+  - 1.21.4: 4,929 before, 0 after. All 4,929 were the filter rejecting the wrapped `PlayerProfile` (4,918
+    heads, 11 bundles holding heads).
+  - 1.21.11, 26.1.2, 26.3: 5,436 before, 774 after. Left: 372 metas (267 heads, 105 netherite armour and
+    tools) whose `unhandled` NBT holds `minecraft:dyed_color {rgb, show_in_tooltip}`, which Paper's
+    `CraftMetaItem(Map)` fails on with `NoSuchElementException` from an `Optional.get()`; 386 shulker boxes
+    whose `internal` `block-entity-components` items use enchantment `levels`, `show_in_tooltip`, attribute
+    `modifiers` lists and `hide_additional_tooltip` (all changed in 1.21.5); and 16 `minecraft:chain`, which
+    1.21.9 renamed `iron_chain` (`Material.matchMaterial` knows only the new name). No item inside a bundle
+    or crossbow was left out.
+  - 1.21.1: 14,312 before, 9,394 after. Left: 9,041 blobs with a `CustomModelData` value (the 1.21.4 component;
+    `Specified class does not exist ('CustomModelData')`), 342 metas with 1.21.2+ ids (attributes without
+    `generic.`, `white_bundle`), 11 `cyan_bundle` (no such item); and 1,220 items inside bundles and crossbows
+    left out ("Newer version! Server downgrades are not supported!", data version 4189).
+  Nothing that fails is Hawkeye's check any more: it is the importing server not reading another version's
+  format. Rolled back on 1.21.4 from that import (world renamed `mundo` for the run, `a:-container` by one
+  user each), a head came back with its `minecraft:profile` textures, a crossbow with
+  `charged_projectiles`, five bundles with `bundle_contents` (heads inside) and a firework star with its
+  `firework_explosion`.
+- Measuring why blobs fail on a real server: `ServerItemDecoder` and `ItemExtras` log each failure at DEBUG.
+  Start the server with `-Dlog4j.configurationFile=<copy of the server jar's log4j2.xml>` plus a `File`
+  appender and `<Logger name="gg.moonrise.hawkeye.core.service.importer.mapping.item" level="debug"
+  additivity="false">`; take each version's own `log4j2.xml` from `versions/<v>/paper-<v>.jar` (1.21.x and
+  26.x differ: 26.x has no rewrite appenders). Paper's own reason is the `Could not call method ... for
+  deserialization` error in `latest.log`.
 - Paper 1.21.1 (server bytecode): `MobBucketItem` spawns with `MobSpawnType.BUCKET`, and
   `EntityType#spawn` turns every type but `DISPENSER` into `SpawnReason.SPAWNER_EGG`, so a mob from a
   bucket arrives as from a spawn egg (still recorded, under the remembered bucket user else `#spawn_egg`).

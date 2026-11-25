@@ -58,10 +58,12 @@ Item and entity data carry the Minecraft version that wrote them and are upgrade
 reads them; an older server cannot read data from a newer one. On a network of mixed versions, roll back
 items and entities (container contents, kills, removed entities) on a server at least as new as the one
 that recorded them. The CoreProtect import rebuilds CoreProtect's item metadata with the running server,
-which reads its own Minecraft version's format and upgrades most older ones, but fails on ids and formats
-newer than itself: import on a server of the version CoreProtect wrote the history on, or a newer one. On one
-production server's November 2026 history (54,924 item blobs written on 1.21.2-1.21.4), 1.21.4 could not
-rebuild 4,929, 1.21.11 to 26.3 5,436 each, and 1.21.1 14,312.
+which reads its own Minecraft version's format, fails on ids and formats newer than itself, and does not
+upgrade every older one (CoreProtect stores item metadata without a data version): import on a server of the
+version CoreProtect wrote the history on. On one production server's November 2026 history (54,949 item
+blobs written on 1.21.2-1.21.4), 1.21.4 rebuilt every one; 1.21.11 to 26.3 all but 774 (1.21.4-format
+components of dyed items and shulker box contents, and `chain`, which 1.21.9 renamed `iron_chain`); 1.21.1
+all but 9,394.
 
 ## Commands
 
