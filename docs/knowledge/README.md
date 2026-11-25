@@ -485,7 +485,14 @@ update them in the same change when you learn something durable or an entry stop
   makes `isPluginEnabled("CoreProtect")` true.
 - An `ObjectInputFilter` set on a `BukkitObjectInputStream` applies to everything it reads, wrapped
   `ConfigurationSerializable` values included: a `java.io.File` in a blob is rejected with
-  `InvalidClassException` before it is constructed.
+  `InvalidClassException` before it is constructed. The JDK also checks the object `resolveObject` returns
+  (`ObjectInputStream.checkResolve`), which for a wrapped value is what `ConfigurationSerialization` built:
+  the server's own class, often outside `org.bukkit`. A head's `skull-owner` is Paper's
+  `com.destroystokyo.paper.profile.CraftPlayerProfile` (alias `PlayerProfile`); `org.bukkit.**` alone
+  rejected it with `InvalidClassException: filter status: REJECTED` (verified 2026-11-25 on Paper 1.21.4).
+  `CustomModelData` resolves to `org.bukkit.craftbukkit.inventory.components.CraftCustomModelDataComponent`
+  and passed. MockBukkit's `SkullMetaMock` writes its profile as a plain map, so tests register
+  `PlayerProfileMock` with `ConfigurationSerialization` to get a wrapped one.
 - `ImportServiceIntegrationTest` runs the whole import (`ImportScenario`, every row kind) from real engines
   with the same variables as `CoreProtectSourceIntegrationTest`; the server engines are found through a
   written CoreProtect `config.yml`. It hard-links the cached driver jars from `~/.cache/hawkeye-ref/drivers`

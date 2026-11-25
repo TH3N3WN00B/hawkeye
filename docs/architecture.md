@@ -445,8 +445,11 @@ one `server` row and one `import_state` row per source.
   imported and captured events share `type` rows. Sign rows carry no material: the mapper remembers
   each sign block's state per position, folds the "before" snapshot into the next edit and a broken
   sign's text into its block break. Item blobs are read with `BukkitObjectInputStream` behind an
-  `ObjectInputFilter` that allows only `java.lang`, `java.util`, Guava collections and `org.bukkit`
-  classes, at most 4 MB; one that does not decode leaves the event without a payload.
+  `ObjectInputFilter` that allows the stream's own objects only `java.lang`, `java.util`, Guava collections
+  and `org.bukkit` classes, at most 4 MB; what `ConfigurationSerialization` rebuilds from a wrapped map (a
+  head's profile is Paper's `CraftPlayerProfile`) passes when its class is `ConfigurationSerializable` and
+  not `Serializable`, which the stream cannot construct itself. One that does not decode leaves the event
+  without a payload.
 - **Batching.** Mapped events collect into a batch that closes when it holds `archive.segment-events`
   events, when a million rows were consumed without filling one, when every table is read to its end,
   or on cancel. Except at the end it closes only between two seconds of the source (it never splits a

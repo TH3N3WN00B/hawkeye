@@ -213,6 +213,10 @@ second release in a quarter).
   instead of 0.
 - A failing estimate of the rows left (a ClickHouse count that times out) keeps the previous estimate
   instead of failing the import.
+- The CoreProtect import rebuilds player heads, and bundles holding them, with their owner and skin. The
+  item filter rejected the profile `ConfigurationSerialization` rebuilds from the blob (Paper's
+  `CraftPlayerProfile`, outside `org.bukkit`), so every such blob counted as undecodable: all 4,929 that
+  Paper 1.21.4 could not rebuild from the newest rows of a production CoreProtect 25 database.
 - Items a hopper, hopper minecart or dropper moves into or out of a container while a player has it open
   are no longer recorded as that player's deposits and withdrawals (also with `logging.hoppers` off), so
   rolling the player back no longer duplicates or deletes them. What the player moved before the

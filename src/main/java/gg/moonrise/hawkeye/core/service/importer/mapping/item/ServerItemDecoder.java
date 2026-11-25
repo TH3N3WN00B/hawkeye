@@ -4,6 +4,9 @@ import gg.moonrise.hawkeye.util.serialize.ItemBytes;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.ObjectInputFilter;
+import java.io.ObjectInputFilter.FilterInfo;
+import java.io.ObjectInputFilter.Status;
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +14,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import lombok.extern.slf4j.Slf4j;
 import org.bukkit.Material;
+import org.bukkit.configuration.serialization.ConfigurationSerializable;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.io.BukkitObjectInputStream;
 import org.jetbrains.annotations.NotNull;
@@ -19,8 +23,8 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Decodes CoreProtect's item metadata: {@code BukkitObjectOutputStream.writeObject} of a
  * {@code List<List<Map<String, Object>>>} whose first map is {@code ItemMeta#serialize()} and whose
- * further lists hold what CoreProtect took out of it ({@link ItemExtras}). The stream only resolves
- * {@code java.lang}, {@code java.util}, Guava's immutable collections and {@code org.bukkit} classes
+ * further lists hold what CoreProtect took out of it ({@link ItemExtras}). The stream's own objects may only
+ * be {@code java.lang}, {@code java.util}, Guava's immutable collections and {@code org.bukkit} classes
  * ({@link #FILTER}), so a blob cannot make the server load or construct anything else; a blob over
  * {@link #MAX_BYTES} is not read. Every failure is logged at DEBUG and counted, never thrown.
  */
@@ -30,10 +34,23 @@ public final class ServerItemDecoder implements ItemDecoder {
     /** The largest blob decoded. */
     public static final int MAX_BYTES = 4 * 1024 * 1024;
 
-    /** What the object stream may resolve, and how deep, many and large it may get. */
-    public static final ObjectInputFilter FILTER = ObjectInputFilter.Config.createFilter("maxdepth=32;"
-            + "maxrefs=100000;maxarray=100000;maxbytes=" + MAX_BYTES + ";java.lang.*;java.util.*;"
-            + "com.google.common.collect.*;org.bukkit.**;!*");
+    /** How deep, many and large the object stream may get. */
+    private static final ObjectInputFilter LIMITS = ObjectInputFilter.Config.createFilter("maxdepth=32;"
+            + "maxrefs=100000;maxarray=100000;maxbytes=" + MAX_BYTES);
+
+    /** The classes the stream's own objects may have. */
+    private static final ObjectInputFilter CLASSES = ObjectInputFilter.Config.createFilter("java.lang.*;"
+            + "java.util.*;com.google.common.collect.*;org.bukkit.**;!*");
+
+    /**
+     * What the object stream may resolve: {@link #LIMITS} and {@link #CLASSES}, and the objects
+     * {@code BukkitObjectInputStream} rebuilds from a wrapped map with {@code ConfigurationSerialization},
+     * which the JDK checks as well and which may be the server's own classes (a head's {@code skull-owner} is
+     * Paper's {@code com.destroystokyo.paper.profile.CraftPlayerProfile}). Those are let through by kind: a
+     * class that is {@code ConfigurationSerializable} but not {@code Serializable}, which the stream cannot
+     * construct itself; only a class the server registered for configuration serialization is ever built.
+     */
+    public static final ObjectInputFilter FILTER = ServerItemDecoder::check;
 
     private final AtomicLong failures = new AtomicLong();
 
@@ -79,6 +96,18 @@ public final class ServerItemDecoder implements ItemDecoder {
     @Override
     public long failures() {
         return failures.get();
+    }
+
+    private static @NotNull Status check(@NotNull FilterInfo info) {
+        if (LIMITS.checkInput(info) == Status.REJECTED) {
+            return Status.REJECTED;
+        }
+        Class<?> type = info.serialClass();
+        if (type != null && !type.isArray() && ConfigurationSerializable.class.isAssignableFrom(type)
+                && !Serializable.class.isAssignableFrom(type)) {
+            return Status.ALLOWED;
+        }
+        return CLASSES.checkInput(info);
     }
 
     @SuppressWarnings("deprecation")

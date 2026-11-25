@@ -4,18 +4,22 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.destroystokyo.paper.profile.PlayerProfile;
 import gg.moonrise.hawkeye.util.serialize.ItemBytes;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InvalidClassException;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Color;
 import org.bukkit.DyeColor;
@@ -25,6 +29,8 @@ import org.bukkit.Registry;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.block.banner.Pattern;
+import org.bukkit.configuration.serialization.ConfigurationSerializable;
+import org.bukkit.configuration.serialization.ConfigurationSerialization;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.inventory.EquipmentSlotGroup;
 import org.bukkit.inventory.ItemStack;
@@ -43,6 +49,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockbukkit.mockbukkit.MockBukkit;
+import org.mockbukkit.mockbukkit.profile.PlayerProfileMock;
 
 /**
  * CoreProtect's item blobs, built the way its {@code ItemMetaHandler} writes them, decoded on
@@ -206,6 +213,57 @@ public class ServerItemDecoderTest {
     }
 
     @Test
+    @SuppressWarnings("deprecation")
+    public void aWrappedValueTheServerRebuildsPassesTheFilter() throws IOException, ClassNotFoundException {
+        // Paper rebuilds a head's wrapped skull-owner as its CraftPlayerProfile; MockBukkit's profile is the
+        // same kind of class: configuration-serializable, not Serializable, outside org.bukkit.
+        ConfigurationSerialization.registerClass(PlayerProfileMock.class);
+        try {
+            UUID id = UUID.fromString("069a79f4-44e9-4726-a5be-fca90e38aaf5");
+            List<Object> blob = new ArrayList<>(List.of(new PlayerProfileMock("Notch", id)));
+            try (BukkitObjectInputStream in = new BukkitObjectInputStream(new ByteArrayInputStream(blob(blob)))) {
+                in.setObjectInputFilter(ServerItemDecoder.FILTER);
+                List<?> read = (List<?>) in.readObject();
+                PlayerProfile profile = (PlayerProfile) read.getFirst();
+                assertEquals("Notch", profile.getName());
+                assertEquals(id, profile.getId());
+            }
+        } finally {
+            ConfigurationSerialization.unregisterClass(PlayerProfileMock.class);
+        }
+    }
+
+    @Test
+    public void aMetaMapHoldingAValueTheServerRebuiltDecodes() throws IOException {
+        ConfigurationSerialization.registerClass(PlayerProfileMock.class);
+        try {
+            ItemMeta meta = new ItemStack(Material.STICK).getItemMeta();
+            meta.displayName(Component.text("Wand"));
+            Map<String, Object> map = new HashMap<>(meta.serialize());
+            map.put("skull-owner", new PlayerProfileMock("Notch", UUID.randomUUID()));
+
+            ItemStack decoded = rebuilt("minecraft:stick", blob(lists(List.of(map))));
+
+            assertEquals(Component.text("Wand"), decoded.getItemMeta().displayName());
+        } finally {
+            ConfigurationSerialization.unregisterClass(PlayerProfileMock.class);
+        }
+    }
+
+    @Test
+    public void aSerializableValueOutsideTheAllowListIsRejectedEvenWhenConfigurationSerializable()
+            throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (ObjectOutputStream out = new ObjectOutputStream(bytes)) {
+            out.writeObject(new ArrayList<>(List.of(new ArrayList<>(List.of(new HashMap<>(
+                    Map.of("value", new SerializableValue("x"))))))));
+        }
+
+        assertEquals(Optional.empty(), decoder.decode("minecraft:stick", bytes.toByteArray()));
+        assertEquals(1, decoder.failures());
+    }
+
+    @Test
     public void truncatedOversizedAndForeignBlobsFailQuietly() throws IOException {
         ItemMeta meta = new ItemStack(Material.STICK).getItemMeta();
         meta.displayName(Component.text("Wand"));
@@ -256,5 +314,14 @@ public class ServerItemDecoderTest {
             out.writeObject(value);
         }
         return bytes.toByteArray();
+    }
+
+    /** A value the stream itself could construct, so the allow-list decides. */
+    private record SerializableValue(@NotNull String value) implements ConfigurationSerializable, Serializable {
+
+        @Override
+        public @NotNull Map<String, Object> serialize() {
+            return Map.of("value", value);
+        }
     }
 }
