@@ -71,7 +71,8 @@ public final class StorageSettings {
     @SerializeWith(serializer = TextValueSerializer.class)
     private String password = "${" + PASSWORD_VARIABLE + "}";
 
-    @Comment("Extra driver parameters, e.g. sslMode: verify-full. Values may use ${NAME} as well.")
+    @Comment({"Extra driver parameters, e.g. sslMode: verify-full. Values may use ${NAME} as well.",
+            "MySQL and MariaDB connect without TLS (sslMode: disable) unless sslMode or useSsl is set here."})
     @Getter(AccessLevel.NONE)
     @ToString.Exclude
     @SerializeWith(serializer = TextValueSerializer.class, nesting = 1)

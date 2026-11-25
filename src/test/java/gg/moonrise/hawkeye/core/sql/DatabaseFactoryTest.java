@@ -21,6 +21,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.mariadb.jdbc.Configuration;
+import org.mariadb.jdbc.export.SslMode;
 import org.postgresql.PGProperty;
 
 public class DatabaseFactoryTest {
@@ -69,8 +71,8 @@ public class DatabaseFactoryTest {
         // Hikari's old login timeout: (10,000 ms + 500) / 1000 = 10 s; Connector/J takes milliseconds.
         assertEquals("10000", properties.getProperty("connectTimeout"));
         String url = "jdbc:mariadb://127.0.0.1:1/hawkeye";
-        org.mariadb.jdbc.Configuration fromProperties = org.mariadb.jdbc.Configuration.parse(url, properties);
-        org.mariadb.jdbc.Configuration fromUrl = org.mariadb.jdbc.Configuration.parse(url
+        Configuration fromProperties = Configuration.parse(url, properties);
+        Configuration fromUrl = Configuration.parse(url
                 + "?sslMode=verify-full&connectTimeout=10000", new Properties());
         assertEquals(fromUrl.sslMode(), fromProperties.sslMode(), "a property is read like the URL parameter");
         assertEquals(10_000, fromProperties.connectTimeout());
@@ -80,6 +82,29 @@ public class DatabaseFactoryTest {
                 settings(StorageType.MARIADB, Map.of("connecttimeout", "2500")), folder));
         assertEquals("2500", operator.getProperty("connecttimeout"));
         assertNull(operator.getProperty("connectTimeout"), "the operator's own value wins, in any case");
+    }
+
+    @Test
+    public void mariaDbConnectsWithoutTlsUnlessTheOperatorChooses() throws Exception {
+        String url = "jdbc:mariadb://127.0.0.1:1/hawkeye";
+        assertEquals(SslMode.VERIFY_FULL, Configuration.parse(url, new Properties()).sslMode(),
+                "Connector/J 4's own default, which refuses a server without a CA-signed certificate");
+
+        Properties defaults = properties(new DatabaseFactory(ENVIRONMENT).config("home",
+                settings(StorageType.MYSQL, Map.of()), folder));
+        assertEquals("disable", defaults.getProperty("sslMode"));
+        assertEquals("true", defaults.getProperty("allowPublicKeyRetrieval"));
+        Configuration plain = Configuration.parse(url, defaults);
+        assertEquals(SslMode.DISABLE, plain.sslMode());
+        assertTrue(plain.allowPublicKeyRetrieval(), "MySQL 8's caching_sha2_password over a plain connection");
+
+        Properties legacy = properties(new DatabaseFactory(ENVIRONMENT).config("home",
+                settings(StorageType.MARIADB, Map.of("useSSL", "true", "allowpublickeyretrieval", "false")), folder));
+        assertNull(legacy.getProperty("sslMode"), "the legacy useSsl is the operator's choice, in any case");
+        assertNull(legacy.getProperty("allowPublicKeyRetrieval"), "the operator's own value wins, in any case");
+        Configuration encrypted = Configuration.parse(url, legacy);
+        assertEquals(SslMode.VERIFY_FULL, encrypted.sslMode());
+        assertFalse(encrypted.allowPublicKeyRetrieval());
     }
 
     @Test

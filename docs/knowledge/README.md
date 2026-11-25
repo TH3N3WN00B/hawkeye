@@ -389,6 +389,17 @@ update them in the same change when you learn something durable or an entry stop
   `assureReadOnly` is set, so a write still succeeds; `SET SESSION TRANSACTION READ ONLY` makes the session
   refuse writes. `useSsl=true` is a deprecated alias that turns into `sslMode=verify-full` (with a warning);
   CoreProtect's `enable-ssl` does not check certificates, so the import uses `sslMode=trust`.
+- MariaDB Connector/J 4.0 (CONJ-1321) changed the default `sslMode` from `disable` to `verify-full`. Against
+  MySQL 8.4 and its self-signed certificate a login then fails with "Cannot use authentication plugin
+  caching_sha2_password with a Self signed certificates" (verified 2026-11-25 with `HAWKEYE_TEST_MYSQL`).
+  Dependabot's catalog bump (#13) did not show it: only `HAWKEYE_TEST_MYSQL` against a real MySQL does.
+  `DatabaseFactory` therefore sets `sslMode=disable` unless the operator sets `sslMode` or `useSsl`, in any
+  case, and defaults `allowPublicKeyRetrieval=true`. That is the importer's choice too (`SourceDialect`).
+  Any `useSsl` makes Connector/J apply its legacy mapping (`useSSL=true` is `verify-full`).
+- MySQL 8 answers a login for an unknown user as a decoy account with an authentication plugin picked at
+  random. When it picks `sha256_password`, which Connector/J (3.5 and 4.0) does not implement, the driver
+  reports "Client does not support authentication protocol requested by server" instead of "Access
+  denied". `ServerDatabaseIntegrationTest.aRefusedLoginShowsNoCredential` accepts both.
 - sqlite-jdbc's read-only `open_mode` is 65 (read-only plus the URI flag); opening a missing file read-only
   fails and creates nothing.
 - CoreProtect's `/co purge` (`command/PurgeCommand.java`, 24.x/25.x) on SQLite copies each table into a
