@@ -491,6 +491,10 @@ update them in the same change when you learn something durable or an entry stop
   `DatabaseFactory` therefore sets `sslMode=disable` unless the operator sets `sslMode` or `useSsl`, in any
   case, and defaults `allowPublicKeyRetrieval=true`. That is the importer's choice too (`SourceDialect`).
   Any `useSsl` makes Connector/J apply its legacy mapping (`useSSL=true` is `verify-full`).
+- MySQL 8 answers a login for an unknown user as a decoy account with an authentication plugin picked at
+  random. When it picks `sha256_password`, which Connector/J (3.5 and 4.0) does not implement, the driver
+  reports "Client does not support authentication protocol requested by server" instead of "Access
+  denied". `ServerDatabaseIntegrationTest.aRefusedLoginShowsNoCredential` accepts both.
 - sqlite-jdbc's read-only `open_mode` is 65 (read-only plus the URI flag); opening a missing file read-only
   fails and creates nothing.
 - CoreProtect's `/co purge` (`command/PurgeCommand.java`, 24.x/25.x) on SQLite copies each table into a
