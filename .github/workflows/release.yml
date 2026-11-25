@@ -1,7 +1,8 @@
 name: Release
 
 # Builds the jar of a published GitHub release and attaches it to the release. Every other build, with the
-# tests, runs on Jenkins (Jenkinsfile, ci.moonrise.gg). Nothing is published to the Moonrise Nexus from here.
+# tests, runs on Jenkins (Jenkinsfile, ci.moonrise.gg) and ci.yml. Nothing is published to the Moonrise Nexus
+# from here.
 
 on:
   release:

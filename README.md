@@ -344,6 +344,9 @@ given server's API.
   commit's date (UTC). `paper-plugin.yml`, `/he help` and the startup line show the full version.
 - `Jenkinsfile` builds and tests every push on `ci.moonrise.gg` and archives that build's
   `build/libs/Hawkeye-26.4.B<build>.jar` only (it first deletes every jar already in `build/libs`).
+- `.github/workflows/ci.yml` builds and tests pushes to `main` and pull requests on GitHub Actions with the
+  integration tests against real MySQL, MariaDB, PostgreSQL, ClickHouse and DuckDB databases, checks the
+  Paper API linkage on every supported server version, and keeps the jar as a workflow artifact.
 - A GitHub release tagged `26.4` (a leading `v` is allowed) runs `.github/workflows/release.yml`, which builds
   that version and attaches `Hawkeye-26.4.jar` to the release.
 - Nothing publishes to the Moonrise Nexus automatically. `./gradlew publish -Pversion=26.4` with

@@ -647,8 +647,12 @@ update them in the same change when you learn something durable or an entry stop
   `26.4.1`), a Jenkins build `26.4.B<BUILD_NUMBER>`, anything else `26.4-SNAPSHOT`. The quarter comes from
   the HEAD commit's date in UTC, so a rebuild of an old commit keeps its version. The build fails on any
   other version. The jar is `build/libs/Hawkeye-<version>.jar`.
-- Jenkins (`ci.moonrise.gg`, `Jenkinsfile`) is the only build and test CI for pushes; GitHub Actions only
-  runs `release.yml`.
+- Jenkins (`ci.moonrise.gg`, `Jenkinsfile`) builds and tests every push. GitHub Actions runs `ci.yml` on
+  pushes to `main`, pull requests and by hand (`gh workflow run ci.yml`): the build with every opt-in
+  integration test enabled against service containers (MySQL 8.4, MariaDB 11.4, PostgreSQL 17, ClickHouse
+  25.8, DuckDB), then `api_links.py` against each supported paper-api, fetched with Maven. It reaches the
+  servers by `127.0.0.1`, since the test JVM resolves names from `src/test/hosts` only. No real Paper
+  server runs there: the smoke scenarios stay local. `release.yml` only builds release jars.
 - A release is: publish a GitHub release tagged `26.4` (`v26.4` also works). `release.yml` builds
   `-Pversion=26.4` (jar and `verifyPluginJar`, no tests: Jenkins ran them) and attaches `Hawkeye-26.4.jar`.
   Nothing to bump afterwards.

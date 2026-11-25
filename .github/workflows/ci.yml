@@ -1,0 +1,157 @@
+name: CI
+
+# Builds and tests every push to main and every pull request, and can be started by hand. Besides the
+# plain `./gradlew build` it runs the opt-in integration tests against real database servers (MySQL,
+# MariaDB, PostgreSQL, ClickHouse, DuckDB) and checks that the plugin's Paper calls link on every
+# supported server version (scripts/compat/api_links.py). Jenkins (ci.moonrise.gg) runs the plain build.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build, test and check API linkage
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      # Hawkeye's own storage on MySQL (HAWKEYE_TEST_MYSQL).
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: hawkeye
+          MYSQL_DATABASE: hawkeye
+          MYSQL_USER: hawkeye
+          MYSQL_PASSWORD: hawkeye
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uhawkeye -phawkeye"
+          --health-interval 5s --health-timeout 5s --health-retries 40
+      # A CoreProtect MySQL/MariaDB database to import from (HAWKEYE_TEST_COREPROTECT_MYSQL).
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: hawkeye
+          MARIADB_DATABASE: coreprotect
+          MARIADB_USER: hawkeye
+          MARIADB_PASSWORD: hawkeye
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 5s --health-timeout 5s --health-retries 40
+      # Hawkeye's own storage on PostgreSQL (HAWKEYE_TEST_POSTGRES).
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: hawkeye
+          POSTGRES_PASSWORD: hawkeye
+          POSTGRES_DB: hawkeye
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hawkeye -d hawkeye"
+          --health-interval 5s --health-timeout 5s --health-retries 40
+      # A CoreProtect 25 ClickHouse database to import from (HAWKEYE_TEST_COREPROTECT_CLICKHOUSE).
+      clickhouse:
+        image: clickhouse/clickhouse-server:25.8
+        env:
+          CLICKHOUSE_USER: hawkeye
+          CLICKHOUSE_PASSWORD: hawkeye
+          CLICKHOUSE_DB: coreprotect
+        ports:
+          - 8123:8123
+        options: >-
+          --health-cmd "wget --no-verbose --tries=1 --spider http://127.0.0.1:8123/ping || exit 1"
+          --health-interval 5s --health-timeout 5s --health-retries 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      # v5, not v6: v6 moved caching into a component under Gradle's Terms of Use (docs/knowledge).
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      # The test JVM resolves names from src/test/hosts only, so the servers are reached by address.
+      - name: Build and test
+        env:
+          HAWKEYE_TEST_MYSQL: mysql://hawkeye:hawkeye@127.0.0.1:3306/hawkeye
+          HAWKEYE_TEST_POSTGRES: postgresql://hawkeye:hawkeye@127.0.0.1:5432/hawkeye
+          HAWKEYE_TEST_COREPROTECT_MYSQL: mariadb://hawkeye:hawkeye@127.0.0.1:3307/coreprotect
+          HAWKEYE_TEST_COREPROTECT_CLICKHOUSE: http://hawkeye:hawkeye@127.0.0.1:8123/coreprotect
+          HAWKEYE_TEST_COREPROTECT_DUCKDB: '1'
+        run: ./gradlew build --console=plain
+
+      - name: Summarize the tests
+        if: always()
+        shell: python3 {0}
+        run: |
+          import glob, os
+          import xml.etree.ElementTree as ET
+          totals = dict(tests=0, failures=0, errors=0, skipped=0)
+          skipped = []
+          for path in sorted(glob.glob("build/test-results/test/*.xml")):
+              suite = ET.parse(path).getroot()
+              for key in totals:
+                  totals[key] += int(suite.get(key, 0))
+              for case in suite.iter("testcase"):
+                  if case.find("skipped") is not None:
+                      skipped.append(f"{case.get('classname').rsplit('.', 1)[-1]}.{case.get('name')}")
+          lines = ["### Tests", "", " | ".join(f"{key}: {value}" for key, value in totals.items()), ""]
+          if skipped:
+              lines += ["Skipped:", ""] + [f"- `{name}`" for name in skipped]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(lines) + "\n")
+
+      # Each server version's paper-api jar, fetched with Maven (the build resolves only the oldest and the
+      # newest). 26.3 is the catalog's own build.
+      - name: Check Paper API linkage on every supported version
+        shell: bash
+        run: |
+          set -euo pipefail
+          newest="$(sed -n 's/^paper = "\(.*\)"/\1/p' gradle/libs.versions.toml)"
+          versions=(1.21.1 1.21.3 1.21.4 1.21.5 1.21.6 1.21.8 1.21.9 1.21.10 1.21.11)
+          artifacts=()
+          for version in "${versions[@]}"; do artifacts+=("${version}-R0.1-SNAPSHOT"); done
+          artifacts+=(26.1.2.build.74-stable 26.2.build.135-stable "${newest}")
+          jars=()
+          for artifact in "${artifacts[@]}"; do
+            mvn -B -q dependency:get -Dtransitive=false \
+              -Dartifact="io.papermc.paper:paper-api:${artifact}" \
+              -DremoteRepositories=papermc::default::https://repo.papermc.io/repository/maven-public/
+            jars+=("${HOME}/.m2/repository/io/papermc/paper/paper-api/${artifact}/paper-api-${artifact}.jar")
+          done
+          python3 -I scripts/compat/api_links.py build/classes/java/main build/classes/java/newerApi "${jars[@]}" \
+            | tee linkage.txt
+          { echo "### Paper API linkage"; echo; echo '```'; cat linkage.txt; echo '```'; } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload the plugin jar
+        uses: actions/upload-artifact@v7
+        with:
+          name: Hawkeye-jar
+          path: build/libs/*.jar
+          if-no-files-found: error
+
+      - name: Upload the test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: build/reports/tests/test/
