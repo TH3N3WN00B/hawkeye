@@ -6,8 +6,11 @@ package gg.moonrise.hawkeye.config.permission;
  */
 public final class Permissions {
 
-    /** The root command and its alias, in Cloud's {@code name|alias} syntax. */
-    public static final String ROOT = "hawkeye|he";
+    /**
+     * The root command's name. Its aliases, and those of its subcommands, come from {@code commands.yml}
+     * ({@code config.file.CommandsConfig}).
+     */
+    public static final String ROOT = "hawkeye";
 
     /** {@code /hawkeye} and {@code /hawkeye help}. */
     public static final String HELP = "hawkeye.help";
