@@ -18,7 +18,7 @@ history, and logs that take megabytes instead of gigabytes.
 [GitHub releases](https://github.com/ericlmao/hawkeye/releases) ·
 [dev builds](https://ci.moonrise.gg/job/hawkeye/job/main/lastSuccessfulBuild/)
 
-## Contents
+## ► Contents
 
 - [Highlights](#highlights)
 - [Getting started](#getting-started)
@@ -32,7 +32,7 @@ history, and logs that take megabytes instead of gigabytes.
 - [API for other plugins](#api-for-other-plugins)
 - [Contributing](#contributing)
 
-## Highlights
+## ► Highlights
 
 - **Lookups, an inspector and safe rollbacks**, with preview, restore and undo.
 - **CoreProtect's parameters** (`u: t: r: a: i: e:`) and an optional `/co` alias, so staff don't relearn anything.
@@ -43,7 +43,7 @@ history, and logs that take megabytes instead of gigabytes.
   database outage or restart.
 - **One jar** for Paper and Folia, 1.21.1 to 26.3.
 
-### Compared with CoreProtect
+### ➥ Compared with CoreProtect
 
 | | CoreProtect | Hawkeye |
 |---|---|---|
@@ -58,7 +58,7 @@ The ratio depends on your history: that database was 35 minutes of mass edits, w
 server's 1.4 billion events over 59 days, Hawkeye stores 1.085 bytes per event. Lookups, rollbacks and
 restores read the compressed data directly. How storage works is in [docs/architecture.md](docs/architecture.md).
 
-## Getting started
+## ► Getting started
 
 **Requirements**
 
@@ -74,7 +74,7 @@ restores read the compressed data directly. How storage works is in [docs/archit
 2. Coming from CoreProtect? Run `/he import coreprotect` ([details](#importing-from-coreprotect)).
 3. Try it: `/he i` and click a block, or `/he lookup u:Alex t:2h`.
 
-## Commands
+## ► Commands
 
 The root command is `/hawkeye`, alias `/he`. Aliases in brackets can be changed in
 [`commands.yml`](#command-aliases).
@@ -101,7 +101,7 @@ The root command is `/hawkeye`, alias `/he`. Aliases in brackets can be changed 
 All permissions default to operators, and `hawkeye.*` grants them all. `s:` in any command also needs
 `hawkeye.network`.
 
-### Inspector
+### ➥ Inspector
 
 With `/he inspect` on:
 
@@ -110,7 +110,7 @@ With `/he inspect` on:
 - **Right-click** any other block to see the block in front of the clicked face.
 - **Place** a block to see that spot (the placement is cancelled).
 
-## Parameters
+## ► Parameters
 
 Lookups, rollbacks, restores and purges take the same parameters as CoreProtect.
 
@@ -126,7 +126,7 @@ Lookups, rollbacks, restores and purges take the same parameters as CoreProtect.
 | `#preview` | Show a rollback or restore to you only | |
 | `#count` | Count matches instead of listing them (`#sum` works too) | |
 
-#### Actions
+#### › Actions
 
 `+` means added or placed, `-` removed or broken; without a sign, both.
 
@@ -142,7 +142,7 @@ Lookups, rollbacks, restores and purges take the same parameters as CoreProtect.
 
 CoreProtect's names (`broke`, `placed`, `login`, `drops`, a leading `#`) work too.
 
-#### Good to know
+#### › Good to know
 
 - A lookup without `r:` searches every world of this server.
 - Rollbacks and restores **need a `t:`**. Without `r:` they use `rollback.default-radius` around you; the
@@ -155,7 +155,7 @@ CoreProtect's names (`broke`, `placed`, `login`, `drops`, a leading `#`) work to
   large results the first page shows totals like `160+`; page on, or use `#count`, for the exact number.
 - Hover an item in the results to see its name and enchantments, and click a written book to read it.
 
-## What is recorded
+## ► What is recorded
 
 Every category has a switch under `logging` in `config.yml`; everything except hoppers is on by default.
 Changes without an obvious cause are blamed on whoever caused them: TNT lit by redstone on the player who
@@ -186,7 +186,7 @@ whoever broke the wall.
 **What a rollback reverses:** blocks, container items, item frame and armour stand items, killed and
 destroyed entities (respawned), and placed entities (removed). Everything else is history only.
 
-## Configuration
+## ► Configuration
 
 `plugins/Hawkeye/` holds `config.yml`, `messages.yml` and `commands.yml`. New options are added to an
 existing file on start, and a file with a mistake keeps the previous configuration. `/he reload` applies
@@ -207,7 +207,7 @@ reply tells you).
 
 Every player-facing message is a MiniMessage template in `messages.yml`.
 
-### Database credentials
+### ➥ Database credentials
 
 Credentials come from environment variables by default: `storage.username` and `storage.password` are
 `${HAWKEYE_DB_USERNAME}` and `${HAWKEYE_DB_PASSWORD}`, so MySQL, MariaDB or PostgreSQL only need those two
@@ -219,7 +219,7 @@ variables set (SQLite needs neither).
 - A variable that isn't set fails the load with its name in the error.
 - Credentials are never logged or shown; driver errors that would quote them show `<redacted>`.
 
-### Command aliases
+### ➥ Command aliases
 
 `commands.yml` holds the extra names for `/hawkeye` and its subcommands:
 
@@ -235,7 +235,7 @@ subcommand-aliases:
 An alias needs the same permission as its command, takes a restart, and may use up to 32 of `a-z`, `0-9`,
 `_` and `-`. A `/co` alias is only reliable once CoreProtect itself is removed.
 
-## Running several servers
+## ► Running several servers
 
 1. **One shared database.** Point every server's `storage` at the same MySQL, MariaDB or PostgreSQL
    database with the same `table-prefix`, and give each a unique `server.name`. Each server sees the
@@ -249,7 +249,7 @@ An alias needs the same permission as its command, takes a restart, and may use 
 
 Purging and archiving run once per database, so every server can use the same configuration.
 
-## Importing from CoreProtect
+## ► Importing from CoreProtect
 
 ```
 /he import coreprotect [source]
@@ -291,7 +291,7 @@ counts every skipped row by reason.
 
 </details>
 
-## Server versions
+## ► Server versions
 
 One jar runs on every supported version. Everything is recorded in full on 26.3; older servers record the
 same actions with these differences:
@@ -309,7 +309,7 @@ Item and entity data are upgraded when a newer server reads them, but an older s
 a newer one. On a mixed-version network, roll back items and entities on a server at least as new as the
 one that recorded them.
 
-## API for other plugins
+## ► API for other plugins
 
 ```java
 HawkeyeApi hawkeye = Bukkit.getServicesManager().load(HawkeyeApi.class);
@@ -323,7 +323,7 @@ Record placements, removals, container moves and messages for a player or your o
 (`Actor.source("myplugin")`), and run lookups and counts without blocking. `HawkeyeApi.VERSION` changes on
 incompatible changes.
 
-## Contributing
+## ► Contributing
 
 ```bash
 ./gradlew build                          # compile, test and check the plugin jar
