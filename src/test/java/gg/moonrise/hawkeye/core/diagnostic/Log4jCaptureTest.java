@@ -3,6 +3,7 @@ package gg.moonrise.hawkeye.core.diagnostic;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -22,6 +23,8 @@ import java.util.stream.Stream;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.LogEvent;
+import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.config.Configuration;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -192,6 +195,31 @@ public class Log4jCaptureTest {
         String ours = console.of("Hawkeye").getFirst().getMessage().getFormattedMessage();
         assertTrue(ours.contains("(details in crash/Crash-"), ours);
         assertFalse(read(fileOf(ours)).contains("ServiceRegisterEvent"), "not filed as Hawkeye's crash");
+    }
+
+    @Test
+    public void theFilterFollowsTheRootLoggerWhenTheLoggingIsReconfigured() throws Exception {
+        LoggerContext context = (LoggerContext) LogManager.getContext(false);
+        Configuration before = context.getConfiguration();
+        console.close();
+        // What a monitorInterval reload or another plugin's reconfigure does: a new configuration from the file.
+        context.reconfigure();
+        assertNotSame(before, context.getConfiguration());
+        console = ConsoleLines.attach();
+
+        Logger logger = LoggerFactory.getLogger(WRITER);
+        logger.error("The writer loop failed", new SQLException("locked"));
+        logger.error("The writer loop failed", new SQLException("locked"));
+
+        List<LogEvent> lines = console.of(WRITER);
+        assertEquals(1, lines.size(), "shown once: " + lines);
+        assertNull(lines.getFirst().getThrown());
+        assertTrue(read(fileOf(lines.getFirst().getMessage().getFormattedMessage()))
+                .contains("#1 again (2 times): The writer loop failed"));
+
+        capture.close();
+        logger.error("After close", new SQLException("locked"));
+        assertNotNull(console.of(WRITER).getLast().getThrown(), "removed from the new root logger");
     }
 
     @Test

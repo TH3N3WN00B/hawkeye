@@ -427,6 +427,11 @@ update them in the same change when you learn something durable or an entry stop
   `libraries` folders). Main compiles against 2.22.1 (`log4jCore`, `compileOnly`; Dependabot must not move it past
   the oldest server's), the tests use 2.26.0 with `log4j-slf4j2-impl`. log4j-core's class files carry SpotBugs
   and bnd annotations it does not ship, so `-Xlint:all` warned `[classfile]` until the build added `-classfile`.
+- A reconfiguration of the `LoggerContext` (`reconfigure()`, a `monitorInterval` reload) builds a new
+  `Configuration` with its own root `LoggerConfig`, without the filter. `LoggerContext.setConfiguration` stops the
+  old configuration (which stops its filters) and then fires a `PropertyChangeEvent` named
+  `LoggerContext.PROPERTY_CONFIG` (2.22.1 to 2.26.0), so `Log4jCapture` listens for it, restarts itself and moves to
+  the new root logger.
 - A log4j event and its message may be reused once the logging call returns (`ReusableLogEventFactory`, thread
   locals on by default), so the filter copies strings and the throwable into a `Problem` before it returns.
 - Paper 1.21.1 `ServerPluginProviderStorage` catches whatever `onLoad` throws, logs `Error initializing plugin
