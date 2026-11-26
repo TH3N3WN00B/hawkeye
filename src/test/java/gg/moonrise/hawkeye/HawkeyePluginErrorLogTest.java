@@ -2,11 +2,13 @@ package gg.moonrise.hawkeye;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.net.httpserver.HttpServer;
+import gg.moonrise.hawkeye.api.HawkeyeApi;
 import gg.moonrise.hawkeye.core.diagnostic.ConsoleLines;
 import gg.moonrise.hawkeye.core.diagnostic.Diagnostics;
 import gg.moonrise.hawkeye.core.queue.event.EventWriter;
@@ -28,13 +30,20 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.LogEvent;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.server.ServiceRegisterEvent;
+import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.RegisteredServiceProvider;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockbukkit.mockbukkit.MockBukkit;
 import org.mockbukkit.mockbukkit.ServerMock;
+import org.mockbukkit.mockbukkit.plugin.PluginMock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -186,6 +195,55 @@ public class HawkeyePluginErrorLogTest {
             assertTrue(report.contains("Hawkeye error report, started "), "the file is attached: " + report);
         } finally {
             relay.stop(0);
+        }
+    }
+
+    @Test
+    public void anotherPluginsListenerLoggingDuringHawkeyesStartupIsLeftAlone() throws Exception {
+        TestHawkeyePlugin plugin = TestPlugins.load();
+        PluginMock other = MockBukkit.createMockPlugin("OtherPlugin");
+        server.getPluginManager().registerEvents(new RegistrationListener(other), other);
+        RegisteredServiceProvider<HawkeyeApi> api = server.getServicesManager().getRegistration(HawkeyeApi.class);
+        assertNotNull(api, "Hawkeye's enable registered its API");
+        Diagnostics diagnostics = plugin.diagnostics().orElseThrow();
+
+        // Paper fires this from Hawkeye's enable, on the thread running it; MockBukkit's services manager does not.
+        diagnostics.startupBegins();
+        try {
+            server.getPluginManager().callEvent(new ServiceRegisterEvent(api));
+        } finally {
+            diagnostics.startupEnds();
+        }
+        diagnostics.errorLog().flush().get(5, TimeUnit.SECONDS);
+
+        List<LogEvent> theirs = console.of(other.getName());
+        assertEquals(1, theirs.size(), theirs.toString());
+        assertEquals("Could not hook into HawkeyeApi", theirs.getFirst().getMessage().getFormattedMessage());
+        assertNotNull(theirs.getFirst().getThrown(), "logged as it is");
+        for (String folder : List.of("crash", "errors")) {
+            for (Path file : files(plugin.getDataPath().resolve(folder))) {
+                assertFalse(read(file).contains("Could not hook into"), "not filed by Hawkeye: " + file);
+            }
+        }
+    }
+
+    /**
+     * Another plugin's listener that fails to use a service registered while Hawkeye enables. It logs to log4j under
+     * its plugin's name, where Paper sends a plugin's {@code getLogger()} lines; the tests have no JUL bridge, so a
+     * {@code getLogger()} line goes to JUL's own console handler and never reaches the error log's filter.
+     */
+    public static final class RegistrationListener implements Listener {
+
+        private final @NotNull Plugin plugin;
+
+        private RegistrationListener(@NotNull Plugin plugin) {
+            this.plugin = plugin;
+        }
+
+        @EventHandler
+        public void onRegister(@NotNull ServiceRegisterEvent event) {
+            LogManager.getLogger(plugin.getName()).error("Could not hook into {}",
+                    event.getProvider().getService().getSimpleName(), new IllegalStateException("their listener"));
         }
     }
 

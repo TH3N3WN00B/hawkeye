@@ -466,7 +466,10 @@ update them in the same change when you learn something durable or an entry stop
 - Without an SLF4J provider on the test class path every `@Slf4j` call was a no-op; the tests now log into a
   real log4j (root `warn`, a `Null` appender), and every plugin load in a test writes error and crash files in
   MockBukkit's temporary data folder (MockBukkit cannot build Cloud's manager, which Hawkeye logs as an ERROR at
-  enable: a crash file). `core.diagnostic.ConsoleLines` (tests) records what the console would print.
+  enable: a crash file). `core.diagnostic.ConsoleLines` (tests) records what the console would print. The tests
+  have no JUL-to-log4j bridge (no `log4j-jul`), so a MockBukkit plugin's `getLogger()` line goes to JUL's console
+  handler (stderr) and never reaches the filter; a test stands in for Paper's bridge by logging to log4j under the
+  plugin's name.
 
 - Review and webhook (verified 2026-11-25): a file counts as reviewed once it is in `errors/reviewed/` or
   `crash/reviewed/` (`core.diagnostic.ReportFiles`). The move runs on the error log's writer thread, between two
