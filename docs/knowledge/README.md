@@ -553,7 +553,9 @@ update them in the same change when you learn something durable or an entry stop
 - Every player-facing message is configurable (MiniMessage); commands, permissions and config keys
   are contracts with operators.
 - Folia support by default (`folia-supported: true`): schedule through the engine `Scheduler` only.
-- Repositories are private and carry no license file unless the owner adds one.
+- Hawkeye is public (`ericlmao/hawkeye`) under the GNU General Public License version 3 (`LICENSE`, the
+  owner's choice on 2026-11-26). The engine shaded into the jar and Moss are MIT (their Maven Central
+  POMs). Other Moonrise repositories carry no license file unless the owner adds one.
 
 ## Environment facts (verified 2026-11-12)
 
