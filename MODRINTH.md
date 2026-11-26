@@ -20,7 +20,7 @@ gigabytes.
 | Development builds | [ci.moonrise.gg](https://ci.moonrise.gg/job/hawkeye/job/main/lastSuccessfulBuild/) |
 | Changelog | [CHANGELOG.md](https://github.com/ericlmao/hawkeye/blob/main/CHANGELOG.md) |
 
-## At a Glance
+## ► At a Glance
 
 - Lookups, an inspector, and rollbacks with a preview, restores and undo
 - CoreProtect's parameters (`u: t: r: a: i: e:`) and an optional `/co` alias, so nobody has to relearn anything
@@ -33,7 +33,7 @@ gigabytes.
 - Every message is a MiniMessage template you can change
 - Free and open source under GPL-3.0
 
-## Switching from CoreProtect
+## ► Switching from CoreProtect
 
 Install Hawkeye and run `/he import coreprotect`. Hawkeye reads CoreProtect's own `config.yml` to find the
 database, so you never type a host or password into a command. The import runs in the background while
@@ -80,9 +80,9 @@ final reply counts every skipped row by reason.
 
 </details>
 
-## Features
+## ► Features
 
-### Lookups and the inspector
+### ➥ Lookups and the inspector
 
 Turn on the inspector with `/he i`. Left-click a block to see its history, right-click a container to see
 who took and added what, and place a block to see what happened at that spot. Nothing is broken or placed
@@ -92,7 +92,7 @@ Search the whole history with `/he lookup u:Alex t:2h r:10 a:-block`. Click a lo
 teleport there. Hover an item to see its name and enchantments, and click a written book to read it. New
 events never shift the pages you're reading, and `#count` gives the exact number of matches.
 
-### Rollbacks you can trust
+### ➥ Rollbacks you can trust
 
 - **Preview first.** `#preview` shows a rollback to you alone; `/he apply` or `/he cancel` it.
 - **Undo.** `/he undo` reverts your last rollback or restore.
@@ -105,7 +105,7 @@ events never shift the pages you're reading, and `#count` gives the exact number
   animals), item frame and armour stand items, killed mobs and destroyed entities, and remove entities a
   player placed.
 
-### Built for networks
+### ➥ Built for networks
 
 - **One shared database.** Point every server at the same MySQL, MariaDB or PostgreSQL database and give
   each a unique name. Event ids never collide, and each server sees the others' events within one flush
@@ -121,7 +121,7 @@ events never shift the pages you're reading, and `#count` gives the exact number
 - **Configure once.** Maintenance such as purging and archiving runs once per database, so every server
   can use the same configuration.
 
-### Storage that stays small and fast
+### ➥ Storage that stays small and fast
 
 Capturing an event never touches the database: one background thread writes events in batches. Recent
 events stay in a regular table. Once they settle, they are packed into immutable segments of 262,144
@@ -255,7 +255,7 @@ and run lookups and counts without blocking the caller.
 
 </details>
 
-## Requirements
+## ► Requirements
 
 - Paper or Folia 1.21.1 to 1.21.11, 26.1.2 or 26.3, all from the same jar, on the Java version your server
   needs (21 for 1.21.x, 25 for 26.x)
@@ -267,7 +267,7 @@ On first start, the server downloads Hawkeye's libraries through Paper's library
 small. A few actions are recorded differently on older Minecraft versions; see
 [Server versions](https://github.com/ericlmao/hawkeye#server-versions).
 
-## Support
+## ► Support
 
 Found a bug or have an idea? [Open an issue on GitHub](https://github.com/ericlmao/hawkeye/issues).
 

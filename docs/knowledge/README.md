@@ -585,8 +585,8 @@ update them in the same change when you learn something durable or an entry stop
   row, its three indexes 56.2) became 3,878,912 (0.29 bytes per event, 51 segments, nothing skipped) in
   17.5-17.9 s over three runs at load 3, byte-identical each time. At load 4-5 the same build and the
   build rebased onto the CoreProtect item fixes (#18) both took 21-25 s, so a slower run there is the host. `zstd -3` of the source file is 225 MB, `gzip -6`
-  296 MB. The copy used is `~/.cache/hawkeye-bench/coreprotect-import/database.db`; the README's "Why you
-  should switch" quotes these figures.
+  296 MB. The copy used is `~/.cache/hawkeye-bench/coreprotect-import/database.db`; the README's "Compared with
+  CoreProtect" quotes these figures.
 - `ImportService.tune` (package-private, tests only) lowers the batch size below `archive.segment-events`'
   minimum of 16,384 and the 30 s progress interval, so cancel and resume can be tested on a few hundred
   rows.
@@ -709,7 +709,7 @@ update them in the same change when you learn something durable or an entry stop
   resolve repository paths.
 - The logo is the hawk (`assets/logo.png`, from the owner's image on 2026-11-26); `assets/icon.png` is it on a
   256x256 transparent square for the Modrinth project icon. `assets/banner.svg` (the logo embedded as a data
-  URI) is the banner's source and `assets/banner.png` its 1600x480 export, which `MODRINTH.md` shows: a PNG
+  URI) is the banner's source and `assets/banner.png` its 1600x480 export, which `MODRINTH.md` (absolute URL) and the top of `README.md` (relative `assets/banner.png`) show: a PNG
   looks the same everywhere, where an SVG's text depends on the viewer's fonts. `update-modrinth-description.yml` PATCHes it into the project on a published
   release when it changed since the previous tag (or on the first release), and on every manual run. It needs
   the repository secret `MODRINTH_TOKEN`, a Modrinth personal access token with "Read projects" (Minotaur resolves
