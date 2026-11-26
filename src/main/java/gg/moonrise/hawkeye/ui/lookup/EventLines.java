@@ -6,6 +6,7 @@ import gg.moonrise.hawkeye.config.message.LookupMessages;
 import gg.moonrise.hawkeye.entity.event.StoredEvent;
 import gg.moonrise.hawkeye.entity.payload.Payload;
 import gg.moonrise.hawkeye.entity.payload.SignSides;
+import gg.moonrise.hawkeye.util.serialize.ItemDetails;
 import gg.moonrise.hawkeye.util.serialize.ItemSummary;
 import gg.moonrise.hawkeye.util.text.Durations;
 import java.time.Duration;
@@ -18,8 +19,11 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import net.kyori.adventure.inventory.Book;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.JoinConfiguration;
+import net.kyori.adventure.text.event.ClickCallback;
+import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -31,18 +35,43 @@ import org.jetbrains.annotations.NotNull;
 /**
  * Renders one result line per event from {@code messages.yml}: a pure function of the messages, the
  * name of this server (events of other servers get a location that is not clickable), the current
- * time and the server's time zone.
+ * time, the server's time zone and how a click opens a book.
  *
  * @param lookup  the {@code lookup} messages
  * @param actions the {@code actions} messages
  * @param server  this server's name ({@code server.name})
  * @param now     the time ages are measured from
  * @param zone    the zone of {@code <date>}
+ * @param books   the click event that opens a book for whoever clicks ({@link #CALLBACK_BOOKS} on a server)
  */
 public record EventLines(@NotNull LookupMessages lookup, @NotNull ActionMessages actions, @NotNull String server,
-        @NotNull Instant now, @NotNull ZoneId zone) {
+        @NotNull Instant now, @NotNull ZoneId zone, @NotNull BookOpener books) {
+
+    /**
+     * How long a book in a lookup line stays readable: a page is read within minutes, and a callback that
+     * lived forever would keep every book a lookup ever showed in memory. Clicked after that, the server
+     * answers that the callback has expired.
+     */
+    public static final Duration BOOK_LIFETIME = Duration.ofHours(1);
+
+    /** Opens the book through an Adventure click callback, as often as it is clicked within {@link #BOOK_LIFETIME}. */
+    public static final BookOpener CALLBACK_BOOKS = book -> ClickEvent.callback(audience -> audience.openBook(book),
+            ClickCallback.Options.builder().uses(ClickCallback.UNLIMITED_USES).lifetime(BOOK_LIFETIME).build());
 
     private static final String MINECRAFT = "minecraft:";
+
+    /** The click event that opens a book in a lookup line. */
+    @FunctionalInterface
+    public interface BookOpener {
+
+        /**
+         * A click event that opens a book for whoever clicks it.
+         *
+         * @param book the book
+         * @return the click event
+         */
+        @NotNull ClickEvent<?> open(@NotNull Book book);
+    }
 
     /**
      * One result line ({@code lookup.line}).
@@ -76,7 +105,10 @@ public record EventLines(@NotNull LookupMessages lookup, @NotNull ActionMessages
     public @NotNull Component action(@NotNull StoredEvent event) {
         Optional<Payload> payload = payload(event);
         return Message.of(template(event)).asComponent(
-                Placeholder.component("target", target(event.subject())),
+                Placeholder.component("target", payload.flatMap(EventLines::itemBytes).flatMap(ItemDetails::of)
+                        .filter(details -> !details.isEmpty() && !event.subject().isEmpty())
+                        .map(details -> item(event.subject(), details))
+                        .orElseGet(() -> target(event.subject()))),
                 literal("amount", Integer.toString(event.amount())),
                 Placeholder.component("text", payload.flatMap(EventLines::payloadText).orElse(Component.empty())),
                 Placeholder.component("contents", payload.orElse(null) instanceof Payload.Snapshot snapshot
@@ -154,6 +186,42 @@ public record EventLines(@NotNull LookupMessages lookup, @NotNull ActionMessages
     }
 
     /**
+     * {@code <target>} of an item with a name, enchantments or a book: the short name, with a hover of the
+     * full id followed by {@code lookup.item-name}, one {@code lookup.item-enchantment} per enchantment
+     * and {@code lookup.item-book} or {@code lookup.item-writable-book}. A book with pages also gets
+     * {@code lookup.item-read-hint} and opens when clicked.
+     *
+     * @param value   the item's material
+     * @param details what the item shows
+     * @return the target
+     */
+    public @NotNull Component item(@NotNull String value, @NotNull ItemDetails details) {
+        List<Component> hover = new ArrayList<>();
+        hover.add(Component.text(value));
+        details.name().ifPresent(name -> hover.add(Message.of(lookup.getItemName()).asComponent(
+                Placeholder.component("name", name))));
+        for (ItemDetails.Enchantment enchantment : details.enchantments()) {
+            hover.add(Message.of(lookup.getItemEnchantment()).asComponent(
+                    literal("enchantment", shortName(enchantment.id())),
+                    literal("level", Integer.toString(enchantment.level()))));
+        }
+        Optional<ItemDetails.BookContent> book = details.book();
+        book.ifPresent(content -> hover.add(content.signed()
+                ? Message.of(lookup.getItemBook()).asComponent(
+                        literal("title", content.title()),
+                        literal("author", content.author()),
+                        literal("pages", Integer.toString(content.pages().size())))
+                : Message.of(lookup.getItemWritableBook()).asComponent(
+                        literal("pages", Integer.toString(content.pages().size())))));
+        Optional<ItemDetails.BookContent> readable = book.filter(content -> !content.pages().isEmpty());
+        readable.ifPresent(content -> hover.add(Message.of(lookup.getItemReadHint()).asComponent()));
+        Component target = Component.text(shortName(value))
+                .hoverEvent(HoverEvent.showText(Component.join(JoinConfiguration.newlines(), hover)));
+        return readable.map(content -> target.clickEvent(books.open(Book.book(Component.text(content.title()),
+                Component.text(content.author()), content.pages())))).orElse(target);
+    }
+
+    /**
      * {@code <text>}: the chat message or command line, the sign lines after an edit (only the side
      * that changed, when only one did), an inventory snapshot's detail (where a teleport went, the
      * death message), or the inventory of a virtual container transaction.
@@ -177,6 +245,21 @@ public record EventLines(@NotNull LookupMessages lookup, @NotNull ActionMessages
                     : Optional.of(Component.text(snapshot.detail()));
             case Payload.VirtualItem virtual -> Optional.of(Component.text(virtual.container()));
         };
+    }
+
+    /** The NBT of the item an event moved, or empty when it was a plain stack or the event moved no item. */
+    private static @NotNull Optional<byte[]> itemBytes(@NotNull Payload payload) {
+        byte[] bytes = switch (payload) {
+            case Payload.Item item -> item.bytes();
+            case Payload.VirtualItem virtual -> virtual.item();
+            case Payload.Text text -> new byte[0];
+            case Payload.Sign sign -> new byte[0];
+            case Payload.Inventory inventory -> new byte[0];
+            case Payload.Entity entity -> new byte[0];
+            case Payload.EntityRef ref -> new byte[0];
+            case Payload.Snapshot snapshot -> new byte[0];
+        };
+        return bytes.length == 0 ? Optional.empty() : Optional.of(bytes);
     }
 
     /** The event's payload, or empty when it has none or the stored bytes cannot be decoded. */

@@ -13,6 +13,8 @@ import gg.moonrise.hawkeye.entity.payload.SignSides;
 import gg.moonrise.hawkeye.util.position.BlockPositions;
 import gg.moonrise.hawkeye.util.event.EventIds;
 import gg.moonrise.hawkeye.util.codec.PayloadCodec;
+import gg.moonrise.hawkeye.util.nbt.NbtTag;
+import gg.moonrise.hawkeye.util.serialize.ItemDetailsTest;
 import gg.moonrise.hawkeye.util.serialize.ItemSummaryTest;
 import java.time.Duration;
 import java.time.Instant;
@@ -21,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
+import net.kyori.adventure.inventory.Book;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -35,8 +38,12 @@ public class EventLinesTest {
     private static final Instant NOW = Instant.parse("2026-11-16T12:00:00Z");
     private static final Actor ALEX = Actor.player(UUID.fromString("00000000-0000-0000-0000-00000000a1e5"), "Alex");
 
+    private final List<Book> opened = new ArrayList<>();
     private final EventLines lines = new EventLines(new LookupMessages(), new ActionMessages(), "survival", NOW,
-            ZoneOffset.UTC);
+            ZoneOffset.UTC, book -> {
+                opened.add(book);
+                return ClickEvent.runCommand("/read " + opened.size());
+            });
 
     @Test
     public void shortNamesDropTheMinecraftNamespaceAndTheState() {
@@ -84,6 +91,82 @@ public class EventLinesTest {
                 "minecraft:iron_ingot", 2, new Payload.VirtualItem("Vault #1", new byte[] {10, 0, 0})))));
         assertEquals("Vault #1", plain(EventLines.text(event(Action.VIRTUAL_WITHDRAW, "minecraft:iron_ingot", 2,
                 new Payload.VirtualItem("Vault #1", new byte[0]))).orElseThrow()));
+    }
+
+    @Test
+    public void aDroppedBookShowsItsTitleAndOpensWhenClicked() {
+        byte[] bytes = ItemDetailsTest.item("minecraft:written_book", ItemDetailsTest.compound(
+                "minecraft:written_book_content", ItemDetailsTest.compound(
+                        "pages", ItemDetailsTest.list(NbtTag.STRING, ItemDetailsTest.str("Day one"),
+                                ItemDetailsTest.str("Day two")),
+                        "title", ItemDetailsTest.compound("raw", ItemDetailsTest.str("Diary")),
+                        "author", ItemDetailsTest.str("Alex"))));
+        Component text = lines.action(event(Action.ITEM_DROP, "minecraft:written_book", 1, new Payload.Item(bytes)));
+        assertEquals("dropped 1x written_book", plain(text));
+        assertEquals(List.of("minecraft:written_book\nDiary by Alex, 2 pages\nClick to read"), hovers(text));
+        assertEquals(List.of("/read 1"), commands(text));
+        Book book = opened.getFirst();
+        assertEquals("Diary", plain(book.title()));
+        assertEquals("Alex", plain(book.author()));
+        assertEquals(List.of("Day one", "Day two"), book.pages().stream().map(EventLinesTest::plain).toList());
+    }
+
+    @Test
+    public void aBookAndQuillInAVirtualContainerOpensToo() {
+        byte[] bytes = ItemDetailsTest.item("minecraft:writable_book", ItemDetailsTest.compound(
+                "minecraft:writable_book_content", ItemDetailsTest.compound("pages", ItemDetailsTest.list(
+                        NbtTag.COMPOUND, ItemDetailsTest.compound("raw", ItemDetailsTest.str("todo"))))));
+        Component text = lines.action(event(Action.VIRTUAL_DEPOSIT, "minecraft:writable_book", 1,
+                new Payload.VirtualItem("ender_chest", bytes)));
+        assertEquals("added 1x writable_book to ender_chest", plain(text));
+        assertEquals(List.of("minecraft:writable_book\nBook and quill, 1 pages\nClick to read"), hovers(text));
+        assertEquals(List.of("todo"), opened.getFirst().pages().stream().map(EventLinesTest::plain).toList());
+        assertEquals("", plain(opened.getFirst().title()));
+    }
+
+    @Test
+    public void aBookWithoutPagesIsNotClickable() {
+        byte[] bytes = ItemDetailsTest.item("minecraft:writable_book", ItemDetailsTest.compound(
+                "minecraft:writable_book_content", ItemDetailsTest.compound()));
+        Component text = lines.action(event(Action.ITEM_PICKUP, "minecraft:writable_book", 1,
+                new Payload.Item(bytes)));
+        assertEquals(List.of("minecraft:writable_book\nBook and quill, 0 pages"), hovers(text));
+        assertTrue(commands(text).isEmpty());
+        assertTrue(opened.isEmpty());
+    }
+
+    @Test
+    public void aNamedEnchantedSwordShowsItsNameAndEnchantments() {
+        byte[] bytes = ItemDetailsTest.item("minecraft:diamond_sword", ItemDetailsTest.compound(
+                "minecraft:custom_name", ItemDetailsTest.compound("text", ItemDetailsTest.str("Excalibur")),
+                "minecraft:enchantments", ItemDetailsTest.compound(
+                        "minecraft:sharpness", new NbtTag.NbtInt(5),
+                        "minecraft:unbreaking", new NbtTag.NbtInt(3))));
+        Component text = lines.action(event(Action.CONTAINER_DEPOSIT, "minecraft:diamond_sword", 1,
+                new Payload.Item(bytes)));
+        assertEquals("added 1x diamond_sword", plain(text));
+        assertEquals(List.of("minecraft:diamond_sword\nName: Excalibur\nsharpness 5\nunbreaking 3"), hovers(text));
+        assertTrue(commands(text).isEmpty());
+    }
+
+    @Test
+    public void aPlainItemKeepsTheIdHover() {
+        assertEquals(List.of("minecraft:diamond"), hovers(lines.action(event(Action.ITEM_DROP, "minecraft:diamond",
+                3, null))));
+        assertEquals(List.of("minecraft:diamond"), hovers(lines.action(event(Action.VIRTUAL_DEPOSIT,
+                "minecraft:diamond", 3, new Payload.VirtualItem("ender_chest", new byte[0])))));
+        assertEquals(List.of("minecraft:stone"), hovers(lines.action(event(Action.ITEM_DROP, "minecraft:stone", 64,
+                new Payload.Item(ItemSummaryTest.item("minecraft:stone", 1))))));
+        assertEquals(List.of("minecraft:stone"), hovers(lines.action(event(Action.ITEM_DROP, "minecraft:stone", 1,
+                new Payload.Item(new byte[] {(byte) 0xac, (byte) 0xed, 0, 5})))));
+        assertTrue(opened.isEmpty());
+    }
+
+    @Test
+    public void theServerBookClickIsACallback() {
+        ClickEvent<?> click = EventLines.CALLBACK_BOOKS.open(Book.book(Component.text("t"), Component.text("a"),
+                List.of(Component.text("page"))));
+        assertTrue(click != null, "a click event without a platform callback provider too");
     }
 
     @Test

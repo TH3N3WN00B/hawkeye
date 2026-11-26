@@ -139,6 +139,12 @@ second release in a quarter).
   action other than `CONTAINER_DEPOSIT` and `CONTAINER_WITHDRAW`. `a:container`, `+container` and
   `-container` include them (a rollback still changes only container blocks and entities); `a:virtual`,
   `+virtual` and `-virtual` (also `enderchest`, `ender-chest`, `vault`, `vaults`) look up only them.
+- Item details in lookup results: the hover of an item's name lists its custom name, enchantments (stored
+  enchantments of an enchanted book too) and, for a written book or a book and quill, the title, author and
+  page count, read from the stored item NBT without a server (`util.serialize.ItemDetails`). Clicking a book
+  with pages opens it for the player who clicked, for an hour after the lookup (an Adventure click
+  callback); click events in its pages are dropped. New `messages.yml` keys: `lookup.item-name`,
+  `item-enchantment`, `item-book`, `item-writable-book`, `item-read-hint`. Plain items keep their hover.
 - Paper and Folia 1.21.1 to 1.21.11 and 26.1.2, besides 26.3, from the same jar. Hawkeye decides once at
   startup which newer API the server has, so the capture path checks nothing per event. On older servers:
   a mob a dispenser releases from a bucket is recorded under `#spawn_egg` before 1.21.4; crafted items are
@@ -147,12 +153,12 @@ second release in a quarter).
   blamed on `#unknown` before 26.1.2; a golem or wither built by a player is recorded as spawned by them,
   without the pattern blocks it used up, before 26.2. Shelves (1.21.9) and cushions (26.3) are recorded
   where they exist. README's "Server versions" lists it.
+
 ### Changed
 
 - `paper-plugin.yml` declares `api-version: '1.21.1'` (was `26.3`), and every class is Java 21 bytecode so
   the jar loads on Java 21 (1.21.x servers). The build still runs on Java 25: `src/main` compiles against
   paper-api 1.21.1, the new `src/newerApi` and the tests against 26.3.
-
 - Versions are year.quarter: a stable release is `26.4`, a Jenkins build `26.4.B<build>` (`26.4.B25`), any other
   build `26.4-SNAPSHOT`. Release tags are `26.4` (or `26.4.1` for a second release in a quarter) instead of
   `vX.Y.Z`. The jar is named after its version (`Hawkeye-26.4.jar`, `Hawkeye-26.4.B12.jar`).
@@ -162,6 +168,10 @@ second release in a quarter).
   `repo.moonrise.gg`, and at server start the engine downloads its libraries from Maven Central only.
 - Runtime libraries the plugin loader downloads at server start: HikariCP 7.1.0, sqlite-jdbc 3.54.1.0,
   MariaDB Connector/J 4.0.0, PostgreSQL JDBC 42.7.14, Caffeine 3.3.1, Lettuce 7.9.0 and zstd-jni 1.5.7-28.
+  Connector/J 4 defaults to TLS with a verified certificate (`sslMode=verify-full`); a MySQL or MariaDB
+  storage connection keeps the former default instead, `sslMode=disable`, plus `allowPublicKeyRetrieval=true`
+  so MySQL 8's `caching_sha2_password` works over it. Set `sslMode` (or the legacy `useSsl`) in
+  `storage.parameters` to encrypt, for example `sslMode: verify-full` or `sslMode: trust`.
   Built with Gradle 9.9.2. Paper API stays at 26.3 build 249: build 256 adds the `minecraft:world_clock`
   registry, which no MockBukkit release up to 4.125.0 has data for, so every MockBukkit test fails on it.
 

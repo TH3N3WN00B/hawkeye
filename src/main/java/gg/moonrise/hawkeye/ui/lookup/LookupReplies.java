@@ -65,7 +65,8 @@ public final class LookupReplies {
     public @NotNull LookupLines lines() {
         MessagesConfig messages = configProvider.messages();
         EventLines events = new EventLines(messages.getLookup(), messages.getActions(),
-                configProvider.get().server().name(), clock.instant(), ZoneId.systemDefault());
+                configProvider.get().server().name(), clock.instant(), ZoneId.systemDefault(),
+                EventLines.CALLBACK_BOOKS);
         return new LookupLines(messages, events);
     }
 
