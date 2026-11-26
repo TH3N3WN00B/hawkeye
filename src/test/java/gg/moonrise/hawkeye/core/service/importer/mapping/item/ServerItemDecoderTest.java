@@ -230,6 +230,37 @@ public class ServerItemDecoderTest {
     }
 
     @Test
+    public void anItemInsideWithAMalformedMapIsLeftOut() throws IOException {
+        BundleMeta base = (BundleMeta) new ItemStack(Material.BUNDLE).getItemMeta();
+        ItemStack stone = new ItemStack(Material.STONE);
+        // Paper casts "type" to a String unchecked, so a number ends in a ClassCastException.
+        Map<String, Object> item = new HashMap<>();
+        item.put("v", 4189);
+        item.put("type", 42);
+        Map<String, Object> malformed = new HashMap<>();
+        malformed.put("0", item);
+        malformed.put("1", new ArrayList<>());
+
+        ItemStack decoded = decoded("minecraft:bundle", blob(lists(List.of(base.serialize()),
+                List.of(malformed, contained(stone, lists())))));
+
+        assertEquals(List.of(stone), ((BundleMeta) decoded.getItemMeta()).getItems());
+        assertEquals(0, decoder.failures());
+    }
+
+    @Test
+    public void aCrossbowLeavesOutWhatItCannotHold() throws IOException {
+        CrossbowMeta base = (CrossbowMeta) new ItemStack(Material.CROSSBOW).getItemMeta();
+
+        ItemStack decoded = decoded("minecraft:crossbow", blob(lists(List.of(base.serialize()),
+                List.of(contained1214("STONE"), contained1214("ARROW")))));
+
+        assertEquals(List.of(new ItemStack(Material.ARROW)),
+                ((CrossbowMeta) decoded.getItemMeta()).getChargedProjectiles());
+        assertEquals(0, decoder.failures());
+    }
+
+    @Test
     public void attributeModifiersAreReapplied() throws IOException {
         ItemMeta base = new ItemStack(Material.IRON_SWORD).getItemMeta();
         base.displayName(Component.text("Heavy"));
