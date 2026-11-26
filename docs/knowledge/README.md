@@ -202,6 +202,11 @@ update them in the same change when you learn something durable or an entry stop
   bean declaring `@Suggestions(QueryInput.SUGGESTIONS)` (`LookupCommand`) is registered first
   (`@Order(Ordered.HIGHEST_PRECEDENCE)`). A `@Suggestions` method can take a `CommandInput`, whose
   `remainingInput()` is the whole greedy argument.
+- Cloud annotations 2.0.0 runs every annotation string (command, description, permission, argument and
+  suggestion names) through the parser's `StringProcessor`, before it parses a command string, so
+  `command.registry.CommandAliasProcessor` rewrites only strings whose first word is `Permissions.ROOT`
+  (`hawkeye`); annotations name the root and subcommands without aliases, which come from
+  `commands.yml`.
 - `Placeholder.parsed` values work inside MiniMessage tag arguments (click commands);
   `Placeholder.unparsed` values do not.
 - CompletableFuture runs a dependent stage's `execute` on the thread that completes the source; an
@@ -591,7 +596,9 @@ update them in the same change when you learn something durable or an entry stop
 - Every player-facing message is configurable (MiniMessage); commands, permissions and config keys
   are contracts with operators.
 - Folia support by default (`folia-supported: true`): schedule through the engine `Scheduler` only.
-- Repositories are private and carry no license file unless the owner adds one.
+- Hawkeye is public (`ericlmao/hawkeye`) under the GNU General Public License version 3 (`LICENSE`, the
+  owner's choice on 2026-11-26). The engine shaded into the jar and Moss are MIT (their Maven Central
+  POMs). Other Moonrise repositories carry no license file unless the owner adds one.
 
 ## Environment facts (verified 2026-11-12)
 

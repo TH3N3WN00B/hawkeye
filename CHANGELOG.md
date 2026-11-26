@@ -153,6 +153,10 @@ second release in a quarter).
   blamed on `#unknown` before 26.1.2; a golem or wither built by a player is recorded as spawned by them,
   without the pattern blocks it used up, before 26.2. Shelves (1.21.9) and cushions (26.3) are recorded
   where they exist. README's "Server versions" lists it.
+- `commands.yml`: configurable aliases for `/hawkeye` (`root-aliases`, default `[he]`) and its
+  subcommands (`subcommand-aliases`, defaults `inspect: [i]`, `lookup: [l]`, `rollback: [rb]`,
+  `restore: [rs]`), so `/co` can keep working for staff coming from CoreProtect. Aliases are validated
+  on load and apply after a restart; `/hawkeye reload` reports a changed file as restart-only.
 
 ### Changed
 

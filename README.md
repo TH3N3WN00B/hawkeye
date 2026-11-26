@@ -67,7 +67,8 @@ all but 9,394.
 
 ## Commands
 
-The root command is `/hawkeye` with the alias `/he`.
+The root command is `/hawkeye` with the alias `/he`. Both, and the subcommand aliases in brackets, are
+the defaults of `commands.yml` ([below](#command-aliases)).
 
 | Command | Permission | What it does |
 |---|---|---|
@@ -87,7 +88,7 @@ The root command is `/hawkeye` with the alias `/he`.
 | `/he import cancel` | `hawkeye.import` | Stops the running import after its current batch |
 | `/he status` | `hawkeye.admin` | Queue, writer and database health |
 | `/he network` | `hawkeye.network` | Every server of every shard and its heartbeat |
-| `/he reload` | `hawkeye.admin` | Reloads `config.yml` and `messages.yml` |
+| `/he reload` | `hawkeye.admin` | Reloads `config.yml` and `messages.yml` (`commands.yml` needs a restart) |
 
 All permissions default to operators; `hawkeye.*` grants them all. `hawkeye.network` is also
 needed for `s:` in any parameter list. Commands, permission nodes and configuration keys are
@@ -176,10 +177,10 @@ chat, sessions, inventory snapshots and ender chest or plugin inventory transact
 
 ## Configuration
 
-`plugins/Hawkeye/config.yml` and `messages.yml` are written with every default and a comment on
+`plugins/Hawkeye/config.yml`, `messages.yml` and `commands.yml` are written with every default and a comment on
 first start; keys missing from an older file are added. `/he reload` applies the logging, lookup,
 rollback, purge and archive sections and every message; `server`, `storage`, `writer` and `network`
-need a restart (the reply says which changed). A file that fails to load or validate keeps the
+need a restart, as does `commands.yml` (the reply says which changed). A file that fails to load or validate keeps the
 previous configuration.
 
 | Section | Highlights |
@@ -193,6 +194,28 @@ previous configuration.
 | `purge` | `retention-days` (automatic purge, 0 = keep everything), `player-minimum-days` |
 | `network` | `bus` (`NONE` or `REDIS`), `redis-uri`, `poll-interval-seconds`, `shards` |
 | `archive` | `enabled`, `segment-events` (262144 events per segment, 16384 to 1048576), `settle-seconds` (60: newer events stay hot), `after-hours` (24: older events are packed even when fewer than a segment are waiting), `interval-minutes` (1) |
+
+### Command aliases
+
+`plugins/Hawkeye/commands.yml` holds the extra names of `/hawkeye` and its subcommands. The defaults
+are the built-in aliases:
+
+```yaml
+root-aliases: [he]
+subcommand-aliases:
+  inspect: [i]
+  lookup: [l]
+  rollback: [rb]
+  restore: [rs]
+```
+
+Add `co` to `root-aliases` so staff used to CoreProtect keep typing `/co i`, `/co l u:Alex` and
+`/co rb ...`; add a subcommand (`near: [n]`) or remove an entry to drop an alias. An alias needs the
+same permission as the command it names. Aliases are registered at startup, so a change needs a
+restart (`/he reload` says so). A name must be up to 32 of `a-z`, `0-9`, `_` and `-`, used once; a
+file that breaks that rule fails to load like any other. An alias for a subcommand that does not
+exist, or that is the name of another subcommand, is skipped with a warning in the log. A root alias
+another plugin also registers (CoreProtect's own `/co`) is only reliable once that plugin is removed.
 
 ### Database credentials
 

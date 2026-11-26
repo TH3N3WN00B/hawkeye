@@ -48,7 +48,7 @@ public final class LookupCommand implements PaperCommand {
     private final @NotNull LookupReplies replies;
     private final @NotNull HawkeyeConfigProvider configProvider;
 
-    @Command(Permissions.ROOT + " lookup|l [parameters]")
+    @Command(Permissions.ROOT + " lookup [parameters]")
     @CommandDescription("Searches the history (u: t: r: a: i: e: s: #count)")
     @Permission(Permissions.LOOKUP)
     public void lookup(@NotNull CommandSourceStack source,
