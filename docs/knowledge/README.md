@@ -229,6 +229,20 @@ update them in the same change when you learn something durable or an entry stop
   lectern states count as `Container`; the state of a block set with `setBlockData` reads as air (set
   the data on the state in tests); `getState()` is live and `getState(false)` a copy (the reverse of
   Paper); nearby entities are found by position, not bounding box.
+- Click callbacks (checked 2026-11-26, Adventure 5.2.0): `ClickEvent.callback` asks the
+  `ClickCallback.Provider` service. Paper 26.3's server jar registers `ClickCallbackProviderImpl` (a
+  `paper:click_callback` custom click event holding a UUID, kept for the options' uses and lifetime);
+  MockBukkit 4.120 registers none, so it silently returns Adventure's fallback, a `suggest_command` of
+  "Callbacks are not supported on this platform!". `EventLines` therefore takes a `BookOpener`
+  (`EventLines.CALLBACK_BOOKS` on a server, a recording fake in tests).
+- Text components inside item NBT (1.21.5+ shapes, read by `util.serialize.ItemDetails`): a string tag is
+  plain text, a list is the first element with siblings, a compound has the JSON keys with booleans as
+  bytes. Converting to Gson must turn bytes 0/1 into JSON booleans (`JsonPrimitive#getAsBoolean` of a
+  number reads its string, so `1` is false). Heterogeneous NBT lists wrap non-compound elements as
+  `{"": value}`. Book pages and titles are "filterable": bare or `{raw: ..., filtered: ...}`. Strings
+  are tried as JSON only with a strict parse: Gson's lenient parse reads `[Chapter]` as an array. The
+  shapes come from the vanilla codecs; Paper 26.3's `serializeAsBytes` of a real written book has not
+  been compared on a live server.
 - MockBukkit 4.120 `InventoryMock#getHolder(boolean)` throws `UnimplementedOperationException` for every
   inventory it builds, `getEnderChest()` and `createInventory` included; tests open `listener.HeldInventories`
   (`chest`, `hopper`, `dropper`, `typed(holder, type)`, `chest(holder, title)`) instead. A view's title is the
