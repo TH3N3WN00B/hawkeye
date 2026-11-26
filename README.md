@@ -240,6 +240,32 @@ Every player-facing text is a MiniMessage template in `messages.yml`. `lookup.un
 stands in for `<total>` and `<pages>` when a lookup could not be counted and `lookup.at-least`
 (`<value>+`) when they are lower bounds.
 
+### Error and crash files
+
+Hawkeye shows each warning or error once in the console, as one line without its stack trace that names the file
+holding the details:
+
+```
+[14:03:05 ERROR]: [gg.moonrise.hawkeye.core.queue.event.EventWriter] The writer loop failed (attempt 1), retrying: SQLException: database is locked (details in plugins/Hawkeye/errors/Error-2026-11-25-14-03.txt)
+```
+
+The stack trace and every later repeat go only to that file, so a database that is down (Hawkeye's retries and
+HikariCP's warnings about Hawkeye's `Hawkeye-<shard>` pools) or a listener that fails on every event no longer
+floods the console or `logs/latest.log`. Files are named after the minute a problem was first logged, in the
+server's time zone; problems first logged in the same minute share a file, and a repeat goes into the file of its
+first time (one line each for the first 100, then one line a minute that counts them).
+
+| Folder | Holds |
+|---|---|
+| `plugins/Hawkeye/errors/Error-<year>-<month>-<day>-<hour>-<minute>.txt` | Warnings and errors while Hawkeye runs |
+| `plugins/Hawkeye/crash/Crash-<year>-<month>-<day>-<hour>-<minute>.txt` | An error while Hawkeye loads or enables (a configuration file that does not load, a bean, listener or the commands that fail to start), or one of its threads stopped |
+
+Each file starts with the server's details: the Minecraft version, the server type (Paper, Folia, Purpur, Leaf,
+Gale, Pufferfish or Spigot), the server's own name and version, Java, the operating system, Hawkeye's version and
+every plugin with its version. Attach the file when you report a problem. A plugin that cannot start writes a crash
+file, prints one line and disables itself. "Once" means once per server start: after a restart a problem is shown
+again. Nothing is deleted automatically; remove old files when you no longer need them.
+
 ## Running several servers
 
 1. **One shared database.** Point every server's `storage` at the same MySQL, MariaDB or

@@ -1,0 +1,135 @@
+package gg.moonrise.hawkeye.core.diagnostic;
+
+import gg.moonrise.hawkeye.core.sql.DatabaseFactory;
+import gg.moonrise.hawkeye.util.log.LogMarkers;
+import java.nio.file.Path;
+import java.util.Optional;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Marker;
+import org.apache.logging.log4j.MarkerManager;
+import org.apache.logging.log4j.core.LogEvent;
+import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.config.LoggerConfig;
+import org.apache.logging.log4j.core.filter.AbstractFilter;
+import org.apache.logging.log4j.message.Message;
+import org.jetbrains.annotations.NotNull;
+
+/**
+ * A log4j filter on the server's root logger (every Paper server logs through log4j-core, 2.22.1 on 1.21.1 up to
+ * 2.26.0 on 26.3) that hands Hawkeye's warnings and errors to the {@link ErrorLog}. It sees an event on the
+ * thread that logged it, before any appender, so it decides at once:
+ * <ul>
+ *     <li>the first time: the event is dropped and replaced by one line without the stack trace that names the
+ *     file holding it;</li>
+ *     <li>a repeat: the event is dropped (the file records it);</li>
+ *     <li>anything else passes as it is.</li>
+ * </ul>
+ * Hawkeye's events are those of the {@code gg.moonrise.hawkeye} loggers (the relocated engine included), of the
+ * plugin's own logger ({@code Hawkeye}: Paper's "Could not pass event" and task failures) and HikariCP's about a
+ * Hawkeye pool ({@link DatabaseFactory#POOL_PREFIX}), plus, while a thread runs Hawkeye's load or enable, every
+ * event of that thread (Moss and Spring starting the context). A
+ * {@link LogMarkers#CRASH} event, or an ERROR of that startup thread, is a crash.
+ */
+public final class Log4jCapture extends AbstractFilter implements ConsoleCapture {
+
+    private static final String BASE_LOGGER = "gg.moonrise.hawkeye";
+    private static final String HIKARI_LOGGER = "com.zaxxer.hikari";
+    private static final Marker REPORTED = MarkerManager.getMarker(LogMarkers.REPORTED_NAME);
+
+    private final @NotNull ErrorLog errorLog;
+    private final @NotNull String pluginLogger;
+    private final @NotNull Path serverFolder;
+    private final @NotNull LoggerConfig root;
+
+    private Log4jCapture(@NotNull ErrorLog errorLog, @NotNull String pluginLogger, @NotNull Path serverFolder,
+                         @NotNull LoggerConfig root) {
+        super(Result.NEUTRAL, Result.NEUTRAL);
+        this.errorLog = errorLog;
+        this.pluginLogger = pluginLogger;
+        this.serverFolder = serverFolder;
+        this.root = root;
+    }
+
+    /**
+     * Adds the filter to the root logger of the logging context Hawkeye's loggers use.
+     *
+     * @param errorLog     where problems go
+     * @param pluginLogger the plugin's logger name (its name, {@code Hawkeye})
+     * @param serverFolder the server's folder: the console line names files relative to it
+     * @return the installed capture, empty when the logging is not log4j-core
+     */
+    public static @NotNull Optional<ConsoleCapture> install(@NotNull ErrorLog errorLog, @NotNull String pluginLogger,
+                                                            @NotNull Path serverFolder) {
+        if (!(LogManager.getContext(false) instanceof LoggerContext context)) {
+            return Optional.empty();
+        }
+        Log4jCapture capture = new Log4jCapture(errorLog, pluginLogger, serverFolder.toAbsolutePath().normalize(),
+                context.getConfiguration().getRootLogger());
+        capture.start();
+        capture.root.addFilter(capture);
+        return Optional.of(capture);
+    }
+
+    @Override
+    public void close() {
+        root.removeFilter(this);
+        stop();
+    }
+
+    @Override
+    public Result filter(LogEvent event) {
+        Level level = event.getLevel();
+        if (level == null || !level.isMoreSpecificThan(Level.WARN)) {
+            return Result.NEUTRAL;
+        }
+        Marker marker = event.getMarker();
+        if (marker != null && marker.isInstanceOf(REPORTED)) {
+            return Result.NEUTRAL;
+        }
+        boolean startup = errorLog.isStartupThread(event.getThreadId());
+        String logger = event.getLoggerName() == null ? "" : event.getLoggerName();
+        if (!startup && !isHawkeye(logger) && !isHawkeyePool(logger, event)) {
+            return Result.NEUTRAL;
+        }
+        boolean crash = (marker != null && marker.isInstanceOf(LogMarkers.CRASH_NAME))
+                || (startup && level.isMoreSpecificThan(Level.ERROR));
+        Problem problem = problem(event, logger, crash ? ProblemKind.CRASH : ProblemKind.ERROR);
+        return switch (errorLog.report(problem)) {
+            case ReportResult.First first -> {
+                LogManager.getLogger(logger).log(level, REPORTED, "{} (details in {})", problem.headline(),
+                        display(first.file()));
+                yield Result.DENY;
+            }
+            case ReportResult.Repeat repeat -> Result.DENY;
+            case ReportResult.Untracked untracked -> Result.NEUTRAL;
+        };
+    }
+
+    private boolean isHawkeye(@NotNull String logger) {
+        return logger.equals(pluginLogger) || logger.equals(BASE_LOGGER) || logger.startsWith(BASE_LOGGER + ".");
+    }
+
+    /** HikariCP's own warnings about one of Hawkeye's pools ("Hawkeye-home - Pool is empty, ..."). */
+    private static boolean isHawkeyePool(@NotNull String logger, @NotNull LogEvent event) {
+        Message message = event.getMessage();
+        return logger.startsWith(HIKARI_LOGGER + ".") && message != null
+                && String.valueOf(message.getFormattedMessage()).startsWith(DatabaseFactory.POOL_PREFIX);
+    }
+
+    private static @NotNull Problem problem(@NotNull LogEvent event, @NotNull String logger,
+                                            @NotNull ProblemKind kind) {
+        Message message = event.getMessage();
+        String formatted = message == null ? "" : String.valueOf(message.getFormattedMessage());
+        String template = message == null || message.getFormat() == null ? formatted : message.getFormat();
+        String thread = event.getThreadName() == null ? "?" : event.getThreadName();
+        return new Problem(event.getTimeMillis(), kind, event.getLevel().name(), logger, thread, template, formatted,
+                event.getThrown());
+    }
+
+    private @NotNull String display(@NotNull Path file) {
+        Path absolute = file.toAbsolutePath().normalize();
+        Path shown = absolute.startsWith(serverFolder) ? serverFolder.relativize(absolute) : absolute;
+        return shown.toString().replace('\\', '/');
+    }
+}

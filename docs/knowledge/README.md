@@ -414,6 +414,49 @@ update them in the same change when you learn something durable or an entry stop
   `generator-settings`; the world is the classic flat one all the same. CoreProtect 25.0 defaults to
   `database-type: duckdb` (`database.duckdb`); `sqlite` gives the `database.db` the import scenarios use.
 
+## Error log facts (verified 2026-11-25)
+
+- Paper's `log4j2.xml` (1.21.1 and 26.3 server jars): the root logger is `info` with a `MarkerFilter` for
+  `NETWORK_PACKETS` and one `Async` appender (1.21.1 routes it through two `Rewrite` appenders, 26.3 straight to the
+  console and `latest.log`); `log4j2.component.properties` sets only `log4j.skipJansi`, so there are no async
+  loggers. A filter on the root `LoggerConfig` therefore runs on the logging thread before any appender and can
+  drop an event and log a replacement; `core.diagnostic.Log4jCapture` does that, and log4j combines it with the
+  marker filter into a `CompositeFilter`. Loggers print as `[%logger]` (the class name for `@Slf4j`, `Hawkeye` for
+  the plugin's own logger, which Paper uses for "Could not pass event ..." and task failures).
+- log4j-core per server: 1.21.1 2.22.1, 1.21.4 2.24.1, 1.21.11 and 26.1.2 2.25.2, 26.3 2.26.0 (the
+  `libraries` folders). Main compiles against 2.22.1 (`log4jCore`, `compileOnly`; Dependabot must not move it past
+  the oldest server's), the tests use 2.26.0 with `log4j-slf4j2-impl`. log4j-core's class files carry SpotBugs
+  and bnd annotations it does not ship, so `-Xlint:all` warned `[classfile]` until the build added `-classfile`.
+- A log4j event and its message may be reused once the logging call returns (`ReusableLogEventFactory`, thread
+  locals on by default), so the filter copies strings and the throwable into a `Problem` before it returns.
+- Paper 1.21.1 `ServerPluginProviderStorage` catches whatever `onLoad` throws, logs `Error initializing plugin
+  '%s' in folder '%s' (Is it up to date?)` with the stack trace, and still enables the plugin. Moss's `onLoad`
+  assigns `MossPaper.CONTEXT` before `refresh()`, so after a failed refresh `CONTEXT` is an inactive context
+  and `getBeansOfType` throws: `HawkeyePlugin` catches the failure, skips Moss's enable and Disableable beans
+  for an inactive context, and disables itself from `onEnable` instead. Moss logs a failing `Loadable`,
+  `Enableable` or `Disableable` itself (`Failed to enable {}` under `gg.moonrise.moss.paper.MossPaper`) and
+  goes on; the error log files those as crashes because they are logged on the thread running Hawkeye's start.
+- The engine's own loggers are relocated with it (`gg.moonrise.hawkeye.libs.engine...`) and are Hawkeye's;
+  Moss and Spring loggers are shared by every Moss plugin, so they are Hawkeye's only on the startup thread.
+  HikariCP starts every line with the pool name, so its events about a `Hawkeye-<shard>` pool
+  (`DatabaseFactory.POOL_PREFIX`) are Hawkeye's: with MariaDB at a closed port, Paper 1.21.1 and 26.3 printed
+  `Hawkeye-home - Pool is empty, failed to create/setup connection` with a stack trace (from
+  `com.zaxxer.hikari.pool.PoolBase`) once a minute or so, beside Hawkeye's own retry warning. Lettuce's
+  reconnect lines carry nothing Hawkeye-specific and are left alone.
+- Java 21 and 25 name the same zone differently with `Locale.ROOT` (`CST` against `GMT-06:00`), so the files print
+  times with the UTC offset (`xxx`).
+- Real servers, 2026-11-25 on Windows (Paper 1.21.1 build 133 on Java 21, 26.3 build 262 on Java 25), MariaDB
+  configured at `127.0.0.1:1`: the console showed `Could not connect to the database (attempt 1) ... (details in
+  plugins/Hawkeye/errors/Error-2026-11-25-21-26.txt)` once, and the file held the header (Minecraft version,
+  `Server type: Paper`, `Paper 26.3-262-827eeeb (MC: 26.3)`, Java, the plugin list) and attempts 1 to 5;
+  `latest.log` held no Hawkeye stack frame. A `config.yml` that is not YAML gave one ERROR line naming
+  `crash/Crash-...txt` (the startup thread's ERROR) on both, and `tnt-rollback.txt` passed on both with no
+  `errors` or `crash` folder written. Not run on Folia.
+- Without an SLF4J provider on the test class path every `@Slf4j` call was a no-op; the tests now log into a
+  real log4j (root `warn`, a `Null` appender), and every plugin load in a test writes error and crash files in
+  MockBukkit's temporary data folder (MockBukkit cannot build Cloud's manager, which Hawkeye logs as an ERROR at
+  enable: a crash file). `core.diagnostic.ConsoleLines` (tests) records what the console would print.
+
 ## Credential facts (verified 2026-11-21)
 
 - ConfigLib 4.8.1 rejects a number or boolean for a `String` field (`password: 123456`) unless the

@@ -493,8 +493,11 @@ one `server` row and one `import_state` row per source.
 | Applying a rollback/restore/preview | The region that owns each chunk (`core.service.thread.ServerThreads`), a bounded number of blocks per tick |
 | A CoreProtect import | One `Hawkeye-Import` thread per run (reading, mapping, writing) and a `Hawkeye-Import-Pack` pool of 3 that compresses segment frames; both end with the run |
 | Replies to a command sender | The sender's own thread |
+| Hawkeye's warnings, errors and crashes (`core.diagnostic`) | Sorted on the logging thread by a log4j filter on the root logger (no I/O, never blocks); one `Hawkeye-ErrorLog` thread writes `errors/` and `crash/` |
 
-Every executor is owned by a bean with a `Disableable` shutdown path. Shutdown flushes the queue
+Every executor is owned by a bean with a `Disableable` shutdown path, except the error log: `HawkeyePlugin`
+opens it before the Spring context (so a context that fails to start is a crash file) and closes it last in
+`onDisable`, after the context. Shutdown flushes the queue
 (bounded by `shutdown-timeout`) and spools what could not be written.
 
 ## Multi-server and sharding

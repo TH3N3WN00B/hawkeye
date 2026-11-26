@@ -1,0 +1,147 @@
+package gg.moonrise.hawkeye;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import gg.moonrise.hawkeye.core.diagnostic.ConsoleLines;
+import gg.moonrise.hawkeye.core.queue.event.EventWriter;
+import gg.moonrise.hawkeye.support.FailingHawkeyePlugin;
+import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
+import gg.moonrise.hawkeye.support.TestPlugins;
+import gg.moonrise.moss.paper.MossPaper;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.SQLException;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
+import org.apache.logging.log4j.core.LogEvent;
+import org.jetbrains.annotations.NotNull;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockbukkit.mockbukkit.MockBukkit;
+import org.mockbukkit.mockbukkit.ServerMock;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/** The error and crash files of the loaded plugin, on MockBukkit and the tests' real log4j. */
+public class HawkeyePluginErrorLogTest {
+
+    private static final Pattern DETAILS = Pattern.compile("\\(details in (.+\\.txt)\\)$");
+
+    private ServerMock server;
+    private ConsoleLines console;
+
+    @BeforeEach
+    public void setUp() {
+        server = MockBukkit.mock();
+        console = ConsoleLines.attach();
+    }
+
+    @AfterEach
+    public void tearDown() {
+        MockBukkit.unmock();
+        console.close();
+    }
+
+    @Test
+    public void aContextThatFailsToStartIsACrashFileAndOneConsoleLine() throws IOException {
+        FailingHawkeyePlugin plugin = MockBukkit.load(FailingHawkeyePlugin.class);
+
+        assertFalse(plugin.isEnabled(), "the plugin disables itself");
+        assertTrue(plugin.diagnostics().isEmpty(), "the error log closed with the plugin");
+        List<LogEvent> lines = console.of(HawkeyePlugin.class.getName());
+        assertEquals(1, lines.size(), "one console line: " + lines);
+        assertNull(lines.getFirst().getThrown(), "without the stack trace");
+        String line = lines.getFirst().getMessage().getFormattedMessage();
+        assertTrue(line.startsWith("Hawkeye could not load and is disabled: IllegalArgumentException: storage.type: "
+                + "'oracle' is unknown (details in "), line);
+
+        List<Path> crashes = files(plugin.getDataPath().resolve("crash"));
+        assertEquals(1, crashes.size(), crashes.toString());
+        Path crash = crashes.getFirst();
+        assertTrue(crash.getFileName().toString().matches("Crash-\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}\\.txt"),
+                crash.toString());
+        assertTrue(line.endsWith(crash.getFileName() + ")"), line);
+        String text = read(crash);
+        assertTrue(text.startsWith("Hawkeye crash report, started "), text);
+        assertContainsInOrder(text, "  Minecraft version: " + server.getMinecraftVersion(),
+                "  Server type: unknown", "  Server: " + server.getName() + " " + server.getVersion(),
+                "  Java: " + Runtime.version(), "  Hawkeye: " + plugin.getPluginMeta().getVersion(), "Plugins (1)",
+                "  " + plugin.getName() + " " + plugin.getPluginMeta().getVersion(),
+                "#1 ERROR at ", "Logger: " + HawkeyePlugin.class.getName(), "Hawkeye could not load and is disabled",
+                "java.lang.IllegalStateException: " + FailingHawkeyePlugin.FAILURE,
+                "Caused by: java.lang.IllegalArgumentException: storage.type: 'oracle' is unknown");
+        assertFalse(Files.exists(plugin.getDataPath().resolve("errors")), "a startup failure is no error file");
+    }
+
+    @Test
+    public void aRepeatedErrorIsShownOnceAndItsRepeatsAreWrittenToItsFile() throws Exception {
+        TestHawkeyePlugin plugin = TestPlugins.load();
+        assertTrue(plugin.isEnabled());
+        Logger writer = LoggerFactory.getLogger(EventWriter.class);
+
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            writer.error("The writer loop failed (attempt {}), retrying", attempt, new SQLException("disk I/O error"));
+        }
+        plugin.diagnostics().orElseThrow().errorLog().flush().get(5, TimeUnit.SECONDS);
+
+        List<LogEvent> lines = console.of(EventWriter.class.getName());
+        assertEquals(1, lines.size(), "one console line: " + lines);
+        Matcher details = DETAILS.matcher(lines.getFirst().getMessage().getFormattedMessage());
+        assertTrue(details.find(), lines.getFirst().getMessage().getFormattedMessage());
+        Path file = Path.of(details.group(1));
+        assertEquals(plugin.getDataPath().resolve("errors").toAbsolutePath().normalize(),
+                file.toAbsolutePath().normalize().getParent());
+        String text = read(file);
+        assertTrue(text.startsWith("Hawkeye error report, started "), text);
+        assertContainsInOrder(text, "  Minecraft version: " + server.getMinecraftVersion(), "Plugins (",
+                "ERROR at ", "The writer loop failed (attempt 1), retrying", "java.sql.SQLException: disk I/O error",
+                "again (2 times): The writer loop failed (attempt 2), retrying: SQLException: disk I/O error",
+                "again (3 times): The writer loop failed (attempt 3), retrying");
+    }
+
+    @Test
+    public void disablingClosesTheErrorLogAndRemovesItsFilter() {
+        TestHawkeyePlugin plugin = TestPlugins.load();
+
+        server.getPluginManager().disablePlugin(plugin);
+        LoggerFactory.getLogger(EventWriter.class).error("After the plugin stopped", new SQLException("closed"));
+
+        assertTrue(plugin.diagnostics().isEmpty());
+        assertNull(MossPaper.CONTEXT);
+        List<LogEvent> lines = console.of(EventWriter.class.getName());
+        assertEquals(1, lines.size());
+        assertEquals("After the plugin stopped", lines.getFirst().getMessage().getFormattedMessage());
+        assertTrue(lines.getFirst().getThrown() instanceof SQLException, "logged as it is");
+    }
+
+    private static @NotNull List<Path> files(@NotNull Path folder) throws IOException {
+        if (!Files.isDirectory(folder)) {
+            return List.of();
+        }
+        try (Stream<Path> files = Files.list(folder)) {
+            return files.sorted().toList();
+        }
+    }
+
+    private static @NotNull String read(@NotNull Path file) throws IOException {
+        return Files.readString(file, StandardCharsets.UTF_8).replace(System.lineSeparator(), "\n");
+    }
+
+    private static void assertContainsInOrder(@NotNull String text, @NotNull String... parts) {
+        int from = 0;
+        for (String part : parts) {
+            int at = text.indexOf(part, from);
+            assertTrue(at >= 0, "missing after offset " + from + ": " + part + "\n--- text ---\n" + text);
+            from = at + part.length();
+        }
+    }
+}
