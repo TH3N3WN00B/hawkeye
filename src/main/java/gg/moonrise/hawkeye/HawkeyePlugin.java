@@ -39,7 +39,9 @@ public class HawkeyePlugin extends PaperPlugin {
     public void loadInitialComponents(@NotNull AnnotationConfigApplicationContext context) {
         super.loadInitialComponents(context);
         Diagnostics open = Objects.requireNonNull(diagnostics, "the error log opens before the context");
-        context.registerBean(Diagnostics.class, () -> open);
+        // No destroy method: Spring would infer close() (AutoCloseable) and close the error log with the context,
+        // so the beans stopped after it would log straight to the console. onDisable closes it last.
+        context.registerBean(Diagnostics.class, () -> open, definition -> definition.setDestroyMethodName(""));
     }
 
     /**

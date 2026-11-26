@@ -3,10 +3,12 @@ package gg.moonrise.hawkeye;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.net.httpserver.HttpServer;
 import gg.moonrise.hawkeye.core.diagnostic.ConsoleLines;
+import gg.moonrise.hawkeye.core.diagnostic.Diagnostics;
 import gg.moonrise.hawkeye.core.queue.event.EventWriter;
 import gg.moonrise.hawkeye.support.FailingHawkeyePlugin;
 import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
@@ -126,6 +128,25 @@ public class HawkeyePluginErrorLogTest {
         assertEquals(1, lines.size());
         assertEquals("After the plugin stopped", lines.getFirst().getMessage().getFormattedMessage());
         assertTrue(lines.getFirst().getThrown() instanceof SQLException, "logged as it is");
+    }
+
+    @Test
+    public void closingTheContextLeavesTheErrorLogOpenForWhatStopsAfterIt() throws Exception {
+        TestHawkeyePlugin plugin = TestPlugins.load();
+        Diagnostics diagnostics = plugin.diagnostics().orElseThrow();
+        assertSame(diagnostics, TestPlugins.bean(Diagnostics.class), "registered in the context");
+
+        // What MossPaper.onDisable does before HawkeyePlugin's finally closes the error log.
+        plugin.disableComponents();
+        MossPaper.CONTEXT.close();
+        LoggerFactory.getLogger(EventWriter.class).error("Stopping after the context", new SQLException("closed"));
+        diagnostics.errorLog().flush().get(5, TimeUnit.SECONDS);
+
+        List<LogEvent> lines = console.of(EventWriter.class.getName());
+        assertEquals(1, lines.size(), lines.toString());
+        String line = lines.getFirst().getMessage().getFormattedMessage();
+        assertTrue(DETAILS.matcher(line).find(), "still filed, not printed as it is: " + line);
+        assertNull(lines.getFirst().getThrown());
     }
 
     @Test
