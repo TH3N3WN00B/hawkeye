@@ -13,6 +13,7 @@ import gg.moonrise.hawkeye.core.time.EventClock;
 import gg.moonrise.hawkeye.entity.event.PendingEvent;
 import gg.moonrise.hawkeye.entity.storage.WriterStats;
 import gg.moonrise.hawkeye.util.event.EventIds;
+import gg.moonrise.hawkeye.util.log.LogMarkers;
 import gg.moonrise.moss.spring.Disableable;
 import gg.moonrise.moss.spring.Enableable;
 import gg.moonrise.moss.spring.SpringComponent;
@@ -157,7 +158,7 @@ public final class EventWriter implements Enableable, Disableable {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } catch (RuntimeException e) {
-            log.error("The writer loop failed", e);
+            log.error(LogMarkers.CRASH, "The writer loop failed and stopped", e);
         } finally {
             // From here on flush() answers at once: nothing would complete a request queued later.
             running = false;

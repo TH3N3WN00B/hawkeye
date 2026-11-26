@@ -159,9 +159,22 @@ second release in a quarter).
   subcommands (`subcommand-aliases`, defaults `inspect: [i]`, `lookup: [l]`, `rollback: [rb]`,
   `restore: [rs]`), so `/co` can keep working for staff coming from CoreProtect. Aliases are validated
   on load and apply after a restart; `/hawkeye reload` reports a changed file as restart-only.
+- Error and crash files: each of Hawkeye's warnings and errors is shown once in the console, as one line without
+  its stack trace that names its file; the stack trace and every repeat are written to
+  `plugins/Hawkeye/errors/Error-<year>-<month>-<day>-<hour>-<minute>.txt`. A failure to load or enable (the
+  Spring context, a bean, a listener) and a Hawkeye thread that stops are written to
+  `plugins/Hawkeye/crash/Crash-<...>.txt` instead, and a plugin that cannot start disables itself instead of
+  throwing. Every file starts with the Minecraft version, the server type (Paper, Folia, Purpur, Leaf, Gale,
+  Pufferfish or Spigot, told apart by their classes), the server's name and version, Java, the operating system,
+  Hawkeye's version and the plugin list. Problems first logged in the same minute share a file; a repeat goes
+  into the file of its first time, one line each for the first 100, then one line a minute that counts them.
 
 ### Changed
 
+- The console and `logs/latest.log` no longer hold Hawkeye's stack traces or repeated warnings (a database or
+  Redis that is down, HikariCP's warnings about Hawkeye's pools, a failing listener): they are in
+  `plugins/Hawkeye/errors` and `crash`. `scripts/smoke/run.py` also fails on an ERROR of Hawkeye's class loggers,
+  not only of the `Hawkeye` logger.
 - `paper-plugin.yml` declares `api-version: '1.21.1'` (was `26.3`), and every class is Java 21 bytecode so
   the jar loads on Java 21 (1.21.x servers). The build still runs on Java 25: `src/main` compiles against
   paper-api 1.21.1, the new `src/newerApi` and the tests against 26.3.
