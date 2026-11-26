@@ -2,8 +2,9 @@ name: Update Modrinth Description
 
 # Copies MODRINTH.md into the Modrinth project's description. A published release does it when MODRINTH.md
 # changed since the previous release tag (or on the first release); running the workflow by hand does it
-# from the chosen branch every time. Secrets: MODRINTH_TOKEN (a Modrinth personal access token with the
-# "Write projects" scope) and, optionally, MODRINTH_PROJECT_ID (defaults to the slug hawkeye).
+# from the chosen branch every time. Secrets: MODRINTH_TOKEN (a Modrinth personal access token; this workflow needs
+# "Write projects", and the version uploads "Read projects" and "Create versions") and, optionally,
+# MODRINTH_PROJECT_ID (defaults to the slug hawkeye).
 
 on:
   release:

@@ -712,7 +712,9 @@ update them in the same change when you learn something durable or an entry stop
   URI) is the banner's source and `assets/banner.png` its 1600x480 export, which `MODRINTH.md` shows: a PNG
   looks the same everywhere, where an SVG's text depends on the viewer's fonts. `update-modrinth-description.yml` PATCHes it into the project on a published
   release when it changed since the previous tag (or on the first release), and on every manual run. It needs
-  the repository secret `MODRINTH_TOKEN` (a Modrinth personal access token with "Write projects");
+  the repository secret `MODRINTH_TOKEN`, a Modrinth personal access token with "Read projects" (Minotaur resolves
+  the slug, and a draft or unapproved project is invisible without it), "Write projects" (the description) and
+  "Create versions" (the uploads);
   `MODRINTH_PROJECT_ID` is optional (defaults to `hawkeye`). The Modrinth badges show "not found" until the
   project exists.
 - Modrinth versions come from Minotaur (`com.modrinth.minotaur` 2.10.0, `modrinth { }` in `build.gradle.kts`),
