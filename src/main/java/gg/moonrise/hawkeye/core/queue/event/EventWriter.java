@@ -251,7 +251,10 @@ public final class EventWriter implements Enableable, Disableable {
         try {
             newestId = store.newestId(ready.home());
         } catch (SQLException | RuntimeException e) {
-            failed("Could not read the newest stored id, keeping captured events queued", e);
+            if (countFailure(e)) {
+                log.warn("Could not read the newest stored id, keeping captured events queued (attempt {}): {}",
+                        consecutiveFailures, lastError.get());
+            }
             return false;
         }
         long newestSlot = newestId == 0 ? -1 : EventIds.slot(newestId);
@@ -305,19 +308,17 @@ public final class EventWriter implements Enableable, Disableable {
             consecutiveFailures = 0;
             return true;
         } catch (SQLException | RuntimeException e) {
-            failed("Could not write " + batch.size() + " event(s), keeping them queued", e);
+            if (countFailure(e)) {
+                log.warn("Could not write {} event(s), keeping them queued (attempt {}): {}", batch.size(),
+                        consecutiveFailures, lastError.get());
+            }
             return false;
         }
     }
 
-    private void failed(@NotNull String what, @NotNull Exception e) {
-        if (countFailure(e)) {
-            log.warn("{} (attempt {}): {}", what, consecutiveFailures, lastError.get());
-        }
-    }
-
     /**
-     * Counts a failure for the stats and the back-off.
+     * Counts a failure for the stats and the back-off. Each caller logs with a format string of its own:
+     * the error log tells problems apart by it.
      *
      * @return {@code true} when this attempt is to be logged (the first, then every 20th)
      */

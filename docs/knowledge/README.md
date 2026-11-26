@@ -432,6 +432,9 @@ update them in the same change when you learn something durable or an entry stop
   old configuration (which stops its filters) and then fires a `PropertyChangeEvent` named
   `LoggerContext.PROPERTY_CONFIG` (2.22.1 to 2.26.0), so `Log4jCapture` listens for it, restarts itself and moves to
   the new root logger.
+- The error log groups by message template (the format string before `{}` is filled), so a log call's format
+  string must be constant per problem: vary only the `{}` parameters, never build the template from data, and
+  never log different problems through one bare `"{}"` template (each would hide the others after the first).
 - A log4j event and its message may be reused once the logging call returns (`ReusableLogEventFactory`, thread
   locals on by default), so the filter copies strings and the throwable into a `Problem` before it returns.
 - Paper 1.21.1 `ServerPluginProviderStorage` catches whatever `onLoad` throws, logs `Error initializing plugin
