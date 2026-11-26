@@ -702,8 +702,12 @@ update them in the same change when you learn something durable or an entry stop
 - Without GitHub Actions: build locally with `./gradlew build -Pversion=26.4` and attach
   `build/libs/Hawkeye-26.4.jar` with `gh release create 26.4 --verify-tag`.
 - `MODRINTH.md` is the Modrinth project description (Modrinth slug `hawkeye`, free on 2026-11-26). Links and
-  images in it are absolute (GitHub, `raw.githubusercontent.com/.../main/assets/banner.svg`): Modrinth cannot
-  resolve repository paths. `update-modrinth-description.yml` PATCHes it into the project on a published
+  images in it are absolute (GitHub, `raw.githubusercontent.com/.../main/assets/banner.png`): Modrinth cannot
+  resolve repository paths.
+- The logo is the hawk (`assets/logo.png`, from the owner's image on 2026-11-26); `assets/icon.png` is it on a
+  256x256 transparent square for the Modrinth project icon. `assets/banner.svg` (the logo embedded as a data
+  URI) is the banner's source and `assets/banner.png` its 1600x480 export, which `MODRINTH.md` shows: a PNG
+  looks the same everywhere, where an SVG's text depends on the viewer's fonts. `update-modrinth-description.yml` PATCHes it into the project on a published
   release when it changed since the previous tag (or on the first release), and on every manual run. It needs
   the repository secret `MODRINTH_TOKEN` (a Modrinth personal access token with "Write projects");
   `MODRINTH_PROJECT_ID` is optional (defaults to `hawkeye`). The Modrinth badges show "not found" until the

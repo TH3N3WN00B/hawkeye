@@ -1,4 +1,4 @@
-![Hawkeye](https://raw.githubusercontent.com/ericlmao/hawkeye/main/assets/banner.svg)
+![Hawkeye](https://raw.githubusercontent.com/ericlmao/hawkeye/main/assets/banner.png)
 
 [![Modrinth](https://img.shields.io/modrinth/v/hawkeye?logo=modrinth&label=Modrinth&color=00AF5C)](https://modrinth.com/plugin/hawkeye)
 [![Modrinth downloads](https://img.shields.io/modrinth/dt/hawkeye?logo=modrinth&label=Downloads&color=00AF5C)](https://modrinth.com/plugin/hawkeye)
