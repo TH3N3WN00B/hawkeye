@@ -21,6 +21,8 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -69,7 +71,11 @@ public final class ErrorLog {
     private final AtomicInteger numbers = new AtomicInteger();
     private final BlockingQueue<Job> queue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
     private final AtomicLong dropped = new AtomicLong();
-    private final Thread writer;
+    private final ExecutorService writer = Executors.newSingleThreadExecutor(task -> {
+        Thread thread = new Thread(task, "Hawkeye-ErrorLog");
+        thread.setDaemon(true);
+        return thread;
+    });
     private final CompletableFuture<Void> stopped = new CompletableFuture<>();
     private volatile boolean open;
     private volatile boolean broken;
@@ -94,14 +100,12 @@ public final class ErrorLog {
         this.format = new ReportFormat(clock.getZone());
         this.server = server;
         this.listener = listener;
-        this.writer = new Thread(this::run, "Hawkeye-ErrorLog");
-        this.writer.setDaemon(true);
     }
 
     /** Starts the writer thread; problems are taken from now on. */
     public void start() {
         open = true;
-        writer.start();
+        writer.execute(this::run);
     }
 
     /**
@@ -211,16 +215,20 @@ public final class ErrorLog {
      */
     public void close(@NotNull Duration wait) {
         if (!open) {
+            writer.shutdown();
             return;
         }
         open = false;
         try {
             queue.put(new Job.Stop());
             stopped.get(wait.toMillis(), TimeUnit.MILLISECONDS);
+            writer.shutdown();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            writer.shutdown();
         } catch (TimeoutException | ExecutionException e) {
             log.warn(LogMarkers.REPORTED, "The error log did not finish writing within {} s", wait.toSeconds());
+            writer.shutdownNow();
         }
     }
 

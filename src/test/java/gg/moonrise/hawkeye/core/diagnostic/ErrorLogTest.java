@@ -352,6 +352,23 @@ public class ErrorLogTest {
         assertContainsInOrder(text, "#1 WARN", "#2 ERROR at 2026-11-25 14:03:06.000 +00:00", "Logged during shutdown");
     }
 
+    @Test
+    public void theWriterIsADaemonThreadOfItsOwnThatEndsWithTheLog() throws Exception {
+        AtomicReference<Thread> writerThread = new AtomicReference<>();
+        ErrorLog log = new ErrorLog(folder, Clock.fixed(Instant.ofEpochMilli(AT_14_03_05), ZoneOffset.UTC),
+                () -> SERVER, report -> writerThread.set(Thread.currentThread()));
+        log.start();
+        log.report(problem(AT_14_03_05, "Could not write", null));
+        log.flush().get(5, TimeUnit.SECONDS);
+
+        Thread thread = writerThread.get();
+        assertEquals("Hawkeye-ErrorLog", thread.getName());
+        assertTrue(thread.isDaemon());
+        log.close(Duration.ofSeconds(5));
+        thread.join(5000);
+        assertFalse(thread.isAlive(), "close() shuts the writer's executor down");
+    }
+
     private @NotNull ErrorLog started(@NotNull Supplier<ServerSnapshot> server) {
         ErrorLog log = new ErrorLog(folder, Clock.fixed(Instant.ofEpochMilli(AT_14_03_05), ZoneOffset.UTC), server,
                 written::add);
