@@ -4,31 +4,42 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.destroystokyo.paper.profile.PlayerProfile;
 import gg.moonrise.hawkeye.util.serialize.ItemBytes;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InvalidClassException;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Color;
 import org.bukkit.DyeColor;
+import org.bukkit.FireworkEffect;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Registry;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.block.banner.Pattern;
+import org.bukkit.configuration.serialization.ConfigurationSerializable;
+import org.bukkit.configuration.serialization.ConfigurationSerialization;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.inventory.EquipmentSlotGroup;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BannerMeta;
+import org.bukkit.inventory.meta.BundleMeta;
+import org.bukkit.inventory.meta.CrossbowMeta;
+import org.bukkit.inventory.meta.FireworkEffectMeta;
+import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
 import org.bukkit.inventory.meta.MapMeta;
@@ -43,6 +54,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockbukkit.mockbukkit.MockBukkit;
+import org.mockbukkit.mockbukkit.profile.PlayerProfileMock;
 
 /**
  * CoreProtect's item blobs, built the way its {@code ItemMetaHandler} writes them, decoded on
@@ -142,6 +154,113 @@ public class ServerItemDecoderTest {
     }
 
     @Test
+    public void aFireworkRocketGetsItsEffects() throws IOException {
+        FireworkMeta base = (FireworkMeta) new ItemStack(Material.FIREWORK_ROCKET).getItemMeta();
+        base.setPower(2);
+        FireworkEffect ball = FireworkEffect.builder().with(FireworkEffect.Type.BALL_LARGE).withColor(Color.RED)
+                .build();
+        FireworkEffect star = FireworkEffect.builder().with(FireworkEffect.Type.STAR).flicker(true).trail(true)
+                .withColor(Color.BLUE, Color.WHITE).withFade(Color.YELLOW).build();
+        List<List<Map<String, Object>>> lists = lists(List.of(base.serialize()));
+        lists.addAll(effectLists(ball));
+        lists.addAll(effectLists(star));
+        lists.add(new ArrayList<>(List.of(map("slot", 0))));
+
+        ItemStack decoded = decoded("minecraft:firework_rocket", blob(lists));
+
+        FireworkMeta meta = (FireworkMeta) decoded.getItemMeta();
+        assertEquals(2, meta.getPower());
+        assertEquals(List.of(ball, star), meta.getEffects());
+    }
+
+    @Test
+    public void aFireworkStarGetsItsEffect() throws IOException {
+        FireworkEffectMeta base = (FireworkEffectMeta) new ItemStack(Material.FIREWORK_STAR).getItemMeta();
+        FireworkEffect creeper = FireworkEffect.builder().with(FireworkEffect.Type.CREEPER).withColor(Color.LIME)
+                .withFade(Color.BLACK).build();
+        List<List<Map<String, Object>>> lists = lists(List.of(base.serialize()));
+        lists.addAll(effectLists(creeper));
+
+        ItemStack decoded = decoded("minecraft:firework_star", blob(lists));
+
+        assertEquals(creeper, ((FireworkEffectMeta) decoded.getItemMeta()).getEffect());
+    }
+
+    @Test
+    public void aBundleGetsItsItems() throws IOException {
+        BundleMeta base = (BundleMeta) new ItemStack(Material.BUNDLE).getItemMeta();
+        ItemStack gem = new ItemStack(Material.DIAMOND);
+        ItemMeta gemMeta = gem.getItemMeta();
+        gemMeta.displayName(Component.text("Gem"));
+        gem.setItemMeta(gemMeta);
+        ItemStack stone = new ItemStack(Material.STONE, 5);
+
+        ItemStack decoded = decoded("minecraft:bundle", blob(lists(List.of(base.serialize()),
+                List.of(contained(stone, lists()), contained(gem, lists(List.of(gemMeta.serialize())))))));
+
+        assertEquals(List.of(stone, gem), ((BundleMeta) decoded.getItemMeta()).getItems());
+    }
+
+    @Test
+    public void aCrossbowGetsItsChargedProjectiles() throws IOException {
+        CrossbowMeta base = (CrossbowMeta) new ItemStack(Material.CROSSBOW).getItemMeta();
+        base.displayName(Component.text("Bolt thrower"));
+        ItemStack arrow = new ItemStack(Material.ARROW);
+        ItemStack spectral = new ItemStack(Material.SPECTRAL_ARROW);
+
+        // Paper 1.21.4 wrote the items inside as {v, type}; newer servers write a schema_version map instead.
+        ItemStack decoded = decoded("minecraft:crossbow", blob(lists(List.of(base.serialize()),
+                List.of(contained1214("ARROW"), contained1214("SPECTRAL_ARROW")))));
+
+        CrossbowMeta meta = (CrossbowMeta) decoded.getItemMeta();
+        assertEquals(Component.text("Bolt thrower"), meta.displayName());
+        assertEquals(List.of(arrow, spectral), meta.getChargedProjectiles());
+    }
+
+    @Test
+    public void anItemInsideThatTheServerCannotRebuildIsLeftOut() throws IOException {
+        BundleMeta base = (BundleMeta) new ItemStack(Material.BUNDLE).getItemMeta();
+        ItemStack stone = new ItemStack(Material.STONE);
+
+        ItemStack decoded = decoded("minecraft:bundle", blob(lists(List.of(base.serialize()),
+                List.of(contained1214("NO_SUCH_ITEM"), contained(stone, lists())))));
+
+        assertEquals(List.of(stone), ((BundleMeta) decoded.getItemMeta()).getItems());
+        assertEquals(0, decoder.failures());
+    }
+
+    @Test
+    public void anItemInsideWithAMalformedMapIsLeftOut() throws IOException {
+        BundleMeta base = (BundleMeta) new ItemStack(Material.BUNDLE).getItemMeta();
+        ItemStack stone = new ItemStack(Material.STONE);
+        // Paper casts "type" to a String unchecked, so a number ends in a ClassCastException.
+        Map<String, Object> item = new HashMap<>();
+        item.put("v", 4189);
+        item.put("type", 42);
+        Map<String, Object> malformed = new HashMap<>();
+        malformed.put("0", item);
+        malformed.put("1", new ArrayList<>());
+
+        ItemStack decoded = decoded("minecraft:bundle", blob(lists(List.of(base.serialize()),
+                List.of(malformed, contained(stone, lists())))));
+
+        assertEquals(List.of(stone), ((BundleMeta) decoded.getItemMeta()).getItems());
+        assertEquals(0, decoder.failures());
+    }
+
+    @Test
+    public void aCrossbowLeavesOutWhatItCannotHold() throws IOException {
+        CrossbowMeta base = (CrossbowMeta) new ItemStack(Material.CROSSBOW).getItemMeta();
+
+        ItemStack decoded = decoded("minecraft:crossbow", blob(lists(List.of(base.serialize()),
+                List.of(contained1214("STONE"), contained1214("ARROW")))));
+
+        assertEquals(List.of(new ItemStack(Material.ARROW)),
+                ((CrossbowMeta) decoded.getItemMeta()).getChargedProjectiles());
+        assertEquals(0, decoder.failures());
+    }
+
+    @Test
     public void attributeModifiersAreReapplied() throws IOException {
         ItemMeta base = new ItemStack(Material.IRON_SWORD).getItemMeta();
         base.displayName(Component.text("Heavy"));
@@ -206,6 +325,57 @@ public class ServerItemDecoderTest {
     }
 
     @Test
+    @SuppressWarnings("deprecation")
+    public void aWrappedValueTheServerRebuildsPassesTheFilter() throws IOException, ClassNotFoundException {
+        // Paper rebuilds a head's wrapped skull-owner as its CraftPlayerProfile; MockBukkit's profile is the
+        // same kind of class: configuration-serializable, not Serializable, outside org.bukkit.
+        ConfigurationSerialization.registerClass(PlayerProfileMock.class);
+        try {
+            UUID id = UUID.fromString("069a79f4-44e9-4726-a5be-fca90e38aaf5");
+            List<Object> blob = new ArrayList<>(List.of(new PlayerProfileMock("Notch", id)));
+            try (BukkitObjectInputStream in = new BukkitObjectInputStream(new ByteArrayInputStream(blob(blob)))) {
+                in.setObjectInputFilter(ServerItemDecoder.FILTER);
+                List<?> read = (List<?>) in.readObject();
+                PlayerProfile profile = (PlayerProfile) read.getFirst();
+                assertEquals("Notch", profile.getName());
+                assertEquals(id, profile.getId());
+            }
+        } finally {
+            ConfigurationSerialization.unregisterClass(PlayerProfileMock.class);
+        }
+    }
+
+    @Test
+    public void aMetaMapHoldingAValueTheServerRebuiltDecodes() throws IOException {
+        ConfigurationSerialization.registerClass(PlayerProfileMock.class);
+        try {
+            ItemMeta meta = new ItemStack(Material.STICK).getItemMeta();
+            meta.displayName(Component.text("Wand"));
+            Map<String, Object> map = new HashMap<>(meta.serialize());
+            map.put("skull-owner", new PlayerProfileMock("Notch", UUID.randomUUID()));
+
+            ItemStack decoded = rebuilt("minecraft:stick", blob(lists(List.of(map))));
+
+            assertEquals(Component.text("Wand"), decoded.getItemMeta().displayName());
+        } finally {
+            ConfigurationSerialization.unregisterClass(PlayerProfileMock.class);
+        }
+    }
+
+    @Test
+    public void aSerializableValueOutsideTheAllowListIsRejectedEvenWhenConfigurationSerializable()
+            throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (ObjectOutputStream out = new ObjectOutputStream(bytes)) {
+            out.writeObject(new ArrayList<>(List.of(new ArrayList<>(List.of(new HashMap<>(
+                    Map.of("value", new SerializableValue("x"))))))));
+        }
+
+        assertEquals(Optional.empty(), decoder.decode("minecraft:stick", bytes.toByteArray()));
+        assertEquals(1, decoder.failures());
+    }
+
+    @Test
     public void truncatedOversizedAndForeignBlobsFailQuietly() throws IOException {
         ItemMeta meta = new ItemStack(Material.STICK).getItemMeta();
         meta.displayName(Component.text("Wand"));
@@ -243,6 +413,44 @@ public class ServerItemDecoderTest {
         return out;
     }
 
+    /** A firework effect as CoreProtect's {@code ItemMetaHandler} lists it: flags, colours, fade colours. */
+    private static @NotNull List<List<Map<String, Object>>> effectLists(@NotNull FireworkEffect effect) {
+        Map<String, Object> flags = new HashMap<>();
+        flags.put("type", effect.getType());
+        flags.put("flicker", effect.hasFlicker());
+        flags.put("trail", effect.hasTrail());
+        return new ArrayList<>(List.of(new ArrayList<>(List.of(flags)), colours(effect.getColors()),
+                colours(effect.getFadeColors())));
+    }
+
+    private static @NotNull List<Map<String, Object>> colours(@NotNull List<Color> colours) {
+        List<Map<String, Object>> maps = new ArrayList<>();
+        colours.forEach(colour -> maps.add(new HashMap<>(colour.serialize())));
+        return maps;
+    }
+
+    /** An item inside another, as CoreProtect's {@code ItemUtils.serializeItemStack} writes it. */
+    private static @NotNull Map<String, Object> contained(@NotNull ItemStack item,
+            @NotNull List<List<Map<String, Object>>> metadata) {
+        ItemStack plain = item.clone();
+        plain.setItemMeta(null);
+        Map<String, Object> map = new HashMap<>();
+        map.put("0", new HashMap<>(plain.serialize()));
+        map.put("1", metadata);
+        return map;
+    }
+
+    /** An item inside another without meta, as CoreProtect wrote it on Paper 1.21.4 (data version 4189). */
+    private static @NotNull Map<String, Object> contained1214(@NotNull String type) {
+        Map<String, Object> item = new HashMap<>();
+        item.put("v", 4189);
+        item.put("type", type);
+        Map<String, Object> map = new HashMap<>();
+        map.put("0", item);
+        map.put("1", new ArrayList<>());
+        return map;
+    }
+
     private static @NotNull Map<String, Object> map(@NotNull String key, @NotNull Object value) {
         Map<String, Object> map = new HashMap<>();
         map.put(key, value);
@@ -256,5 +464,14 @@ public class ServerItemDecoderTest {
             out.writeObject(value);
         }
         return bytes.toByteArray();
+    }
+
+    /** A value the stream itself could construct, so the allow-list decides. */
+    private record SerializableValue(@NotNull String value) implements ConfigurationSerializable, Serializable {
+
+        @Override
+        public @NotNull Map<String, Object> serialize() {
+            return Map.of("value", value);
+        }
     }
 }
