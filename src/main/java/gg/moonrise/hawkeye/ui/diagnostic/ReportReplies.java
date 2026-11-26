@@ -16,6 +16,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.command.CommandSender;
 import org.jetbrains.annotations.NotNull;
@@ -24,6 +25,7 @@ import org.jetbrains.annotations.NotNull;
  * Tells staff about the error and crash files waiting for review, on the receiver's own thread, from the active
  * {@code messages.yml} ({@code errors} section).
  */
+@Slf4j
 @SpringComponent
 @RequiredArgsConstructor
 public final class ReportReplies {
@@ -83,7 +85,8 @@ public final class ReportReplies {
     }
 
     /**
-     * Tells a joining staff member how many files wait, if any do.
+     * Tells a joining staff member how many files wait, if any do. When the files cannot be read the player is told
+     * nothing and the failure is logged.
      *
      * @param receiver the player who joined
      * @param pending  the files being read
@@ -109,13 +112,22 @@ public final class ReportReplies {
                 }
                 Message.of(messages.getJoinNotice()).send(receiver, Placeholder.parsed("reports", parts.toString()));
             });
+        }).whenComplete((ignored, error) -> {
+            if (error != null) {
+                log.warn("Could not tell {} on join about the error and crash files waiting for review",
+                        receiver.getName(), cause(error));
+            }
         });
     }
 
     private void unavailable(@NotNull CommandSender sender, @NotNull Throwable error) {
-        Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
+        Throwable cause = cause(error);
         String reason = Objects.requireNonNullElse(cause.getMessage(), cause.getClass().getSimpleName());
         Message.of(messages().getUnavailable()).send(sender, Placeholder.unparsed("reason", reason));
+    }
+
+    private static @NotNull Throwable cause(@NotNull Throwable error) {
+        return error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
     }
 
     private static @NotNull String kind(@NotNull ErrorMessages messages, @NotNull ProblemKind kind) {
