@@ -15,6 +15,7 @@ import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
@@ -23,7 +24,7 @@ import org.jetbrains.annotations.NotNull;
  * The error and crash files for staff: which wait for review, marking them reviewed, whether to tell staff on
  * join, and the webhook settings the error log sends with (read from the reloadable configuration at every
  * report, so {@code /hawkeye reload} applies them at once). The files are read on the query pool and moved on
- * the error log's thread, never on a server thread.
+ * the error log's thread (on the query pool when the error log is not running), never on a server thread.
  */
 @SpringComponent
 @RequiredArgsConstructor
@@ -82,12 +83,14 @@ public final class ErrorReportService {
     }
 
     /**
-     * Moves every waiting file to the {@code reviewed} folder of {@code errors/} or {@code crash/}.
+     * Moves every waiting file to the {@code reviewed} folder of {@code errors/} or {@code crash/}. It is handed
+     * over from the query pool: when the error log is not running, the error log moves the files on the thread
+     * that asks.
      *
-     * @return how many files were moved; fails when a file cannot be moved
+     * @return how many files were moved; fails when a file cannot be moved or the query pool is full
      */
     public @NotNull CompletableFuture<Integer> markReviewed() {
-        return diagnostics.markReviewed();
+        return run(diagnostics::markReviewed).thenCompose(Function.identity());
     }
 
     private <T> @NotNull CompletableFuture<T> run(@NotNull Supplier<T> work) {
