@@ -139,6 +139,13 @@ second release in a quarter).
   action other than `CONTAINER_DEPOSIT` and `CONTAINER_WITHDRAW`. `a:container`, `+container` and
   `-container` include them (a rollback still changes only container blocks and entities); `a:virtual`,
   `+virtual` and `-virtual` (also `enderchest`, `ender-chest`, `vault`, `vaults`) look up only them.
+- Item details in lookup results: the hover of an item's name lists its custom name, enchantments (stored
+  enchantments of an enchanted book too) and, for a written book or a book and quill, the title, author and
+  page count, read from the stored item NBT without a server (`util.serialize.ItemDetails`). Clicking a book
+  with pages opens it for the player who clicked, for an hour after the lookup (an Adventure click
+  callback); click events in its pages are dropped. New `messages.yml` keys: `lookup.item-name`,
+  `item-enchantment`, `item-book`, `item-writable-book`, `item-read-hint`. Plain items keep their hover.
+
 ### Changed
 
 - Versions are year.quarter: a stable release is `26.4`, a Jenkins build `26.4.B<build>` (`26.4.B25`), any other

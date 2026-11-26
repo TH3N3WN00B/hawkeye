@@ -7,7 +7,8 @@ import lombok.Getter;
 /**
  * The {@code actions} section of {@code messages.yml}: the {@code <action>} placeholder of a result
  * line. Placeholders in every entry: {@code <target>} (block, item or entity name, with a hover
- * showing the full state), {@code <amount>}, {@code <text>} (chat, commands, sign lines, where a
+ * showing the full state; for an item with a name, enchantments or a book also those, and a book with
+ * pages opens when clicked: {@code lookup.item-*}), {@code <amount>}, {@code <text>} (chat, commands, sign lines, where a
  * teleport went, a death message, the inventory of a virtual container), {@code <contents>} (an inventory snapshot's item count, with a hover
  * listing its items; {@code lookup.snapshot-contents}).
  */
