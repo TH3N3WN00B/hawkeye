@@ -50,6 +50,7 @@ public final class EventRecorder {
     private final @NotNull EventQueue queue;
     private final @NotNull HawkeyeConfigProvider configProvider;
     private final @NotNull CauseTracker causes;
+    private final @NotNull EntityBytes entityBytes;
     private final LongAdder skipped = new LongAdder();
 
     /**
@@ -208,7 +209,7 @@ public final class EventRecorder {
         Payload payload = null;
         if (configProvider.get().rollback().restoreEntities() && !(victim instanceof Player)) {
             try {
-                payload = new Payload.Entity(EntityBytes.serialize(victim));
+                payload = new Payload.Entity(entityBytes.serialize(victim));
             } catch (RuntimeException e) {
                 log.debug("Could not serialize a killed {}; it is logged without rollback data", victim.getType(), e);
             }
@@ -240,7 +241,7 @@ public final class EventRecorder {
         Payload payload = null;
         if (configProvider.get().rollback().restoreEntities()) {
             try {
-                payload = new Payload.Entity(EntityBytes.serialize(entity));
+                payload = new Payload.Entity(entityBytes.serialize(entity));
             } catch (RuntimeException e) {
                 log.debug("Could not serialize a removed {}; it is logged without rollback data", entity.getType(),
                         e);

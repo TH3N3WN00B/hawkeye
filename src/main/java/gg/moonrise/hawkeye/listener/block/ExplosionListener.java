@@ -127,7 +127,7 @@ public final class ExplosionListener implements Listener {
         BlockData data = block.getBlockData();
         World.Environment environment = block.getWorld().getEnvironment();
         return switch (data) {
-            case Bed _ -> environment == World.Environment.NETHER || environment == World.Environment.THE_END;
+            case Bed bed -> environment == World.Environment.NETHER || environment == World.Environment.THE_END;
             case RespawnAnchor anchor -> anchor.getCharges() > 0 && environment != World.Environment.NETHER;
             default -> false;
         };

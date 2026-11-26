@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Hawkeye: block and action logging with lookups, rollbacks and multi-server sync (a CoreProtect
-alternative), a Paper 26.3 plugin (Folia supported) by Moonrise Studios on the Moonrise plugin-engine
+alternative), one Paper plugin jar for 1.21.1 to 26.3 (Folia supported) by Moonrise Studios on the Moonrise plugin-engine
 (Moss/Spring, Cloud 2, ConfigLib, Lombok). Base package `gg.moonrise.hawkeye`. This file is the
 canonical rule set for every agent and contributor; `CLAUDE.md` only points here. The storage
 format, threading model and multi-server protocol are specified in `docs/architecture.md`.
@@ -35,6 +35,13 @@ check the skip count in the test report.
 - Packages follow the skill's layers (loader, player-facing, service, backend, bottom);
   `ArchitectureTest` enforces them and fails on a class outside every layer. A new top-level package
   goes into a layer there in the same change.
+- One jar serves Paper 1.21.1 to 26.3. `src/main` compiles against the oldest supported paper-api (1.21.1)
+  for Java 21, so it uses nothing newer. Code that needs a newer API goes into `src/newerApi` with
+  `@ConditionalOnApi` naming a `util.compat.NewerApi` constant, and its fallback stays in `src/main` with
+  `@ConditionalOnMissingApi`; the choice is made once at startup, never per event. A Paper type that turned
+  from an enum into an interface after 1.21.1 (`Attribute`, `Art`) is never called directly from main. Add
+  the gap to README's "Server versions" table, and run `scripts/compat/api_links.py` against the supported
+  paper-api jars after changing Paper calls (docs/knowledge "Version support").
 - Every Spring bean lives under `gg.moonrise.hawkeye`: Moss scans the main class package only, and
   the engine is relocated to `gg.moonrise.hawkeye.libs.engine` so its beans fall inside that scan.
 - Commands are Cloud annotation methods on `PaperCommand` beans, registered by

@@ -37,10 +37,31 @@ require(versionPattern.matches(version.toString())) {
 val pluginName = "Hawkeye"
 val basePackage = "gg.moonrise.hawkeye"
 
+// One jar for Paper 1.21.1 to 26.3 (docs/knowledge/README.md "Version support"). Paper 1.21.x runs on Java 21, so
+// every class in the jar is Java 21 bytecode; Gradle, javac and the tests run on the Java 25 toolchain.
+val pluginRelease = 21
+// paper-plugin.yml's api-version: the Minecraft version of the oldest API main compiles against.
+val oldestMinecraft = libs.versions.paperOldest.get().substringBefore("-")
+
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(25))
     }
+}
+
+// Classes that need a newer Paper API than the oldest supported one. They compile against the newest API, ship in
+// the same jar, and each carries util.compat.ConditionalOnApi, so Spring registers it only on a server that has the
+// classes it names (on an older one the class is never loaded); a fallback in main carries ConditionalOnMissingApi.
+val newerApi: SourceSet = sourceSets.create("newerApi") {
+    compileClasspath += sourceSets.main.get().output
+}
+sourceSets.test {
+    compileClasspath += newerApi.output
+    runtimeClasspath += newerApi.output
+}
+// paper-api 26.3 declares Java 25; newerApi still compiles for Java 21 (--release) and uses no newer JDK API.
+configurations.named(newerApi.compileClasspathConfigurationName) {
+    attributes.attribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, 25)
 }
 
 dependencies {
@@ -48,14 +69,24 @@ dependencies {
     // Cloud, ConfigLib) are resolved by the engine's PaperPluginLoader at server start, so compileOnly here.
     implementation(libs.engine)
     compileOnly(libs.bundles.engineRuntime)
-    compileOnly(libs.paper)
+    // main compiles against the oldest supported API, so it can use nothing newer; newerApi and the tests against
+    // the newest.
+    compileOnly(libs.paperOldest)
     // Hawkeye's own runtime libraries: resolved by HawkeyePluginLoader at server start, never shaded.
     compileOnly(libs.bundles.hawkeyeRuntime)
+
+    "newerApiCompileOnly"(libs.paper)
+    "newerApiCompileOnly"(libs.engine)
+    "newerApiCompileOnly"(libs.bundles.engineRuntime)
+    "newerApiCompileOnly"(libs.bundles.hawkeyeRuntime)
 
     // java-development skill: Lombok and @NotNull/@Nullable in main and test code.
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)
     compileOnly(libs.jetbrainsAnnotations)
+    "newerApiCompileOnly"(libs.lombok)
+    "newerApiAnnotationProcessor"(libs.lombok)
+    "newerApiCompileOnly"(libs.jetbrainsAnnotations)
     testCompileOnly(libs.lombok)
     testAnnotationProcessor(libs.lombok)
     testCompileOnly(libs.jetbrainsAnnotations)
@@ -73,6 +104,12 @@ tasks {
     withType<JavaCompile>().configureEach {
         options.encoding = "UTF-8"
         options.compilerArgs.add("-Xlint:all,-processing")
+    }
+    compileJava {
+        options.release.set(pluginRelease)
+    }
+    named<JavaCompile>(newerApi.compileJavaTaskName) {
+        options.release.set(pluginRelease)
     }
     withType<Javadoc>().configureEach {
         options.encoding = "UTF-8"
@@ -105,12 +142,15 @@ tasks {
             libs.lettuce, libs.zstd).joinToString(",") { library -> library.get().toString() }
         inputs.property("hawkeyeRuntimeLibraries", runtimeLibraries)
         systemProperty("hawkeye.runtime.libraries", runtimeLibraries)
+        // ApiConditionTest checks that every newerApi class is gated.
+        systemProperty("hawkeye.newerApi.classes", newerApi.output.classesDirs.asPath)
     }
     // The shipped jar: build/libs/<pluginName>-<version>.jar (Hawkeye-26.4.jar, Hawkeye-26.4.B12.jar) with our
     // classes and the relocated engine only.
     shadowJar {
         archiveBaseName.set(pluginName)
         archiveClassifier.set("")
+        from(newerApi.output)
 
         // Paper provides itself and the loader resolves the engine's libraries: only the engine is bundled.
         dependencies {
@@ -125,10 +165,14 @@ tasks {
 }
 
 val verifyPluginJar = tasks.register("verifyPluginJar") {
-    description = "Checks the plugin jar: entry points, relocated engine, expanded descriptor, one command registry."
+    description = "Checks the plugin jar: entry points, relocated engine, expanded descriptor, one command registry, " +
+        "Java $pluginRelease bytecode and the oldest supported api-version."
     group = "verification"
     val artifact = tasks.shadowJar.flatMap { it.archiveFile }
     val expectedVersion = project.version.toString()
+    val expectedApiVersion = oldestMinecraft
+    val release = pluginRelease
+    val maxClassMajor = 44 + release
     val ours = basePackage.replace('.', '/') + "/"
     val mainClass = "$basePackage.${pluginName}Plugin"
     val loaderClass = "$basePackage.loader.${pluginName}PluginLoader"
@@ -161,11 +205,21 @@ val verifyPluginJar = tasks.register("verifyPluginJar") {
             require(registries == listOf(registryClass)) {
                 "expected exactly our command registry $registryClass, found $registries"
             }
+            // Paper 1.21.x runs on Java 21: a newer class file would fail to load there.
+            val tooNew = classes.filter { name ->
+                val header = jar.getInputStream(jar.getEntry(name)).use { it.readNBytes(8) }
+                ((header[6].toInt() and 0xff) shl 8 or (header[7].toInt() and 0xff)) > maxClassMajor
+            }
+            require(tooNew.isEmpty()) { "classes newer than Java $release: ${tooNew.take(5)}" }
 
             val yml = jar.getInputStream(jar.getEntry("paper-plugin.yml")).use { it.readBytes().decodeToString() }
             require("version: '$expectedVersion'" in yml) { "paper-plugin.yml version not expanded" }
             require("main: $mainClass" in yml) { "paper-plugin.yml main is not $mainClass" }
             require("loader: $loaderClass" in yml) { "paper-plugin.yml loader is not $loaderClass" }
+            require("api-version: '$expectedApiVersion'" in yml) {
+                "paper-plugin.yml api-version is not '$expectedApiVersion', the oldest API main compiles against " +
+                    "(paperOldest in gradle/libs.versions.toml); move both together"
+            }
         }
         marker.get().asFile.writeText("ok\n")
     }

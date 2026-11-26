@@ -2,7 +2,7 @@ name: Hawkeye
 version: '${version}'
 main: gg.moonrise.hawkeye.HawkeyePlugin
 loader: gg.moonrise.hawkeye.loader.HawkeyePluginLoader
-api-version: '26.3'
+api-version: '1.21.1'
 load: POSTWORLD
 folia-supported: true
 description: Block and action logging with lookups, rollbacks and multi-server sync

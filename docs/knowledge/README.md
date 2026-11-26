@@ -138,8 +138,10 @@ update them in the same change when you learn something durable or an entry stop
   (`archive.batch-events`) is dropped and new keys are added with their defaults.
 - Paper 26.3's `UnsafeValues#serializeEntity` rejects an entity that is no longer valid unless it is
   passed `EntitySerializationFlag.FORCE`, and a mob in its `EntityDeathEvent` is no longer valid.
-  `EntityBytes.serialize` passes it (before, `/kill`ed zombies, villagers, cows and skeletons were
-  stored without entity bytes; armour stands worked).
+  `ForcedEntitySerializer` passes it (before, `/kill`ed zombies, villagers, cows and skeletons were
+  stored without entity bytes; armour stands worked). The flags exist from Paper 1.21.4; before,
+  `PlainEntitySerializer` calls `serializeEntity(entity)`, which on 1.21.1 (`CraftMagicNumbers`, server
+  bytecode) checks nothing but the type and saves the entity as it is, a dying mob included.
 - Item and entity payloads (verified 2026-11-16): `ItemStack#serializeAsBytes` and `serializeEntity`
   return gzip NBT (`1f 8b`), and `deserializeBytes`/`deserializeEntity` read only gzip. Hawkeye stores
   raw NBT (`0a`) and gzips it again on read (`util.nbt.NbtGzip`); gzip rows from earlier builds read
@@ -309,6 +311,82 @@ update them in the same change when you learn something durable or an entry stop
     `EntityBlockFormEvent`, `BlockMultiPlaceEvent`, `EntityBreakDoorEvent`, `PlayerDeathEvent` and
     `HangingBreakByEntityEvent` share their parent's.
 
+## Version support (verified 2026-11-25)
+
+- One jar for Paper 1.21.1 to 26.3. `src/main` compiles against `paper-api:1.21.1-R0.1-SNAPSHOT`
+  (`paperOldest`) with `--release 21`; `src/newerApi` against the newest paper-api, also `--release 21`. Its
+  compile classpath asks Gradle for Java 25 variants (`TargetJvmVersion` 25), because paper-api 26.x's module
+  metadata declares Java 25; javac 25 reads those class files under `--release 21` without a warning. The
+  tests compile and run on Java 25 against 26.3 and MockBukkit `v26.3`; main's classes, linked against
+  1.21.1, run there unchanged. MockBukkit publishes `v1.21` (one line, 4.116.3), `v26.1.2`, `v26.2` and
+  `v26.3` only, so older servers are covered by `scripts/compat/api_links.py` and real-server smoke runs.
+- What Hawkeye uses that 1.21.1 lacks, from the cached paper-api jars: `EntitySerializationFlag` and
+  `SpawnReason.BUCKET` 1.21.4; `Registry#keyStream` 1.21.5; `org.bukkit.block.Shelf` and
+  `Tag.WOODEN_SHELVES` 1.21.9; `ItemCraftedEvent` 1.21.11 (1.21.10 has shelves but not it);
+  `VehicleDestroyEvent#getDamageSource` 26.1.2; `EntityConstructEvent` 26.2; `EntityBreakEvent`,
+  `EntityBreakByEntityEvent` and `Cushion` 26.3. paper-api 26.x is Java 25 bytecode, 1.21.x Java 21.
+- Paper 1.21.3 turned `Attribute` and `Art` from enums into interfaces (and renamed `GENERIC_MAX_HEALTH` to
+  `MAX_HEALTH`; Minecraft 1.21.2 renamed the key `generic.max_health` to `max_health`). A call compiled
+  against 1.21.1 is an `invokevirtual`, which fails with `IncompatibleClassChangeError` on an interface
+  unless Paper's plugin bytecode rewriting fixes it, and MockBukkit rewrites nothing. Main therefore looks
+  max health up by key in `Registry.ATTRIBUTE` (`WorldWriter`) and reads a painting's size through
+  `MethodHandle`s (`RespawnLocations`). `Registry#stream`, `Registry#get(NamespacedKey)` and
+  `Registry.ATTRIBUTE` have the same descriptors on 1.21.1 and 26.3.
+- The 1.21.1 baseline covers the libraries Paper ships too, not only paper-api: its Adventure has no type
+  parameter on `ClickEvent` (main declares it raw; tests on 26.3 may write `ClickEvent<?>`), and its Gson is
+  2.10.1, without 2.11's `Strictness` (`JsonReader#setLenient(false)` instead). `api_links.py` checks only
+  Paper's own packages, so a feature branch written against 26.3 breaks only at `compileJava` (verified
+  2026-11-26 merging the item-details work with version support).
+- `@ConditionalOnApi`/`@ConditionalOnMissingApi` are Spring `@Conditional`s. Moss scans with
+  `AnnotationConfigApplicationContext.scan`, whose scanner evaluates conditions on ASM metadata before it
+  loads a class, so a gated class is never loaded on a server without its API (otherwise Spring's and
+  Bukkit's reflection over a listener's methods fails on a missing event type). A name can be
+  `Class#method` for a method added to an older class.
+- `api_links.py` on 2026-11-25, main and newerApi against paper-api 1.21.1, 1.21.3, 1.21.4, 1.21.5, 1.21.6,
+  1.21.8, 1.21.9, 1.21.10, 1.21.11, 26.1.2, 26.2 and 26.3 (build 249): no problems, and the gated classes
+  active per version are the ones the version table expects. Moss 1.2.3, checked the same way (`main` set to
+  its unpacked classes), links on all of them. plugin-engine 1.10.2 links from 1.21.8 on; before, only its
+  dialog classes (`paper.dialog`, Paper's dialog API) and `paper.item.ItemBuilder` (from 1.21.5) do not,
+  and Hawkeye uses neither. `PaperPlugin#onEnable`/`onDisable` start and stop `DialogCanvasRuntime`, which
+  links on 1.21.1 and ran without an error there. (Git Bash does not translate a comma-joined path list for a
+  native program: pass each folder as its own argument.) Every runtime library
+  the loaders download is Java 21 bytecode or older (engine and Moss 21, Spring 6.2, ConfigLib and MariaDB
+  Connector/J 4.0 17, HikariCP and Caffeine 11, the rest 8).
+- `verifyPluginJar` requires `api-version` to be the Minecraft version of `paperOldest`, so moving one
+  without the other (a Dependabot bump of `paperOldest`) fails the build.
+- MockBukkit 4.122 `SimpleInventoryViewMock#convertSlot` throws `UnimplementedOperationException`, and
+  `InventoryClickEvent`'s constructor calls it; `CraftClickListenerTest` overrides it.
+- Real servers, 2026-11-25 on Windows, one jar (Java 21 bytecode, `api-version: '1.21.1'`): Paper 1.21.1
+  build 133, 1.21.4 build 232 and 1.21.11 build 132 on Java 21; 26.1.2 build 74 and 26.3 build 262 on Java 25.
+  On every one the plugin enabled (libraries resolved, commands registered), and `tnt-rollback.txt`,
+  `kill-rollback-basic.txt` and `coreprotect-import.txt` passed, the import from a SQLite database CoreProtect
+  25.0 wrote on Paper 1.21.1 (`coreprotect-generate-1.21.txt`; 163 rows, so its first count was 163, not 19):
+  both stair states, the named Sharpness V sword and the coloured potion came back on all five, upgraded to
+  the server's component format on 26.x. Not run on 1.21.x: `kill-rollback.txt` and
+  `growth-and-physics.txt` (26.x commands); not run anywhere: Folia.
+- CoreProtect item metadata is rebuilt by the running server's `ConfigurationSerialization`, which knows only
+  its own Minecraft version's ids and component format plus what its data fixers upgrade. The newest rows of
+  a production CoreProtect 25 database (2026-11-01 to 11-25, CoreProtect schema 2.24.1; 54,924 item blobs
+  in 60,000 container and 40,000 item rows) imported 124,950 events on each version, with blobs that could
+  not be rebuilt: 1.21.1 14,312 (it does not know `minecraft:max_health` without `generic.`, `white_bundle`),
+  1.21.4 4,929, 1.21.11, 26.1.2 and 26.3 5,436 each (they reject the 1.21.2-1.21.4 format: attribute
+  `modifiers` lists, enchantment `levels`, `hide_additional_tooltip`). On 1.21.4 Paper logged no
+  deserialization error at all, so those rows were written by a 1.21.2-1.21.4 server, and the 4,929 left
+  there fail Hawkeye's own checks before Paper sees them (`ServerItemDecoder` logs those at DEBUG only).
+- Paper 1.21.1 (server bytecode): `MobBucketItem` spawns with `MobSpawnType.BUCKET`, and
+  `EntityType#spawn` turns every type but `DISPENSER` into `SpawnReason.SPAWNER_EGG`, so a mob from a
+  bucket arrives as from a spawn egg (still recorded, under the remembered bucket user else `#spawn_egg`).
+- Smoke runs on this Windows host: `run.py` passes no JVM options, so `JAVA_TOOL_OPTIONS` carries
+  `-Djdk.net.unixdomain.tmpdir=<plain folder> -Djava.io.tmpdir=<plain folder>` (otherwise Paper crashes in
+  its tick loop on Git Bash's 8.3 `TEMP`). Paper colours console output here, so `run.py` strips ANSI codes
+  before matching. Java writes a pipe in the platform encoding (cp1252 on Windows): before `run.py` asked for
+  `-Dstdout.encoding=UTF-8` and decoded with `errors="replace"`, the first non-ASCII item name an import logged
+  killed its reader thread, the pipe filled, and Log4j's console appender blocked every later log line (a
+  thread dump showed the server ticking and the import running), which looked like a hung server. 1.21.x logs `ERROR: No key
+  layers in MapLike[{}]` when it creates a flat world from `level-type=minecraft:flat` with no
+  `generator-settings`; the world is the classic flat one all the same. CoreProtect 25.0 defaults to
+  `database-type: duckdb` (`database.duckdb`); `sqlite` gives the `database.db` the import scenarios use.
+
 ## Credential facts (verified 2026-11-21)
 
 - ConfigLib 4.8.1 rejects a number or boolean for a `String` field (`password: 123456`) unless the
@@ -465,7 +543,8 @@ update them in the same change when you learn something durable or an entry stop
   on parameters, no `return null`, records and sealed interfaces, SLF4J, constructor injection,
   layered packages, files under 1000 lines.
 - Moonrise house build: Gradle Kotlin DSL, version catalog with camelCase aliases, the shadow jar
-  named after the plugin in `build/libs`, the plain `jar` task disabled, Java 25.
+  named after the plugin in `build/libs`, the plain `jar` task disabled, the Java 25 toolchain (Hawkeye's
+  classes are Java 21 bytecode so the jar also loads on 1.21.x servers).
 - Every player-facing message is configurable (MiniMessage); commands, permissions and config keys
   are contracts with operators.
 - Folia support by default (`folia-supported: true`): schedule through the engine `Scheduler` only.
@@ -509,7 +588,8 @@ update them in the same change when you learn something durable or an entry stop
 
 ## Build facts (verified 2026-11-12)
 
-- Pinned and resolved: Gradle 9.9.0, Shadow 9.6.1, paper-api `26.3.build.246-stable`, plugin-engine
+- Pinned and resolved: Gradle 9.9.0, Shadow 9.6.1, paper-api `26.3.build.246-stable` (and
+  `1.21.1-R0.1-SNAPSHOT` as `paperOldest` since 2026-11-25), plugin-engine
   `1.10.2`, moss-paper `1.2.3` (both 2026-11-21), spring-context `6.2.13`, jakarta.annotation-api `3.0.0`, cloud-paper
   `2.0.1`, cloud-annotations `2.0.0`, configlib-yaml `4.8.1`, Lombok `1.18.48`, JetBrains annotations
   `26.1.0`, JUnit `6.1.3` with platform launcher `6.1.3`, MockBukkit `mockbukkit-v26.3` `4.120.0`,

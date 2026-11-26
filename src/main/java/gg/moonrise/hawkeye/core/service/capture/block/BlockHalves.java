@@ -29,7 +29,8 @@ public final class BlockHalves {
         BlockData data = block.getBlockData();
         Optional<Block> other = switch (data) {
             // Stairs and trapdoors have a top/bottom half but are single blocks.
-            case Stairs _, TrapDoor _ -> Optional.empty();
+            case Stairs stairs -> Optional.empty();
+            case TrapDoor trapDoor -> Optional.empty();
             case Bed bed -> Optional.of(block.getRelative(bed.getPart() == Bed.Part.FOOT ? bed.getFacing()
                     : bed.getFacing().getOppositeFace()));
             case Bisected bisected -> Optional.of(block.getRelative(bisected.getHalf() == Bisected.Half.BOTTOM

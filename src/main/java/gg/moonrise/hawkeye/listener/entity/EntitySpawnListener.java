@@ -7,8 +7,10 @@ import gg.moonrise.hawkeye.core.service.capture.CauseTracker;
 import gg.moonrise.hawkeye.core.service.capture.EventRecorder;
 import gg.moonrise.hawkeye.entity.actor.Actor;
 import gg.moonrise.moss.spring.SpringComponent;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
@@ -51,9 +53,14 @@ public final class EntitySpawnListener implements Listener {
     private static final Set<Material> FLUID_BUCKETS = EnumSet.of(Material.BUCKET, Material.WATER_BUCKET,
             Material.LAVA_BUCKET, Material.POWDER_SNOW_BUCKET, Material.MILK_BUCKET);
 
+    /**
+     * A mob released from a bucket. Paper names the reason from 1.21.4 (before, such a mob spawns as from a
+     * spawn egg), so it is looked up by name: the set is empty on older servers.
+     */
+    private static final Set<SpawnReason> BUCKET = reasons("BUCKET");
+
     /** The spawns recorded: everything else (natural, spawners, breeding, built golems) is not, or not here. */
-    private static final Set<SpawnReason> RECORDED_REASONS = EnumSet.of(SpawnReason.SPAWNER_EGG,
-            SpawnReason.DISPENSE_EGG, SpawnReason.BUCKET);
+    private static final Set<SpawnReason> RECORDED_REASONS = reasons("SPAWNER_EGG", "DISPENSE_EGG", "BUCKET");
 
     private final @NotNull EventRecorder recorder;
     private final @NotNull CauseTracker causes;
@@ -140,13 +147,17 @@ public final class EntitySpawnListener implements Listener {
             return;
         }
         Block block = entity.getLocation().getBlock();
-        Actor actor = switch (reason) {
-            case DISPENSE_EGG -> Actors.DISPENSER;
-            // A dispenser empties mob buckets without a player event.
-            case BUCKET -> causes.recentCause(block).orElse(Actors.DISPENSER);
-            default -> causes.recentCause(block).orElse(SPAWN_EGG);
-        };
+        // A dispenser empties mob buckets without a player event.
+        Actor actor = reason == SpawnReason.DISPENSE_EGG ? Actors.DISPENSER
+                : causes.recentCause(block).orElse(BUCKET.contains(reason) ? Actors.DISPENSER : SPAWN_EGG);
         recorder.entitySpawn(actor, entity);
+    }
+
+    /** The spawn reasons of these names that this server knows. */
+    private static @NotNull Set<SpawnReason> reasons(@NotNull String @NotNull ... names) {
+        Set<String> wanted = Set.of(names);
+        return Arrays.stream(SpawnReason.values()).filter(reason -> wanted.contains(reason.name()))
+                .collect(Collectors.toCollection(() -> EnumSet.noneOf(SpawnReason.class)));
     }
 
     private void placed(@Nullable Player player, @NotNull Entity entity) {

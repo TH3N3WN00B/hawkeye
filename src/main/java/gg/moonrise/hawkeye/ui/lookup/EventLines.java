@@ -65,12 +65,13 @@ public record EventLines(@NotNull LookupMessages lookup, @NotNull ActionMessages
     public interface BookOpener {
 
         /**
-         * A click event that opens a book for whoever clicks it.
+         * A click event that opens a book for whoever clicks it. The type stays raw: main compiles against
+         * Paper 1.21.1, whose Adventure has no type parameter on {@code ClickEvent}.
          *
          * @param book the book
          * @return the click event
          */
-        @NotNull ClickEvent<?> open(@NotNull Book book);
+        @NotNull ClickEvent open(@NotNull Book book);
     }
 
     /**

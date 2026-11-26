@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.function.Supplier;
+import org.bukkit.Keyed;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Registry;
 import org.jetbrains.annotations.NotNull;
@@ -42,9 +43,9 @@ public final class BukkitTypeCatalog implements TypeCatalog {
 
     private static @NotNull List<String> collect() {
         List<String> all = new ArrayList<>();
-        addKeys(all, () -> Registry.BLOCK.keyStream().map(NamespacedKey::toString).toList());
-        addKeys(all, () -> Registry.ITEM.keyStream().map(NamespacedKey::toString).toList());
-        addKeys(all, () -> Registry.ENTITY_TYPE.keyStream().map(NamespacedKey::toString).toList());
+        addKeys(all, () -> Registry.BLOCK.stream().map(Keyed::getKey).map(NamespacedKey::toString).toList());
+        addKeys(all, () -> Registry.ITEM.stream().map(Keyed::getKey).map(NamespacedKey::toString).toList());
+        addKeys(all, () -> Registry.ENTITY_TYPE.stream().map(Keyed::getKey).map(NamespacedKey::toString).toList());
         return all.stream().map(key -> key.startsWith("minecraft:") ? key.substring("minecraft:".length()) : key)
                 .distinct().sorted().toList();
     }

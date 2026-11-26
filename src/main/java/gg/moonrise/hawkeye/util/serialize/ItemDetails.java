@@ -5,7 +5,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
-import com.google.gson.Strictness;
 import com.google.gson.TypeAdapter;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
@@ -256,11 +255,12 @@ public record ItemDetails(@Nullable Component customName, @NotNull List<Enchantm
 
     /**
      * Parses a whole string as strict JSON: a lenient parse would read {@code [Chapter]} as an array of an
-     * unquoted string and lose the brackets of a plain page.
+     * unquoted string and lose the brackets of a plain page. {@code setLenient(false)} rather than Gson 2.11's
+     * {@code Strictness}, which Paper 1.21.1 does not ship.
      */
     private static @NotNull JsonElement strictJson(@NotNull String value) throws IOException {
         JsonReader reader = new JsonReader(new StringReader(value));
-        reader.setStrictness(Strictness.STRICT);
+        reader.setLenient(false);
         JsonElement tree = JSON.read(reader);
         if (reader.peek() != JsonToken.END_DOCUMENT) {
             throw new IOException("text after the JSON value");

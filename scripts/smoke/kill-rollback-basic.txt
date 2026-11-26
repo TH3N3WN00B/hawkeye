@@ -1,0 +1,23 @@
+# Kills are recorded with their entities and rolled back, in commands every supported version understands
+# (Paper 1.21.1 to 26.3; kill-rollback.txt needs 26.x). The mobs die by /kill, inside their death event,
+# so this checks the dead-mob serialization each version uses. Uses `say` to report a condition because
+# `/execute if entity` prints differently across versions. Expects a flat overworld; stays clear of
+# tnt-rollback.txt's blocks, so both can run on the same world.
+hawkeye status => connected
+forceload add 40 40
+time set midnight
+kill @e[type=!player,x=32,y=-64,z=32,dx=24,dy=40,dz=24]
+hawkeye purge t:1s => Purge done
+summon minecraft:zombie 40 -60 44 {NoAI:1b,PersistenceRequired:1b,Tags:["hk"]}
+summon minecraft:cow 44 -60 44 {NoAI:1b,Tags:["hk"]}
+summon minecraft:villager 48 -60 44 {NoAI:1b,Tags:["hk"]}
+execute if entity @e[type=minecraft:villager,tag=hk] run say three-mobs-ready => three-mobs-ready
+kill @e[tag=hk]
+execute unless entity @e[tag=hk] run say mobs-gone => mobs-gone
+hawkeye lookup u:#kill t:1h r:#world #count => Matching events: 3
+hawkeye lookup u:#kill t:1h r:#world => killed
+hawkeye rollback u:#kill t:1h r:#world => Finished the rollback
+say waiting for the respawn
+execute if entity @e[type=minecraft:zombie,tag=hk] run say zombie-back => zombie-back
+execute if entity @e[type=minecraft:cow,tag=hk] run say cow-back => cow-back
+execute if entity @e[type=minecraft:villager,tag=hk] run say villager-back => villager-back
