@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
@@ -61,6 +62,7 @@ public final class ErrorLog {
 
     private static final int QUEUE_CAPACITY = 10_000;
     private static final long NO_THREAD = -1;
+    private static final long IN_FLIGHT_POLL_NANOS = TimeUnit.MILLISECONDS.toNanos(1);
 
     private final @NotNull Path dataFolder;
     private final @NotNull Clock clock;
@@ -71,6 +73,8 @@ public final class ErrorLog {
     private final AtomicInteger numbers = new AtomicInteger();
     private final BlockingQueue<Job> queue = new LinkedBlockingQueue<>(QUEUE_CAPACITY);
     private final AtomicLong dropped = new AtomicLong();
+    /** Calls between their {@link #open} check and their offer: close() waits for them before its Stop. */
+    private final AtomicInteger inFlight = new AtomicInteger();
     private final ExecutorService writer = Executors.newSingleThreadExecutor(task -> {
         Thread thread = new Thread(task, "Hawkeye-ErrorLog");
         thread.setDaemon(true);
@@ -119,9 +123,19 @@ public final class ErrorLog {
         if (broken) {
             return new ReportResult.Untracked("the error files cannot be written");
         }
-        if (!open) {
-            return new ReportResult.Untracked("the error log is closed");
+        // Counted before open is read, so close() either makes this call see it closed or waits for its job.
+        inFlight.incrementAndGet();
+        try {
+            if (!open) {
+                return new ReportResult.Untracked("the error log is closed");
+            }
+            return file(problem);
+        } finally {
+            inFlight.decrementAndGet();
         }
+    }
+
+    private @NotNull ReportResult file(@NotNull Problem problem) {
         String key = problem.fingerprint();
         Tracked known = tracked.get(key);
         if (known == null) {
@@ -182,7 +196,7 @@ public final class ErrorLog {
      */
     public @NotNull CompletableFuture<Void> flush() {
         CompletableFuture<Void> done = new CompletableFuture<>();
-        if (!open || !queue.offer(new Job.Flush(done))) {
+        if (!offerWhileOpen(new Job.Flush(done))) {
             done.complete(null);
         }
         return done;
@@ -198,7 +212,7 @@ public final class ErrorLog {
      */
     public @NotNull CompletableFuture<Integer> markReviewed(@NotNull ReportFiles files) {
         CompletableFuture<Integer> done = new CompletableFuture<>();
-        if (!open || !queue.offer(new Job.Review(files, done))) {
+        if (!offerWhileOpen(new Job.Review(files, done))) {
             try {
                 done.complete(files.markReviewed().size());
             } catch (IOException e) {
@@ -206,6 +220,21 @@ public final class ErrorLog {
             }
         }
         return done;
+    }
+
+    /**
+     * Queues a job unless the error log is closed, counted in {@link #inFlight} like a {@link #report}.
+     *
+     * @param job the job
+     * @return {@code false} when it is closed or its queue is full
+     */
+    private boolean offerWhileOpen(@NotNull Job job) {
+        inFlight.incrementAndGet();
+        try {
+            return open && queue.offer(job);
+        } finally {
+            inFlight.decrementAndGet();
+        }
     }
 
     /**
@@ -219,9 +248,15 @@ public final class ErrorLog {
             return;
         }
         open = false;
+        long deadline = System.nanoTime() + wait.toNanos();
         try {
+            // A report() past its open check was answered (or is about to be) First or Repeat, and the console
+            // was told its file: its job goes ahead of the Stop. Such a call never blocks, so this wait is short.
+            while (inFlight.get() > 0 && System.nanoTime() < deadline && !Thread.currentThread().isInterrupted()) {
+                LockSupport.parkNanos(IN_FLIGHT_POLL_NANOS);
+            }
             queue.put(new Job.Stop());
-            stopped.get(wait.toMillis(), TimeUnit.MILLISECONDS);
+            stopped.get(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
             writer.shutdown();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -244,8 +279,9 @@ public final class ErrorLog {
                 }
                 stopping = process(jobs, false);
             }
-            // A report() that passed its open check while close() ran queues its job behind the Stop: it was
-            // answered First or Repeat (the console showed one line or nothing), so it is written too.
+            // close() waits for the calls past their open check before it queues the Stop; one that outlasted
+            // that wait queued its job behind the Stop. It was answered First or Repeat (the console showed one
+            // line or nothing), so it is written too.
             List<Job> late = new ArrayList<>();
             queue.drainTo(late);
             if (!late.isEmpty()) {

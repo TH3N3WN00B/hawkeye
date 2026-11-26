@@ -308,48 +308,42 @@ public class ErrorLogTest {
     }
 
     @Test
-    public void aProblemQueuedBehindTheStopIsWritten() throws Exception {
-        CountDownLatch inHeader = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-        ErrorLog closing = started(heldOnce(inHeader, release));
-        closing.report(problem(AT_14_03_05, "Could not write (attempt 1)", null));
-        assertTrue(inHeader.await(5, TimeUnit.SECONDS), "the writer holds the first problem");
+    public void aReportInFlightWhenCloseBeginsIsWritten() throws Exception {
+        errorLog.report(problem(AT_14_03_05, "Could not write (attempt 1)", null));
+        errorLog.flush().get(5, TimeUnit.SECONDS);
 
-        // A report past its open check when close() begins: it queues its job once the writer took the Stop.
+        // A report past its open check when close() begins, held there until close() has started.
         CountDownLatch inReport = new CountDownLatch(1);
         CountDownLatch finishReport = new CountDownLatch(1);
         AtomicReference<ReportResult> late = new AtomicReference<>();
-        Thread reporter = new Thread(() -> late.set(closing.report(new Problem(AT_14_03_05 + 1000,
+        Thread reporter = new Thread(() -> late.set(errorLog.report(new Problem(AT_14_03_05 + 1000,
                 ProblemKind.ERROR, "ERROR", "gg.moonrise.hawkeye.Other", "main", "Logged during shutdown",
                 "Logged during shutdown", new HeldCause(inReport, finishReport)))));
         reporter.start();
         assertTrue(inReport.await(5, TimeUnit.SECONDS));
-        // The flush completes at the end of the writer's batch with the Stop, past its last drain: hold it there.
-        CountDownLatch inLastBatch = new CountDownLatch(1);
-        CountDownLatch finishLastBatch = new CountDownLatch(1);
-        closing.flush().thenRun(() -> {
-            inLastBatch.countDown();
-            await(finishLastBatch);
-        });
-        Thread closer = new Thread(() -> closing.close(Duration.ofSeconds(10)));
+        Thread closer = new Thread(() -> errorLog.close(Duration.ofSeconds(10)));
         closer.start();
         for (long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-                closer.getState() != Thread.State.TIMED_WAITING && System.nanoTime() < until; ) {
+                closer.getState() != Thread.State.TIMED_WAITING && closer.isAlive() && System.nanoTime() < until; ) {
             Thread.sleep(5);
         }
-        assertEquals(Thread.State.TIMED_WAITING, closer.getState(), "close() queued its Stop and waits");
+        // Were the Stop queued now, the writer would end before the report queues its job.
+        closer.join(300);
+        assertTrue(closer.isAlive(), "close() waits for the report in flight");
+        assertInstanceOf(ReportResult.Untracked.class, errorLog.report(new Problem(AT_14_03_05, ProblemKind.ERROR,
+                "WARN", "gg.moonrise.hawkeye.Test", "main", "After close", "After close", null)),
+                "close() has begun");
 
-        release.countDown();
-        assertTrue(inLastBatch.await(5, TimeUnit.SECONDS));
         finishReport.countDown();
         reporter.join(5000);
-        finishLastBatch.countDown();
         closer.join(10_000);
 
+        assertFalse(closer.isAlive());
         Path file = folder.resolve("errors").resolve("Error-2026-11-25-14-03.txt");
         assertEquals(new ReportResult.First(file, 2), late.get());
         String text = Files.readString(file, StandardCharsets.UTF_8);
         assertContainsInOrder(text, "#1 WARN", "#2 ERROR at 2026-11-25 14:03:06.000 +00:00", "Logged during shutdown");
+        assertFalse(text.contains("After close"), text);
     }
 
     @Test
