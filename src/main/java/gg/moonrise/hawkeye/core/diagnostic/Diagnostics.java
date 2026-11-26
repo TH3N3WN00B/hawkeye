@@ -17,6 +17,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.PluginManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -69,7 +70,8 @@ public final class Diagnostics implements AutoCloseable {
         ConsoleCapture capture = null;
         RuntimeException failure = null;
         try {
-            capture = Log4jCapture.install(errorLog, plugin.getName(), serverFolder).orElse(null);
+            capture = Log4jCapture.install(errorLog, plugin.getName(), logger -> isOtherPlugin(plugin, logger),
+                    serverFolder).orElse(null);
         } catch (LinkageError e) {
             // A server without log4j-core: nothing to hook into.
         } catch (RuntimeException e) {
@@ -143,6 +145,31 @@ public final class Diagnostics implements AutoCloseable {
         }
         errorLog.close(CLOSE_WAIT);
         webhook.close(CLOSE_WAIT);
+    }
+
+    /**
+     * Whether a logger is another plugin's: Paper names a plugin's logger after the plugin, or after its
+     * {@code prefix}. Asked on the thread running Hawkeye's load or enable (the main thread) only, for a warning or
+     * an error that is not otherwise Hawkeye's.
+     */
+    private static boolean isOtherPlugin(@NotNull Plugin hawkeye, @NotNull String logger) {
+        if (logger.isEmpty() || logger.equals(hawkeye.getName())) {
+            return false;
+        }
+        try {
+            PluginManager plugins = hawkeye.getServer().getPluginManager();
+            if (plugins.getPlugin(logger) != null) {
+                return true;
+            }
+            for (Plugin other : plugins.getPlugins()) {
+                if (other != hawkeye && logger.equals(other.getPluginMeta().getLoggerPrefix())) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /**

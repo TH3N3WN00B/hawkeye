@@ -5,6 +5,7 @@ import gg.moonrise.hawkeye.entity.diagnostic.ProblemKind;
 import gg.moonrise.hawkeye.util.log.LogMarkers;
 import java.nio.file.Path;
 import java.util.Optional;
+import java.util.function.Predicate;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Marker;
@@ -29,7 +30,9 @@ import org.jetbrains.annotations.NotNull;
  * Hawkeye's events are those of the {@code gg.moonrise.hawkeye} loggers (the relocated engine included), of the
  * plugin's own logger ({@code Hawkeye}: Paper's "Could not pass event" and task failures) and HikariCP's about a
  * Hawkeye pool ({@link DatabaseFactory#POOL_PREFIX}), plus, while a thread runs Hawkeye's load or enable, every
- * event of that thread (Moss and Spring starting the context). A
+ * event of that thread (Moss and Spring starting the context) except another plugin's: Paper names a plugin's logger
+ * after the plugin, and Hawkeye's enable runs other plugins' code too (its {@code ServicesManager} registration fires
+ * {@code ServiceRegisterEvent} to their listeners, and Paper logs their failures under their name). A
  * {@link LogMarkers#CRASH} event, or an ERROR of that startup thread, is a crash.
  */
 public final class Log4jCapture extends AbstractFilter implements ConsoleCapture {
@@ -40,14 +43,17 @@ public final class Log4jCapture extends AbstractFilter implements ConsoleCapture
 
     private final @NotNull ErrorLog errorLog;
     private final @NotNull String pluginLogger;
+    private final @NotNull Predicate<String> otherPlugin;
     private final @NotNull Path serverFolder;
     private final @NotNull LoggerConfig root;
 
-    private Log4jCapture(@NotNull ErrorLog errorLog, @NotNull String pluginLogger, @NotNull Path serverFolder,
+    private Log4jCapture(@NotNull ErrorLog errorLog, @NotNull String pluginLogger,
+                         @NotNull Predicate<String> otherPlugin, @NotNull Path serverFolder,
                          @NotNull LoggerConfig root) {
         super(Result.NEUTRAL, Result.NEUTRAL);
         this.errorLog = errorLog;
         this.pluginLogger = pluginLogger;
+        this.otherPlugin = otherPlugin;
         this.serverFolder = serverFolder;
         this.root = root;
     }
@@ -57,16 +63,19 @@ public final class Log4jCapture extends AbstractFilter implements ConsoleCapture
      *
      * @param errorLog     where problems go
      * @param pluginLogger the plugin's logger name (its name, {@code Hawkeye})
+     * @param otherPlugin  whether a logger name is another plugin's; asked only on the startup thread, for an event
+     *                     that is not otherwise Hawkeye's
      * @param serverFolder the server's folder: the console line names files relative to it
      * @return the installed capture, empty when the logging is not log4j-core
      */
     public static @NotNull Optional<ConsoleCapture> install(@NotNull ErrorLog errorLog, @NotNull String pluginLogger,
+                                                            @NotNull Predicate<String> otherPlugin,
                                                             @NotNull Path serverFolder) {
         if (!(LogManager.getContext(false) instanceof LoggerContext context)) {
             return Optional.empty();
         }
-        Log4jCapture capture = new Log4jCapture(errorLog, pluginLogger, serverFolder.toAbsolutePath().normalize(),
-                context.getConfiguration().getRootLogger());
+        Log4jCapture capture = new Log4jCapture(errorLog, pluginLogger, otherPlugin,
+                serverFolder.toAbsolutePath().normalize(), context.getConfiguration().getRootLogger());
         capture.start();
         capture.root.addFilter(capture);
         return Optional.of(capture);
@@ -90,7 +99,7 @@ public final class Log4jCapture extends AbstractFilter implements ConsoleCapture
         }
         boolean startup = errorLog.isStartupThread(event.getThreadId());
         String logger = event.getLoggerName() == null ? "" : event.getLoggerName();
-        if (!startup && !isHawkeye(logger) && !isHawkeyePool(logger, event)) {
+        if (!isHawkeye(logger) && !isHawkeyePool(logger, event) && (!startup || otherPlugin.test(logger))) {
             return Result.NEUTRAL;
         }
         boolean crash = (marker != null && marker.isInstanceOf(LogMarkers.CRASH_NAME))

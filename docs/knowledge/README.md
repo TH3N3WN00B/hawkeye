@@ -438,7 +438,10 @@ update them in the same change when you learn something durable or an entry stop
   goes on; the error log files those as crashes because they are logged on the thread running Hawkeye's start.
 - The engine's own loggers are relocated with it (`gg.moonrise.hawkeye.libs.engine...`) and are Hawkeye's;
   Moss and Spring loggers are shared by every Moss plugin, so they are Hawkeye's only on the startup thread.
-  HikariCP starts every line with the pool name, so its events about a `Hawkeye-<shard>` pool
+  Another plugin's logger (named after the plugin, or its `prefix`) is never Hawkeye's, not even there: Hawkeye's
+  enable registers `HawkeyeApi` in the `ServicesManager`, which on Paper fires `ServiceRegisterEvent` to other
+  plugins' listeners synchronously, and Paper logs their failures under their logger (MockBukkit fires no such
+  event). HikariCP starts every line with the pool name, so its events about a `Hawkeye-<shard>` pool
   (`DatabaseFactory.POOL_PREFIX`) are Hawkeye's: with MariaDB at a closed port, Paper 1.21.1 and 26.3 printed
   `Hawkeye-home - Pool is empty, failed to create/setup connection` with a stack trace (from
   `com.zaxxer.hikari.pool.PoolBase`) once a minute or so, beside Hawkeye's own retry warning. Lettuce's

@@ -34,6 +34,7 @@ import org.slf4j.LoggerFactory;
 public class Log4jCaptureTest {
 
     private static final String WRITER = "gg.moonrise.hawkeye.core.queue.event.EventWriter";
+    private static final String OTHER_PLUGIN = "OtherPlugin";
     private static final Pattern DETAILS = Pattern.compile("\\(details in (errors|crash)/((Error|Crash)"
             + "-\\d{4}-\\d{2}-\\d{2}-\\d{2}-\\d{2}\\.txt)\\)$");
 
@@ -49,7 +50,7 @@ public class Log4jCaptureTest {
         errorLog = new ErrorLog(folder, Clock.systemDefaultZone(), () -> new ServerSnapshot("1.21.1", "Paper",
                 "Paper", "test", "21", "test", "26.4", List.of()), ReportListener.NONE);
         errorLog.start();
-        capture = Log4jCapture.install(errorLog, "Hawkeye", folder).orElseThrow();
+        capture = Log4jCapture.install(errorLog, "Hawkeye", OTHER_PLUGIN::equals, folder).orElseThrow();
         console = ConsoleLines.attach();
     }
 
@@ -166,6 +167,31 @@ public class Log4jCaptureTest {
         assertTrue(read(fileOf(crash)).startsWith("Hawkeye crash report"));
         assertEquals("Someone else's context failed", lines.get(1).getMessage().getFormattedMessage());
         assertNotNull(lines.get(1).getThrown(), "outside Hawkeye's startup a library's log is not Hawkeye's");
+    }
+
+    @Test
+    public void anotherPluginsLogOnTheStartupThreadPassesAsItIs() throws Exception {
+        org.apache.logging.log4j.Logger other = LogManager.getLogger(OTHER_PLUGIN);
+        errorLog.startupBegins();
+        try {
+            // Hawkeye's ServicesManager registration runs other plugins' ServiceRegisterEvent listeners.
+            other.warn("Their warning");
+            other.error("Could not pass event ServiceRegisterEvent to OtherPlugin v1.0",
+                    new IllegalStateException("their listener"));
+            LogManager.getLogger("Hawkeye").error("Hawkeye's own", new IllegalStateException("ours"));
+        } finally {
+            errorLog.startupEnds();
+        }
+
+        List<LogEvent> theirs = console.of(OTHER_PLUGIN);
+        assertEquals(2, theirs.size(), theirs.toString());
+        assertEquals("Their warning", theirs.getFirst().getMessage().getFormattedMessage());
+        assertEquals("Could not pass event ServiceRegisterEvent to OtherPlugin v1.0",
+                theirs.get(1).getMessage().getFormattedMessage());
+        assertNotNull(theirs.get(1).getThrown(), "their stack trace is kept");
+        String ours = console.of("Hawkeye").getFirst().getMessage().getFormattedMessage();
+        assertTrue(ours.contains("(details in crash/Crash-"), ours);
+        assertFalse(read(fileOf(ours)).contains("ServiceRegisterEvent"), "not filed as Hawkeye's crash");
     }
 
     @Test
