@@ -1,6 +1,7 @@
 package gg.moonrise.hawkeye.core.diagnostic;
 
 import gg.moonrise.hawkeye.entity.diagnostic.ProblemKind;
+import gg.moonrise.hawkeye.util.text.TextCuts;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
@@ -79,6 +80,6 @@ public record Problem(long timeMillis, @NotNull ProblemKind kind, @NotNull Strin
     }
 
     private static @NotNull String shorten(@NotNull String text) {
-        return text.length() <= MAX_REASON ? text : text.substring(0, MAX_REASON) + "...";
+        return text.length() <= MAX_REASON ? text : TextCuts.head(text, MAX_REASON) + "...";
     }
 }

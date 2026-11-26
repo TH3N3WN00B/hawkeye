@@ -85,6 +85,17 @@ public class ReportFilesTest {
         assertFalse(Files.exists(folder.resolve("crash").resolve("Crash-2026-11-25-14-03.txt")));
     }
 
+    @Test
+    public void aFolderWithNothingWaitingGetsNoReviewedFolder() throws IOException {
+        write(new Problem(AT_14_03, ProblemKind.ERROR, "WARN", "gg.moonrise.hawkeye.Test", "main", "A", "A", null));
+        Files.createDirectories(folder.resolve("crash"));
+
+        assertEquals(1, new ReportFiles(folder).markReviewed().size());
+
+        assertTrue(Files.isDirectory(folder.resolve("errors").resolve(ReportFiles.REVIEWED)));
+        assertFalse(Files.exists(folder.resolve("crash").resolve(ReportFiles.REVIEWED)));
+    }
+
     private void write(@NotNull Problem... problems) {
         ErrorLog errorLog = new ErrorLog(folder, Clock.fixed(Instant.ofEpochMilli(AT_14_03), ZoneOffset.UTC),
                 () -> new ServerSnapshot("1.21.1", "Paper", "Paper", "test", "21", "test", "26.4", List.of()),

@@ -69,6 +69,18 @@ public class DiscordPayloadTest {
     }
 
     @Test
+    public void aCutTitleDoesNotSplitASurrogatePair() {
+        String smiley = "\uD83D\uDE00";
+        // "Error on " is 9 characters, so the smiley's first half is the 253rd: the last one kept before "...".
+        String serverName = "s".repeat(243) + smiley + "more";
+
+        JsonObject embed = embed(DiscordPayload.json(report(ProblemKind.ERROR, "ERROR", "Failed"), serverName,
+                "Paper", "errors/Error.txt", true, 0));
+
+        assertEquals("Error on " + "s".repeat(243) + "...", embed.get("title").getAsString());
+    }
+
+    @Test
     public void theBodyIsMultipartWithTheJsonAndTheFile() {
         JsonObject json = new JsonObject();
         json.addProperty("username", "Hawkeye");

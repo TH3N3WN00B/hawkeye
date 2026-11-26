@@ -19,7 +19,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.jetbrains.annotations.NotNull;
@@ -269,6 +273,136 @@ public class ErrorLogTest {
         assertEquals((long) threads * each - 1, results.stream().filter(ReportResult.Repeat.class::isInstance).count());
         assertEquals((long) threads * each, results.stream().filter(ReportResult.Repeat.class::isInstance)
                 .map(ReportResult.Repeat.class::cast).mapToLong(ReportResult.Repeat::occurrence).max().orElse(0));
+    }
+
+    @Test
+    public void whatAFileCannotTakeIsLoggedToTheConsole() throws Exception {
+        Files.writeString(folder.resolve("errors"), "a file where the folder belongs");
+        CountDownLatch inHeader = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ErrorLog failing = started(heldOnce(inHeader, release));
+        try (ConsoleLines console = ConsoleLines.attach()) {
+            ReportResult first = failing.report(problem(AT_14_03_05, "Could not write 5 event(s) (attempt 1)",
+                    new SQLException("database is locked")));
+            assertTrue(inHeader.await(5, TimeUnit.SECONDS), "the writer holds the first problem");
+            ReportResult next = failing.report(new Problem(AT_14_03_05 + 60_000, ProblemKind.ERROR, "ERROR",
+                    "gg.moonrise.hawkeye.Other", "main", "Archiving failed", "Archiving failed",
+                    new IllegalStateException("full")));
+            release.countDown();
+            failing.close(Duration.ofSeconds(5));
+
+            assertInstanceOf(ReportResult.First.class, first);
+            assertInstanceOf(ReportResult.First.class, next, "queued before the first write failed");
+            List<String> lines = console.of(ErrorLog.class.getName()).stream()
+                    .map(event -> event.getMessage().getFormattedMessage().replace(System.lineSeparator(), "\n"))
+                    .toList();
+            assertEquals(2, lines.size(), lines.toString());
+            assertContainsInOrder(lines.get(0), "Could not write ", "Error-2026-11-25-14-03.txt",
+                    "What the file would have held:\nHawkeye error report", "#1 WARN",
+                    "Could not write 5 event(s) (attempt 1)", "java.sql.SQLException: database is locked",
+                    "\tat gg.moonrise.hawkeye.core.diagnostic.ErrorLogTest.");
+            assertContainsInOrder(lines.get(1), "Error-2026-11-25-14-04.txt either", "#2 ERROR", "Archiving failed",
+                    "java.lang.IllegalStateException: full");
+            assertTrue(written.isEmpty(), "the listener hears of no file that was not written: " + written);
+        }
+    }
+
+    @Test
+    public void aProblemQueuedBehindTheStopIsWritten() throws Exception {
+        CountDownLatch inHeader = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ErrorLog closing = started(heldOnce(inHeader, release));
+        closing.report(problem(AT_14_03_05, "Could not write (attempt 1)", null));
+        assertTrue(inHeader.await(5, TimeUnit.SECONDS), "the writer holds the first problem");
+
+        // A report past its open check when close() begins: it queues its job once the writer took the Stop.
+        CountDownLatch inReport = new CountDownLatch(1);
+        CountDownLatch finishReport = new CountDownLatch(1);
+        AtomicReference<ReportResult> late = new AtomicReference<>();
+        Thread reporter = new Thread(() -> late.set(closing.report(new Problem(AT_14_03_05 + 1000,
+                ProblemKind.ERROR, "ERROR", "gg.moonrise.hawkeye.Other", "main", "Logged during shutdown",
+                "Logged during shutdown", new HeldCause(inReport, finishReport)))));
+        reporter.start();
+        assertTrue(inReport.await(5, TimeUnit.SECONDS));
+        // The flush completes at the end of the writer's batch with the Stop, past its last drain: hold it there.
+        CountDownLatch inLastBatch = new CountDownLatch(1);
+        CountDownLatch finishLastBatch = new CountDownLatch(1);
+        closing.flush().thenRun(() -> {
+            inLastBatch.countDown();
+            await(finishLastBatch);
+        });
+        Thread closer = new Thread(() -> closing.close(Duration.ofSeconds(10)));
+        closer.start();
+        for (long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                closer.getState() != Thread.State.TIMED_WAITING && System.nanoTime() < until; ) {
+            Thread.sleep(5);
+        }
+        assertEquals(Thread.State.TIMED_WAITING, closer.getState(), "close() queued its Stop and waits");
+
+        release.countDown();
+        assertTrue(inLastBatch.await(5, TimeUnit.SECONDS));
+        finishReport.countDown();
+        reporter.join(5000);
+        finishLastBatch.countDown();
+        closer.join(10_000);
+
+        Path file = folder.resolve("errors").resolve("Error-2026-11-25-14-03.txt");
+        assertEquals(new ReportResult.First(file, 2), late.get());
+        String text = Files.readString(file, StandardCharsets.UTF_8);
+        assertContainsInOrder(text, "#1 WARN", "#2 ERROR at 2026-11-25 14:03:06.000 +00:00", "Logged during shutdown");
+    }
+
+    private @NotNull ErrorLog started(@NotNull Supplier<ServerSnapshot> server) {
+        ErrorLog log = new ErrorLog(folder, Clock.fixed(Instant.ofEpochMilli(AT_14_03_05), ZoneOffset.UTC), server,
+                written::add);
+        log.start();
+        return log;
+    }
+
+    /** The server facts, the first read waiting for {@code release}: holds the writer in its first batch. */
+    private static @NotNull Supplier<ServerSnapshot> heldOnce(@NotNull CountDownLatch entered,
+                                                              @NotNull CountDownLatch release) {
+        AtomicBoolean held = new AtomicBoolean();
+        return () -> {
+            if (held.compareAndSet(false, true)) {
+                entered.countDown();
+                await(release);
+            }
+            return SERVER;
+        };
+    }
+
+    private static void await(@NotNull CountDownLatch latch) {
+        try {
+            assertTrue(latch.await(5, TimeUnit.SECONDS));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** An exception whose first {@link #getCause()} (in {@link Problem#fingerprint()}) waits for {@code release}. */
+    private static final class HeldCause extends Exception {
+
+        private static final long serialVersionUID = 1L;
+
+        private final transient CountDownLatch entered;
+        private final transient CountDownLatch release;
+        private final AtomicBoolean held = new AtomicBoolean();
+
+        private HeldCause(@NotNull CountDownLatch entered, @NotNull CountDownLatch release) {
+            super("held");
+            this.entered = entered;
+            this.release = release;
+        }
+
+        @Override
+        public Throwable getCause() {
+            if (held.compareAndSet(false, true)) {
+                entered.countDown();
+                await(release);
+            }
+            return super.getCause();
+        }
     }
 
     private @NotNull String close(@NotNull Path file) throws IOException {

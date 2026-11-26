@@ -40,7 +40,8 @@ import org.jetbrains.annotations.Nullable;
  * <p>A problem's first time is written in full (message and stack trace) to the file of that minute, after the
  * server header; every repeat goes into that same file, one line each for the first {@link #REPEAT_LINES}, then
  * one line a minute that counts them. That bounds what a problem repeated every tick writes to about one line a
- * minute. If a file cannot be written the error log stops taking problems, and they are logged as before.
+ * minute. If a file cannot be written, the text it would have held is logged to the console instead, and the error
+ * log stops taking problems: they are logged as before.
  *
  * <p>Thread-safe: {@link #report} may be called from any thread (Folia region threads included).
  */
@@ -233,27 +234,14 @@ public final class ErrorLog {
                     jobs.add(first);
                     queue.drainTo(jobs);
                 }
-                Map<Path, StringBuilder> writes = new LinkedHashMap<>();
-                List<CompletableFuture<Void>> flushed = new ArrayList<>();
-                List<WrittenReport> firsts = new ArrayList<>();
-                for (Job job : jobs) {
-                    switch (job) {
-                        case Job.First entry -> firsts.add(writeFirst(writes, entry));
-                        case Job.Repeat repeat -> writeRepeat(writes, repeat);
-                        case Job.Flush flush -> flushed.add(flush.done());
-                        case Job.Review review -> {
-                            tell(firsts, write(writes));
-                            writes.clear();
-                            firsts.clear();
-                            review(review);
-                        }
-                        case Job.Stop stop -> stopping = true;
-                    }
-                }
-                writeCounted(writes, stopping);
-                writeDropped(writes);
-                tell(firsts, write(writes));
-                flushed.forEach(done -> done.complete(null));
+                stopping = process(jobs, false);
+            }
+            // A report() that passed its open check while close() ran queues its job behind the Stop: it was
+            // answered First or Repeat (the console showed one line or nothing), so it is written too.
+            List<Job> late = new ArrayList<>();
+            queue.drainTo(late);
+            if (!late.isEmpty()) {
+                process(late, true);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -271,6 +259,39 @@ public final class ErrorLog {
             });
             stopped.complete(null);
         }
+    }
+
+    /**
+     * Writes one batch of jobs.
+     *
+     * @param jobs     the jobs, oldest first
+     * @param stopping whether the writer stops after them, so every counted repeat is written now
+     * @return whether it stops: {@code stopping}, or a {@link Job.Stop} was among the jobs
+     */
+    private boolean process(@NotNull List<Job> jobs, boolean stopping) {
+        boolean stop = stopping;
+        Map<Path, StringBuilder> writes = new LinkedHashMap<>();
+        List<CompletableFuture<Void>> flushed = new ArrayList<>();
+        List<WrittenReport> firsts = new ArrayList<>();
+        for (Job job : jobs) {
+            switch (job) {
+                case Job.First entry -> firsts.add(writeFirst(writes, entry));
+                case Job.Repeat repeat -> writeRepeat(writes, repeat);
+                case Job.Flush flush -> flushed.add(flush.done());
+                case Job.Review review -> {
+                    tell(firsts, write(writes));
+                    writes.clear();
+                    firsts.clear();
+                    review(review);
+                }
+                case Job.Stop ignored -> stop = true;
+            }
+        }
+        writeCounted(writes, stop);
+        writeDropped(writes);
+        tell(firsts, write(writes));
+        flushed.forEach(done -> done.complete(null));
+        return stop;
     }
 
     private @NotNull WrittenReport writeFirst(@NotNull Map<Path, StringBuilder> writes, @NotNull Job.First job) {
@@ -390,10 +411,17 @@ public final class ErrorLog {
                         StandardOpenOption.APPEND);
             } catch (IOException e) {
                 failed.add(file);
+                // The console showed only a headline naming this file (or nothing, for a repeat): print what
+                // the file would have held, so no message or stack trace is lost. Taking no further problems
+                // bounds this to what was queued.
                 if (!broken) {
                     broken = true;
                     log.error(LogMarkers.REPORTED, "Could not write {}; Hawkeye's problems are logged to the console "
-                            + "as before: {}", file, e.toString());
+                            + "as before: {}. What the file would have held:{}{}", file, e.toString(),
+                            System.lineSeparator(), write.getValue());
+                } else {
+                    log.error(LogMarkers.REPORTED, "Could not write {} either; what it would have held:{}{}", file,
+                            System.lineSeparator(), write.getValue());
                 }
             }
         }

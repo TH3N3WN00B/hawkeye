@@ -20,6 +20,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.logging.log4j.core.LogEvent;
 import org.jetbrains.annotations.NotNull;
@@ -41,6 +43,9 @@ public class DiscordWebhookTest {
     private final List<Received> received = new CopyOnWriteArrayList<>();
     private final ConcurrentLinkedQueue<Integer> statuses = new ConcurrentLinkedQueue<>();
     private final AtomicInteger requests = new AtomicInteger();
+    /** Holds every request until it is opened; open unless a test closes it. */
+    private volatile CountDownLatch gate = new CountDownLatch(0);
+    private final CountDownLatch arrived = new CountDownLatch(1);
     private ConsoleLines console;
     private Path file;
 
@@ -48,6 +53,12 @@ public class DiscordWebhookTest {
     public void setUp() throws IOException {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         server.createContext("/api/webhooks/1/" + TOKEN, exchange -> {
+            arrived.countDown();
+            try {
+                gate.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
             requests.incrementAndGet();
             received.add(new Received(exchange.getRequestMethod(),
                     exchange.getRequestHeaders().getFirst("Content-Type"),
@@ -133,6 +144,30 @@ public class DiscordWebhookTest {
         String line = lines.getFirst().getMessage().getFormattedMessage();
         assertTrue(line.contains("HTTP 404"), line);
         assertFalse(line.contains(TOKEN), line);
+    }
+
+    @Test
+    public void reportsNotSentAreNamedUntilAPostGetsThrough() throws InterruptedException {
+        gate = new CountDownLatch(1);
+        statuses.add(204);
+        statuses.add(500);
+        DiscordWebhook webhook = webhook();
+
+        // The first is posted and held at the gate; the queue takes the next QUEUE, and two more are not sent.
+        webhook.submit(report(ProblemKind.ERROR), settings(true, true));
+        assertTrue(arrived.await(5, TimeUnit.SECONDS));
+        for (int i = 0; i < DiscordWebhook.QUEUE + 2; i++) {
+            webhook.submit(report(ProblemKind.ERROR), settings(true, true));
+        }
+        gate.countDown();
+        webhook.close(Duration.ofSeconds(10));
+
+        assertEquals(1 + DiscordWebhook.QUEUE, received.size());
+        String notSent = "\"value\":\"2 earlier report(s): too many at once\"";
+        assertFalse(received.get(0).body().contains(notSent), received.get(0).body());
+        assertTrue(received.get(1).body().contains(notSent), "named in the refused post: " + received.get(1).body());
+        assertTrue(received.get(2).body().contains(notSent), "named again after it: " + received.get(2).body());
+        assertFalse(received.get(3).body().contains(notSent), "only until one gets through: " + received.get(3).body());
     }
 
     @Test
