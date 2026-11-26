@@ -1,7 +1,9 @@
 name: Release
 
-# Builds the jar of a published GitHub release and attaches it to the release. Every other build, with the
-# tests, runs on Jenkins (Jenkinsfile, ci.moonrise.gg). Nothing is published to the Moonrise Nexus from here.
+# Builds the jar of a published GitHub release, attaches it to the release and uploads the same jar to Modrinth.
+# Every other build, with the tests, runs on Jenkins (Jenkinsfile, ci.moonrise.gg). Nothing is published to the
+# Moonrise Nexus from here. The Modrinth upload needs the MODRINTH_TOKEN secret (MODRINTH_PROJECT_ID is optional,
+# the slug hawkeye by default); without the token it is skipped with a warning.
 
 on:
   release:
@@ -60,3 +62,43 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "${TAG}" build/libs/*.jar --clobber --repo "${GITHUB_REPOSITORY}"
+
+      # A GitHub pre-release becomes a Modrinth beta. The changelog is the release notes, else the version's section
+      # of CHANGELOG.md, else a link to it.
+      - name: Upload to Modrinth
+        shell: bash
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          MODRINTH_PROJECT_ID: ${{ secrets.MODRINTH_PROJECT_ID }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MODRINTH_TOKEN}" ]; then
+            echo "::warning title=Modrinth upload skipped::Set the MODRINTH_TOKEN repository secret to upload releases to Modrinth."
+            exit 0
+          fi
+          if [ -z "${MODRINTH_PROJECT_ID}" ]; then
+            unset MODRINTH_PROJECT_ID
+          fi
+
+          changelog="${RELEASE_BODY}"
+          if [ -z "${changelog//[[:space:]]/}" ]; then
+            changelog="$(awk -v version="${VERSION}" '
+              index($0, "## [" version "]") == 1 { found = 1; next }
+              found && /^## \[/ { exit }
+              found { print }
+            ' CHANGELOG.md)"
+          fi
+          if [ -z "${changelog//[[:space:]]/}" ]; then
+            changelog="See [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/CHANGELOG.md)."
+          fi
+
+          export MODRINTH_VERSION_NUMBER="${VERSION}"
+          export MODRINTH_VERSION_NAME="${RELEASE_NAME:-Hawkeye ${VERSION}}"
+          export MODRINTH_VERSION_TYPE="$([ "${PRERELEASE}" = "true" ] && echo beta || echo release)"
+          export MODRINTH_CHANGELOG="${changelog}"
+          ./gradlew modrinth -Pversion="${VERSION}"

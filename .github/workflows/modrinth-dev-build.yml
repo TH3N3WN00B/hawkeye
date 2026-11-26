@@ -1,0 +1,78 @@
+name: Modrinth Dev Build
+
+# Tests every push to main and uploads its jar to Modrinth as an alpha, so servers can try a change before the
+# release. The Modrinth version number is the build's version plus the commit (26.4-SNAPSHOT+1a2b3c4); the jar
+# itself reports 26.4-SNAPSHOT. Needs the MODRINTH_TOKEN secret (MODRINTH_PROJECT_ID is optional, the slug hawkeye by
+# default); without it, or with the repository variable MODRINTH_DEV_BUILDS set to false, nothing is uploaded.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modrinth-dev-build
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Upload a development build
+    if: vars.MODRINTH_DEV_BUILDS != 'false'
+    runs-on: ubuntu-latest
+    env:
+      MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+      MODRINTH_PROJECT_ID: ${{ secrets.MODRINTH_PROJECT_ID }}
+    steps:
+      - name: Check the Modrinth token
+        id: token
+        shell: bash
+        run: |
+          if [ -z "${MODRINTH_TOKEN}" ]; then
+            echo "::warning title=Modrinth upload skipped::Set the MODRINTH_TOKEN repository secret to upload development builds."
+            echo "present=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "present=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Checkout
+        if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@v7
+
+      - name: Set up Java 25
+        if: steps.token.outputs.present == 'true'
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        if: steps.token.outputs.present == 'true'
+        uses: gradle/actions/setup-gradle@v5
+
+      # The tests, ArchitectureTest and verifyPluginJar: a commit that fails them is not uploaded.
+      - name: Build and test
+        if: steps.token.outputs.present == 'true'
+        run: ./gradlew build
+
+      - name: Upload to Modrinth
+        if: steps.token.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${MODRINTH_PROJECT_ID}" ]; then
+            unset MODRINTH_PROJECT_ID
+          fi
+          version="$(./gradlew -q properties | sed -n 's/^version: //p')"
+          short_sha="${GITHUB_SHA::7}"
+          subject="$(git log -1 --format=%s)"
+          commit_url="https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+
+          export MODRINTH_VERSION_NUMBER="${version}+${short_sha}"
+          export MODRINTH_VERSION_NAME="Hawkeye ${version} (${short_sha})"
+          export MODRINTH_VERSION_TYPE=alpha
+          export MODRINTH_CHANGELOG="Development build of [${short_sha}](${commit_url}): ${subject}"$'\n\n'"Not a release: use it to try a change before the next version."
+          ./gradlew modrinth

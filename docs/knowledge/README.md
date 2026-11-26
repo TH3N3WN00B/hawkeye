@@ -694,10 +694,34 @@ update them in the same change when you learn something durable or an entry stop
   `26.4.1`), a Jenkins build `26.4.B<BUILD_NUMBER>`, anything else `26.4-SNAPSHOT`. The quarter comes from
   the HEAD commit's date in UTC, so a rebuild of an old commit keeps its version. The build fails on any
   other version. The jar is `build/libs/Hawkeye-<version>.jar`.
-- Jenkins (`ci.moonrise.gg`, `Jenkinsfile`) is the only build and test CI for pushes; GitHub Actions only
-  runs `release.yml`.
+- Jenkins (`ci.moonrise.gg`, `Jenkinsfile`) builds and tests every push. GitHub Actions runs on releases
+  (`release.yml`, `update-modrinth-description.yml`) and on pushes to main only to upload a Modrinth alpha
+  (`modrinth-dev-build.yml`, which runs `./gradlew build` first).
 - A release is: publish a GitHub release tagged `26.4` (`v26.4` also works). `release.yml` builds
-  `-Pversion=26.4` (jar and `verifyPluginJar`, no tests: Jenkins ran them) and attaches `Hawkeye-26.4.jar`.
-  Nothing to bump afterwards.
+  `-Pversion=26.4` (jar and `verifyPluginJar`, no tests: Jenkins ran them), attaches `Hawkeye-26.4.jar` and
+  uploads the same jar to Modrinth (`./gradlew modrinth`): a release, or a beta for a GitHub pre-release, with
+  the release notes as changelog, else the `## [26.4]` section of `CHANGELOG.md`, else a link to it. Without the
+  `MODRINTH_TOKEN` secret the upload is skipped with a warning. Nothing to bump afterwards.
 - Without GitHub Actions: build locally with `./gradlew build -Pversion=26.4` and attach
   `build/libs/Hawkeye-26.4.jar` with `gh release create 26.4 --verify-tag`.
+- `MODRINTH.md` is the Modrinth project description (Modrinth slug `hawkeye`, free on 2026-11-26). Links and
+  images in it are absolute (GitHub, `raw.githubusercontent.com/.../main/assets/banner.png`): Modrinth cannot
+  resolve repository paths.
+- The logo is the hawk (`assets/logo.png`, from the owner's image on 2026-11-26); `assets/icon.png` is it on a
+  256x256 transparent square for the Modrinth project icon. `assets/banner.svg` (the logo embedded as a data
+  URI) is the banner's source and `assets/banner.png` its 1600x480 export, which `MODRINTH.md` shows: a PNG
+  looks the same everywhere, where an SVG's text depends on the viewer's fonts. `update-modrinth-description.yml` PATCHes it into the project on a published
+  release when it changed since the previous tag (or on the first release), and on every manual run. It needs
+  the repository secret `MODRINTH_TOKEN`, a Modrinth personal access token with "Read projects" (Minotaur resolves
+  the slug, and a draft or unapproved project is invisible without it), "Write projects" (the description) and
+  "Create versions" (the uploads);
+  `MODRINTH_PROJECT_ID` is optional (defaults to `hawkeye`). The Modrinth badges show "not found" until the
+  project exists.
+- Modrinth versions come from Minotaur (`com.modrinth.minotaur` 2.10.0, `modrinth { }` in `build.gradle.kts`),
+  configured through `MODRINTH_*` environment variables; `MODRINTH_DEBUG=true` prints the upload instead of
+  sending it (verified 2026-11-26 for both workflows' steps). Its task reads `Task.project` at execution time, so
+  it is marked `notCompatibleWithConfigurationCache`. A version lists the loaders paper, folia and purpur and the
+  Minecraft versions in `gradle.properties` (`modrinth.gameVersions`, 1.21.1 to 26.3), which move with
+  `paperOldest` and `paper`. Dev builds (`modrinth-dev-build.yml`) are alphas numbered `26.4-SNAPSHOT+<sha7>`
+  (the jar says `26.4-SNAPSHOT`); the repository variable `MODRINTH_DEV_BUILDS=false` turns them off.
+- `.github/release.yml` groups GitHub's generated release notes by pull request label (copied from QuestsPlus).

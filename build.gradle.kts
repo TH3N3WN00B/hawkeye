@@ -6,6 +6,7 @@ plugins {
     java
     `maven-publish`
     alias(libs.plugins.shadow)
+    alias(libs.plugins.modrinthMinotaur)
 }
 
 group = "gg.moonrise.hawkeye"
@@ -248,4 +249,32 @@ publishing {
             }
         }
     }
+}
+
+// Uploads the plugin jar to Modrinth as a version of the project `hawkeye` (docs/knowledge/README.md "Release facts"):
+// release.yml for every GitHub release, modrinth-dev-build.yml for every push to main. By hand:
+// `MODRINTH_TOKEN=... ./gradlew modrinth -Pversion=26.4`; MODRINTH_DEBUG=true prints the upload instead of sending it.
+// A release or hotfix (26.4, 26.4.1) is a Modrinth release, anything else an alpha; the workflows set the type,
+// number, name and changelog through the MODRINTH_* variables.
+val stableVersion = Regex("""\d{2}\.[1-4](\.\d+)?""").matches(version.toString())
+modrinth {
+    token.set(providers.environmentVariable("MODRINTH_TOKEN"))
+    projectId.set(providers.environmentVariable("MODRINTH_PROJECT_ID").orElse("hawkeye"))
+    versionNumber.set(providers.environmentVariable("MODRINTH_VERSION_NUMBER").orElse(version.toString()))
+    versionName.set(providers.environmentVariable("MODRINTH_VERSION_NAME").orElse("$pluginName $version"))
+    versionType.set(providers.environmentVariable("MODRINTH_VERSION_TYPE").orElse(if (stableVersion) "release" else "alpha"))
+    changelog.set(providers.environmentVariable("MODRINTH_CHANGELOG")
+        .orElse("See [CHANGELOG.md](https://github.com/ericlmao/hawkeye/blob/main/CHANGELOG.md)."))
+    uploadFile.set(tasks.shadowJar)
+    gameVersions.addAll(providers.gradleProperty("modrinth.gameVersions")
+        .map { versions -> versions.split(",").map(String::trim).filter(String::isNotEmpty) })
+    // paper-plugin.yml: Paper and its forks only, Folia included (folia-supported: true).
+    loaders.addAll("paper", "folia", "purpur")
+    debugMode.set(providers.environmentVariable("MODRINTH_DEBUG").map { it == "true" }.orElse(false))
+}
+
+tasks.named("modrinth") {
+    dependsOn(verifyPluginJar)
+    // Minotaur 2.10.0 reads Task.project while it runs.
+    notCompatibleWithConfigurationCache("Minotaur reads Task.project at execution time")
 }
