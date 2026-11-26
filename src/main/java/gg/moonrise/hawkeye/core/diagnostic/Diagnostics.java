@@ -7,6 +7,7 @@ import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.diagnostic.webhook.DiscordWebhook;
 import gg.moonrise.hawkeye.entity.diagnostic.PendingReport;
 import gg.moonrise.hawkeye.entity.diagnostic.WebhookSettings;
+import gg.moonrise.hawkeye.util.log.LogMarkers;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -66,13 +67,22 @@ public final class Diagnostics implements AutoCloseable {
                 report -> webhook.submit(report, settings.get()));
         errorLog.start();
         ConsoleCapture capture = null;
+        RuntimeException failure = null;
         try {
             capture = Log4jCapture.install(errorLog, plugin.getName(), serverFolder).orElse(null);
         } catch (LinkageError e) {
             // A server without log4j-core: nothing to hook into.
+        } catch (RuntimeException e) {
+            // An odd logging configuration. The error log is optional: Hawkeye runs on without it.
+            failure = e;
         }
         if (capture == null) {
-            log.warn("The server does not log through log4j-core; Hawkeye's errors are not written to files");
+            if (failure == null) {
+                log.warn("The server does not log through log4j-core; Hawkeye's errors are not written to files");
+            } else {
+                log.warn(LogMarkers.REPORTED, "Hawkeye could not hook into the server's logging; its errors are not "
+                        + "written to files", failure);
+            }
             errorLog.close(CLOSE_WAIT);
         }
         return new Diagnostics(errorLog, capture, webhook, new ReportFiles(dataFolder), settings);
