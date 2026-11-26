@@ -231,6 +231,20 @@ update them in the same change when you learn something durable or an entry stop
   lectern states count as `Container`; the state of a block set with `setBlockData` reads as air (set
   the data on the state in tests); `getState()` is live and `getState(false)` a copy (the reverse of
   Paper); nearby entities are found by position, not bounding box.
+- Click callbacks (checked 2026-11-26, Adventure 5.2.0): `ClickEvent.callback` asks the
+  `ClickCallback.Provider` service. Paper 26.3's server jar registers `ClickCallbackProviderImpl` (a
+  `paper:click_callback` custom click event holding a UUID, kept for the options' uses and lifetime);
+  MockBukkit 4.120 registers none, so it silently returns Adventure's fallback, a `suggest_command` of
+  "Callbacks are not supported on this platform!". `EventLines` therefore takes a `BookOpener`
+  (`EventLines.CALLBACK_BOOKS` on a server, a recording fake in tests).
+- Text components inside item NBT (1.21.5+ shapes, read by `util.serialize.ItemDetails`): a string tag is
+  plain text, a list is the first element with siblings, a compound has the JSON keys with booleans as
+  bytes. Converting to Gson must turn bytes 0/1 into JSON booleans (`JsonPrimitive#getAsBoolean` of a
+  number reads its string, so `1` is false). Heterogeneous NBT lists wrap non-compound elements as
+  `{"": value}`. Book pages and titles are "filterable": bare or `{raw: ..., filtered: ...}`. Strings
+  are tried as JSON only with a strict parse: Gson's lenient parse reads `[Chapter]` as an array. The
+  shapes come from the vanilla codecs; Paper 26.3's `serializeAsBytes` of a real written book has not
+  been compared on a live server.
 - MockBukkit 4.120 `InventoryMock#getHolder(boolean)` throws `UnimplementedOperationException` for every
   inventory it builds, `getEnderChest()` and `createInventory` included; tests open `listener.HeldInventories`
   (`chest`, `hopper`, `dropper`, `typed(holder, type)`, `chest(holder, title)`) instead. A view's title is the
@@ -318,6 +332,11 @@ update them in the same change when you learn something durable or an entry stop
   max health up by key in `Registry.ATTRIBUTE` (`WorldWriter`) and reads a painting's size through
   `MethodHandle`s (`RespawnLocations`). `Registry#stream`, `Registry#get(NamespacedKey)` and
   `Registry.ATTRIBUTE` have the same descriptors on 1.21.1 and 26.3.
+- The 1.21.1 baseline covers the libraries Paper ships too, not only paper-api: its Adventure has no type
+  parameter on `ClickEvent` (main declares it raw; tests on 26.3 may write `ClickEvent<?>`), and its Gson is
+  2.10.1, without 2.11's `Strictness` (`JsonReader#setLenient(false)` instead). `api_links.py` checks only
+  Paper's own packages, so a feature branch written against 26.3 breaks only at `compileJava` (verified
+  2026-11-26 merging the item-details work with version support).
 - `@ConditionalOnApi`/`@ConditionalOnMissingApi` are Spring `@Conditional`s. Moss scans with
   `AnnotationConfigApplicationContext.scan`, whose scanner evaluates conditions on ASM metadata before it
   loads a class, so a gated class is never loaded on a server without its API (otherwise Spring's and
@@ -484,6 +503,17 @@ update them in the same change when you learn something durable or an entry stop
   `assureReadOnly` is set, so a write still succeeds; `SET SESSION TRANSACTION READ ONLY` makes the session
   refuse writes. `useSsl=true` is a deprecated alias that turns into `sslMode=verify-full` (with a warning);
   CoreProtect's `enable-ssl` does not check certificates, so the import uses `sslMode=trust`.
+- MariaDB Connector/J 4.0 (CONJ-1321) changed the default `sslMode` from `disable` to `verify-full`. Against
+  MySQL 8.4 and its self-signed certificate a login then fails with "Cannot use authentication plugin
+  caching_sha2_password with a Self signed certificates" (verified 2026-11-25 with `HAWKEYE_TEST_MYSQL`).
+  Dependabot's catalog bump (#13) did not show it: only `HAWKEYE_TEST_MYSQL` against a real MySQL does.
+  `DatabaseFactory` therefore sets `sslMode=disable` unless the operator sets `sslMode` or `useSsl`, in any
+  case, and defaults `allowPublicKeyRetrieval=true`. That is the importer's choice too (`SourceDialect`).
+  Any `useSsl` makes Connector/J apply its legacy mapping (`useSSL=true` is `verify-full`).
+- MySQL 8 answers a login for an unknown user as a decoy account with an authentication plugin picked at
+  random. When it picks `sha256_password`, which Connector/J (3.5 and 4.0) does not implement, the driver
+  reports "Client does not support authentication protocol requested by server" instead of "Access
+  denied". `ServerDatabaseIntegrationTest.aRefusedLoginShowsNoCredential` accepts both.
 - sqlite-jdbc's read-only `open_mode` is 65 (read-only plus the URI flag); opening a missing file read-only
   fails and creates nothing.
 - CoreProtect's `/co purge` (`command/PurgeCommand.java`, 24.x/25.x) on SQLite copies each table into a

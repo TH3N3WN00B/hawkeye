@@ -33,7 +33,7 @@ public class LookupLinesTest {
 
     private final MessagesConfig messages = new MessagesConfig();
     private final LookupLines lines = new LookupLines(messages, new EventLines(messages.getLookup(),
-            messages.getActions(), "survival", NOW, ZoneOffset.UTC));
+            messages.getActions(), "survival", NOW, ZoneOffset.UTC, EventLines.CALLBACK_BOOKS));
 
     @Test
     public void aMiddlePageHasHeaderLinesAndBothPageLinks() {
@@ -128,7 +128,7 @@ public class LookupLinesTest {
         atLeast.setAccessible(true);
         atLeast.set(changed.getLookup(), "<value> or more");
         LookupLines custom = new LookupLines(changed, new EventLines(changed.getLookup(), changed.getActions(),
-                "survival", NOW, ZoneOffset.UTC));
+                "survival", NOW, ZoneOffset.UTC, EventLines.CALLBACK_BOOKS));
         assertEquals(List.of("Matching events: 16 or more"), plain(custom.count(new LookupOutcome.Count(16, false,
                 List.of()))));
     }
@@ -144,7 +144,7 @@ public class LookupLinesTest {
             throw new IllegalStateException(e);
         }
         return new LookupLines(custom, new EventLines(custom.getLookup(), custom.getActions(), "survival", NOW,
-                ZoneOffset.UTC));
+                ZoneOffset.UTC, EventLines.CALLBACK_BOOKS));
     }
 
     private static LookupTotal exact(long events) {

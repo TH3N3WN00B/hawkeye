@@ -73,4 +73,20 @@ public final class LookupMessages {
 
     @Comment("The hover of a snapshot without items.")
     private String snapshotEmpty = "<gray>empty";
+
+    @Comment({"The hover of <target> on an item with a name, enchantments or a book lists the item's id, then",
+            "these lines. The item's custom name. Placeholder: <name>."})
+    private String itemName = "<gray>Name:</gray> <white><name></white>";
+
+    @Comment("One enchantment (stored enchantments of an enchanted book too). Placeholders: <enchantment>, <level>.")
+    private String itemEnchantment = "<gray><enchantment> <level>";
+
+    @Comment("A written book. Placeholders: <title>, <author>, <pages>.")
+    private String itemBook = "<white><title></white> <gray>by <author>, <pages> pages";
+
+    @Comment("A book and quill. Placeholder: <pages>.")
+    private String itemWritableBook = "<gray>Book and quill, <pages> pages";
+
+    @Comment("Last line of the hover of a book with pages: clicking <target> opens the book.")
+    private String itemReadHint = "<#7dd3fc>Click to read";
 }

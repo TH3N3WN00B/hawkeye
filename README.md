@@ -126,6 +126,13 @@ Paging past them keeps going until the events end, where the total becomes exact
 exact number. Locations in results on this server are clickable (`/he tp`), results from other
 servers show their server name.
 
+Hovering an item in a result shows what it was when the item carried more than its material: its
+custom name, its enchantments (an enchanted book's too) and, for a written book or a book and quill,
+the title, author and page count. Clicking a book with pages opens it for you, for an hour after the
+lookup; click events inside the pages are dropped, so a page can never run a command as the reader.
+The lines are `lookup.item-name`, `item-enchantment`, `item-book`, `item-writable-book` and
+`item-read-hint` in `messages.yml`.
+
 ## Inspector
 
 With `/he inspect` on, left-clicking a block shows its history (the block is not broken),
