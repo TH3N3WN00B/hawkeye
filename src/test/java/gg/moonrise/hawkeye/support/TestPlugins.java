@@ -100,8 +100,19 @@ public final class TestPlugins {
      * @param content the YAML to write
      */
     public static void writeConfig(@NotNull TestHawkeyePlugin plugin, @NotNull String content) {
+        writeFile(plugin, "config.yml", content);
+    }
+
+    /**
+     * Replaces a file in the plugin's data folder.
+     *
+     * @param plugin  the plugin
+     * @param name    the file name, such as {@code commands.yml}
+     * @param content the text to write
+     */
+    public static void writeFile(@NotNull TestHawkeyePlugin plugin, @NotNull String name, @NotNull String content) {
         try {
-            Path file = plugin.getDataPath().resolve("config.yml");
+            Path file = plugin.getDataPath().resolve(name);
             Files.createDirectories(file.getParent());
             Files.writeString(file, content);
         } catch (IOException e) {

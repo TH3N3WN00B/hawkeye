@@ -2,17 +2,25 @@ package gg.moonrise.hawkeye.command.registry;
 
 import gg.moonrise.engine.command.CloudArgument;
 import gg.moonrise.engine.paper.command.PaperCommand;
+import gg.moonrise.hawkeye.config.permission.Permissions;
+import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.moss.spring.Enableable;
 import gg.moonrise.moss.spring.SpringComponent;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.incendo.cloud.CommandManager;
 import org.incendo.cloud.annotations.AnnotationParser;
+import org.incendo.cloud.annotations.Command;
 import org.incendo.cloud.execution.ExecutionCoordinator;
 import org.incendo.cloud.paper.PaperCommandManager;
 import org.incendo.cloud.parser.ParserDescriptor;
@@ -27,6 +35,7 @@ import org.springframework.beans.factory.ObjectProvider;
  * registry, which the shadow jar excludes because it runs handlers on Cloud's async coordinator:
  * here handlers run on the calling thread ({@code simpleCoordinator}), so commands that touch the
  * world need no extra hop, and commands with slow work schedule it themselves or return a future.
+ * The root and subcommand aliases come from {@code commands.yml} ({@link CommandAliasProcessor}).
  * {@code verifyPluginJar} checks that this is the only command registry in the jar.
  */
 @Slf4j
@@ -35,6 +44,7 @@ import org.springframework.beans.factory.ObjectProvider;
 public final class HawkeyeCommandRegistry implements Enableable {
 
     private final @NotNull JavaPlugin plugin;
+    private final @NotNull HawkeyeConfigProvider configProvider;
     private final @NotNull ObjectProvider<PaperCommand> commands;
     private final @NotNull ObjectProvider<CloudArgument<?, ?>> arguments;
     private final AtomicReference<CommandManager<CommandSourceStack>> manager = new AtomicReference<>();
@@ -75,8 +85,10 @@ public final class HawkeyeCommandRegistry implements Enableable {
                 FilteringSuggestionProcessor.Filter.<CommandSourceStack>contains(true)));
         registerArguments(target.parserRegistry());
         AnnotationParser<CommandSourceStack> parser = new AnnotationParser<>(target, CommandSourceStack.class);
+        List<PaperCommand> beans = commands.orderedStream().toList();
+        parser.stringProcessor(CommandAliasProcessor.of(configProvider.commands(), subcommandNames(beans)));
         AtomicInteger count = new AtomicInteger();
-        commands.orderedStream().forEach(command -> {
+        beans.forEach(command -> {
             if (!command.shouldEnable()) {
                 log.info("Skipped disabled command group {}", command.getClass().getSimpleName());
                 return;
@@ -91,6 +103,18 @@ public final class HawkeyeCommandRegistry implements Enableable {
             }
         });
         return count.get();
+    }
+
+    /** The first word after the root of every {@code @Command} the beans declare, so aliases cannot shadow one. */
+    private static @NotNull Set<String> subcommandNames(@NotNull List<PaperCommand> beans) {
+        return beans.stream()
+                .flatMap(bean -> Arrays.stream(bean.getClass().getMethods()))
+                .map(method -> method.getAnnotation(Command.class))
+                .filter(Objects::nonNull)
+                .map(command -> command.value().split(" "))
+                .filter(words -> words.length > 1 && words[0].equals(Permissions.ROOT))
+                .map(words -> words[1])
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
