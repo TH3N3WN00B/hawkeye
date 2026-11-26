@@ -332,6 +332,11 @@ update them in the same change when you learn something durable or an entry stop
   max health up by key in `Registry.ATTRIBUTE` (`WorldWriter`) and reads a painting's size through
   `MethodHandle`s (`RespawnLocations`). `Registry#stream`, `Registry#get(NamespacedKey)` and
   `Registry.ATTRIBUTE` have the same descriptors on 1.21.1 and 26.3.
+- The 1.21.1 baseline covers the libraries Paper ships too, not only paper-api: its Adventure has no type
+  parameter on `ClickEvent` (main declares it raw; tests on 26.3 may write `ClickEvent<?>`), and its Gson is
+  2.10.1, without 2.11's `Strictness` (`JsonReader#setLenient(false)` instead). `api_links.py` checks only
+  Paper's own packages, so a feature branch written against 26.3 breaks only at `compileJava` (verified
+  2026-11-26 merging the item-details work with version support).
 - `@ConditionalOnApi`/`@ConditionalOnMissingApi` are Spring `@Conditional`s. Moss scans with
   `AnnotationConfigApplicationContext.scan`, whose scanner evaluates conditions on ASM metadata before it
   loads a class, so a gated class is never loaded on a server without its API (otherwise Spring's and
