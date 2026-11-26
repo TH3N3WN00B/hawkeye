@@ -1,4 +1,4 @@
-package gg.moonrise.hawkeye.core.diagnostic;
+package gg.moonrise.hawkeye.entity.diagnostic;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;

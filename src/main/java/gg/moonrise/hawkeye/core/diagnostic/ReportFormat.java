@@ -1,5 +1,6 @@
 package gg.moonrise.hawkeye.core.diagnostic;
 
+import gg.moonrise.hawkeye.entity.diagnostic.ProblemKind;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.Path;
@@ -147,6 +148,20 @@ public final class ReportFormat {
     public @NotNull String dropped(long count, long timeMillis) {
         return "[" + STAMP.format(at(timeMillis)) + "] " + count
                 + " logged problem(s) were not written: the error log could not keep up" + System.lineSeparator();
+    }
+
+    /**
+     * How the console and the webhook name a file: relative to the server folder with {@code /} separators
+     * ({@code plugins/Hawkeye/errors/Error-...txt}), or absolute when it is elsewhere.
+     *
+     * @param serverFolder the server's folder, absolute and normalized
+     * @param file         the file
+     * @return the name to show
+     */
+    public static @NotNull String shownPath(@NotNull Path serverFolder, @NotNull Path file) {
+        Path absolute = file.toAbsolutePath().normalize();
+        Path shown = absolute.startsWith(serverFolder) ? serverFolder.relativize(absolute) : absolute;
+        return shown.toString().replace('\\', '/');
     }
 
     private @NotNull ZonedDateTime at(long timeMillis) {

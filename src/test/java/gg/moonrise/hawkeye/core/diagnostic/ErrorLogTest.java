@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import gg.moonrise.hawkeye.entity.diagnostic.ProblemKind;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -17,6 +18,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -41,11 +43,13 @@ public class ErrorLogTest {
     @TempDir
     private Path folder;
 
+    private final List<WrittenReport> written = new CopyOnWriteArrayList<>();
     private ErrorLog errorLog;
 
     @BeforeEach
     public void setUp() {
-        errorLog = new ErrorLog(folder, Clock.fixed(Instant.ofEpochMilli(AT_14_03_05), ZoneOffset.UTC), () -> SERVER);
+        errorLog = new ErrorLog(folder, Clock.fixed(Instant.ofEpochMilli(AT_14_03_05), ZoneOffset.UTC), () -> SERVER,
+                written::add);
         errorLog.start();
     }
 
@@ -108,7 +112,8 @@ public class ErrorLogTest {
         assertEquals(new ReportResult.First(file, 2), second);
         String text = close(file);
         assertEquals(1, count(text, "Hawkeye error report"), "one header per file");
-        assertContainsInOrder(text, "#1 WARN at 2026-11-25 14:03:05.000 +00:00", "#2 ERROR at 2026-11-25 14:03:55.000 +00:00",
+        assertContainsInOrder(text, "#1 WARN at 2026-11-25 14:03:05.000 +00:00",
+                "#2 ERROR at 2026-11-25 14:03:55.000 +00:00",
                 "Logger: gg.moonrise.hawkeye.core.storage.archive.Archiver", "java.lang.IllegalStateException: full");
     }
 
@@ -164,6 +169,60 @@ public class ErrorLogTest {
         String text = close(file);
         assertTrue(text.startsWith("earlier run"), text);
         assertContainsInOrder(text, "earlier run", "Hawkeye error report", "#1 WARN");
+    }
+
+    @Test
+    public void theListenerHearsOfEachFirstTimeOnceItsFileIsWritten() throws Exception {
+        errorLog.report(problem(AT_14_03_05, "Could not write (attempt 1)", new SQLException("locked")));
+        errorLog.report(problem(AT_14_03_05 + 1000, "Could not write (attempt 2)", new SQLException("locked")));
+        errorLog.report(new Problem(AT_14_03_05, ProblemKind.CRASH, "ERROR", "gg.moonrise.hawkeye.HawkeyePlugin",
+                "Server thread", "Hawkeye could not {}", "Hawkeye could not load", null));
+        errorLog.flush().get(5, TimeUnit.SECONDS);
+
+        assertEquals(2, written.size(), "repeats are not told: " + written);
+        WrittenReport error = written.getFirst();
+        assertEquals(new WrittenReport(1, ProblemKind.ERROR, "WARN",
+                "Could not write (attempt 1): SQLException: locked",
+                folder.resolve("errors").resolve("Error-2026-11-25-14-03.txt"), AT_14_03_05), error);
+        assertTrue(Files.isRegularFile(error.file()), "the file exists when the listener hears of it");
+        assertEquals(ProblemKind.CRASH, written.get(1).kind());
+    }
+
+    @Test
+    public void aFileMovedAwayStartsAgainWithItsHeader() throws Exception {
+        errorLog.report(problem(AT_14_03_05, "Could not write", null));
+        errorLog.flush().get(5, TimeUnit.SECONDS);
+        Path file = folder.resolve("errors").resolve("Error-2026-11-25-14-03.txt");
+        Files.move(file, folder.resolve("moved.txt"));
+
+        errorLog.report(problem(AT_14_03_05 + 5000, "Could not write again", null));
+
+        String text = close(file);
+        assertTrue(text.startsWith("Hawkeye error report"), text);
+        assertContainsInOrder(text, "  Minecraft version: 1.21.1", "#1 again (2 times): Could not write again");
+    }
+
+    @Test
+    public void repeatsOfAReviewedProblemFollowItsFileAndANewProblemWaits() throws Exception {
+        errorLog.report(problem(AT_14_03_05, "Could not write (attempt 1)", null));
+        Path waiting = folder.resolve("errors").resolve("Error-2026-11-25-14-03.txt");
+        Path reviewed = folder.resolve("errors").resolve(ReportFiles.REVIEWED).resolve("Error-2026-11-25-14-03.txt");
+
+        assertEquals(1, errorLog.markReviewed(new ReportFiles(folder)).get(5, TimeUnit.SECONDS));
+        errorLog.report(problem(AT_14_03_05 + 1000, "Could not write (attempt 2)", null));
+        errorLog.flush().get(5, TimeUnit.SECONDS);
+
+        assertFalse(Files.exists(waiting), "a repeat does not make the reviewed problem wait again");
+        String moved = Files.readString(reviewed).replace(System.lineSeparator(), "\n");
+        assertEquals(1, count(moved, "Hawkeye error report"), "no second header in the reviewed file");
+        assertContainsInOrder(moved, "#1 WARN", "#1 again (2 times): Could not write (attempt 2)");
+
+        errorLog.report(new Problem(AT_14_03_05 + 2000, ProblemKind.ERROR, "ERROR", "gg.moonrise.hawkeye.Other",
+                "main", "Something new", "Something new", null));
+        String text = close(waiting);
+        assertTrue(text.startsWith("Hawkeye error report"), text);
+        assertContainsInOrder(text, "#2 ERROR", "Something new");
+        assertFalse(text.contains("again"), text);
     }
 
     @Test

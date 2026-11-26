@@ -4,11 +4,13 @@ import gg.moonrise.engine.paper.PaperPlugin;
 import gg.moonrise.hawkeye.core.diagnostic.Diagnostics;
 import gg.moonrise.hawkeye.util.log.LogMarkers;
 import gg.moonrise.moss.spring.Disableable;
+import java.util.Objects;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.bukkit.event.HandlerList;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 /**
  * Plugin entry point on the Moonrise plugin-engine. Moss builds the Spring context in {@code onLoad}
@@ -16,7 +18,8 @@ import org.jetbrains.annotations.Nullable;
  * {@code Enableable} beans and registers {@code Listener} beans in {@code onEnable}. Nothing is
  * constructed or registered by hand here, except the error log ({@code core.diagnostic}): it opens before
  * the context, so a context that fails to start is written to a crash file and shown once in the console,
- * and the plugin then disables itself instead of throwing.
+ * and the plugin then disables itself instead of throwing. The open {@link Diagnostics} is registered in the
+ * context as Moss registers the plugin itself, for the beans that use it.
  *
  * <p>Not {@code final}: MockBukkit loads plugins through a ByteBuddy subclass.
  */
@@ -30,6 +33,13 @@ public class HawkeyePlugin extends PaperPlugin {
     public void onLoad() {
         diagnostics = Diagnostics.open(this);
         started = startup("load", this::startContext);
+    }
+
+    @Override
+    public void loadInitialComponents(@NotNull AnnotationConfigApplicationContext context) {
+        super.loadInitialComponents(context);
+        Diagnostics open = Objects.requireNonNull(diagnostics, "the error log opens before the context");
+        context.registerBean(Diagnostics.class, () -> open);
     }
 
     /**

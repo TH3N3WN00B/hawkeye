@@ -1,6 +1,7 @@
 package gg.moonrise.hawkeye.core.diagnostic;
 
 import gg.moonrise.hawkeye.core.sql.DatabaseFactory;
+import gg.moonrise.hawkeye.entity.diagnostic.ProblemKind;
 import gg.moonrise.hawkeye.util.log.LogMarkers;
 import java.nio.file.Path;
 import java.util.Optional;
@@ -98,7 +99,7 @@ public final class Log4jCapture extends AbstractFilter implements ConsoleCapture
         return switch (errorLog.report(problem)) {
             case ReportResult.First first -> {
                 LogManager.getLogger(logger).log(level, REPORTED, "{} (details in {})", problem.headline(),
-                        display(first.file()));
+                        ReportFormat.shownPath(serverFolder, first.file()));
                 yield Result.DENY;
             }
             case ReportResult.Repeat repeat -> Result.DENY;
@@ -125,11 +126,5 @@ public final class Log4jCapture extends AbstractFilter implements ConsoleCapture
         String thread = event.getThreadName() == null ? "?" : event.getThreadName();
         return new Problem(event.getTimeMillis(), kind, event.getLevel().name(), logger, thread, template, formatted,
                 event.getThrown());
-    }
-
-    private @NotNull String display(@NotNull Path file) {
-        Path absolute = file.toAbsolutePath().normalize();
-        Path shown = absolute.startsWith(serverFolder) ? serverFolder.relativize(absolute) : absolute;
-        return shown.toString().replace('\\', '/');
     }
 }

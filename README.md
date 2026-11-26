@@ -89,9 +89,12 @@ the defaults of `commands.yml` ([below](#command-aliases)).
 | `/he status` | `hawkeye.admin` | Queue, writer and database health |
 | `/he network` | `hawkeye.network` | Every server of every shard and its heartbeat |
 | `/he reload` | `hawkeye.admin` | Reloads `config.yml` and `messages.yml` (`commands.yml` needs a restart) |
+| `/he errors` | `hawkeye.errors` | Error and crash files waiting for review ([below](#error-and-crash-files)) |
+| `/he errors reviewed` | `hawkeye.errors` | Moves them to `errors/reviewed` and `crash/reviewed` |
 
 All permissions default to operators; `hawkeye.*` grants them all. `hawkeye.network` is also
-needed for `s:` in any parameter list. Commands, permission nodes and configuration keys are
+needed for `s:` in any parameter list. `hawkeye.errors` also gets the notice on join about error and crash
+files waiting for review. Commands, permission nodes and configuration keys are
 contracts with server operators and only change as an explicit breaking change in the changelog.
 
 ## Parameters
@@ -179,7 +182,7 @@ chat, sessions, inventory snapshots and ender chest or plugin inventory transact
 
 `plugins/Hawkeye/config.yml`, `messages.yml` and `commands.yml` are written with every default and a comment on
 first start; keys missing from an older file are added. `/he reload` applies the logging, lookup,
-rollback, purge and archive sections and every message; `server`, `storage`, `writer` and `network`
+rollback, purge, archive and error-reports sections and every message; `server`, `storage`, `writer` and `network`
 need a restart, as does `commands.yml` (the reply says which changed). A file that fails to load or validate keeps the
 previous configuration.
 
@@ -194,6 +197,7 @@ previous configuration.
 | `purge` | `retention-days` (automatic purge, 0 = keep everything), `player-minimum-days` |
 | `network` | `bus` (`NONE` or `REDIS`), `redis-uri`, `poll-interval-seconds`, `shards` |
 | `archive` | `enabled`, `segment-events` (262144 events per segment, 16384 to 1048576), `settle-seconds` (60: newer events stay hot), `after-hours` (24: older events are packed even when fewer than a segment are waiting), `interval-minutes` (1) |
+| `error-reports` | `webhook-url` (a Discord webhook; empty for none, `${NAME}` reads an environment variable), `webhook-errors` and `webhook-crashes` (what it gets), `join-notice` (tell `hawkeye.errors` on join) |
 
 ### Command aliases
 
@@ -265,6 +269,22 @@ Gale, Pufferfish or Spigot), the server's own name and version, Java, the operat
 every plugin with its version. Attach the file when you report a problem. A plugin that cannot start writes a crash
 file, prints one line and disables itself. "Once" means once per server start: after a restart a problem is shown
 again. Nothing is deleted automatically; remove old files when you no longer need them.
+
+**Review.** Players with `hawkeye.errors` (operators by default) are told when they join how many files wait,
+for example `2 crash report(s) and 1 error report(s) wait to be reviewed: /hawkeye errors`. `/hawkeye errors`
+lists them with the first problem of each; `/hawkeye errors reviewed` moves them to `errors/reviewed/` and
+`crash/reviewed/`, and the notice stops counting them. Later repeats of a reviewed problem are added to its file
+in `reviewed/` and do not make it wait again; a problem first logged afterwards does.
+`error-reports.join-notice: false` turns the notice off.
+
+**Discord webhook.** With `error-reports.webhook-url` set, the first time of every problem (never its repeats) is
+also posted to that Discord channel: the kind and `server.name` in the title, the console line in a code block,
+the file's path and the server version, with the file attached. `webhook-errors` and `webhook-crashes` choose
+what is sent. The URL holds the webhook's token, so keep it in an environment variable
+(`webhook-url: '${HAWKEYE_WEBHOOK_URL}'`); Hawkeye never logs it. Mentions are off, so text from the game cannot
+ping anyone. The webhook is read from `config.yml` before Hawkeye starts, so a failed start is posted too, and
+`/hawkeye reload` applies a change at once. A webhook that cannot be reached is logged once, until a post gets
+through again.
 
 ## Running several servers
 
