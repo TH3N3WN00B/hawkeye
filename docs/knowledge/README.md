@@ -710,7 +710,11 @@ update them in the same change when you learn something durable or an entry stop
 - The logo is the hawk (`assets/logo.png`, from the owner's image on 2026-11-26); `assets/icon.png` is it on a
   256x256 transparent square for the Modrinth project icon. `assets/banner.svg` (the logo embedded as a data
   URI) is the banner's source and `assets/banner.png` its 1600x480 export, which `MODRINTH.md` (absolute URL) and the top of `README.md` (relative `assets/banner.png`) show: a PNG
-  looks the same everywhere, where an SVG's text depends on the viewer's fonts. `update-modrinth-description.yml` PATCHes it into the project on a published
+  looks the same everywhere, where an SVG's text depends on the viewer's fonts. `assets/builtbybit-cover.svg` is the same
+  artwork laid out for BuiltByBit's cover image (exactly 1024x512, square corners), exported to
+  `assets/builtbybit-cover.png`. Export either PNG with Playwright's headless shell, which keeps the viewport
+  at the window size (full Chromium's `--headless` shrinks it): `headless_shell --no-sandbox --hide-scrollbars
+  --force-device-scale-factor=1 --window-size=1024,512 --screenshot=<out.png> file://<in.svg>`. `update-modrinth-description.yml` PATCHes it into the project on a published
   release when it changed since the previous tag (or on the first release), and on every manual run. It needs
   the repository secret `MODRINTH_TOKEN`, a Modrinth personal access token with "Read projects" (Minotaur resolves
   the slug, and a draft or unapproved project is invisible without it), "Write projects" (the description) and
