@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 480" width="1600" height="480">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#18181b"/>
+      <stop offset="1" stop-color="#0c0a0f"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="480" rx="24" fill="url(#bg)"/>
+
+  <!-- Block grid: the logged changes, with the rolled-back ones in pink. -->
+  <g transform="translate(1040 88)" fill="#27272a">
+    <rect x="0" y="0" width="56" height="56" rx="8"/>
+    <rect x="72" y="0" width="56" height="56" rx="8"/>
+    <rect x="144" y="0" width="56" height="56" rx="8" fill="#db2777"/>
+    <rect x="216" y="0" width="56" height="56" rx="8"/>
+    <rect x="288" y="0" width="56" height="56" rx="8"/>
+    <rect x="360" y="0" width="56" height="56" rx="8" fill="#3f3f46"/>
+    <rect x="0" y="72" width="56" height="56" rx="8" fill="#3f3f46"/>
+    <rect x="72" y="72" width="56" height="56" rx="8" fill="#db2777"/>
+    <rect x="144" y="72" width="56" height="56" rx="8" fill="#db2777"/>
+    <rect x="216" y="72" width="56" height="56" rx="8" fill="#be185d"/>
+    <rect x="288" y="72" width="56" height="56" rx="8"/>
+    <rect x="360" y="72" width="56" height="56" rx="8"/>
+    <rect x="0" y="144" width="56" height="56" rx="8"/>
+    <rect x="72" y="144" width="56" height="56" rx="8" fill="#be185d"/>
+    <rect x="144" y="144" width="56" height="56" rx="8" fill="#db2777"/>
+    <rect x="216" y="144" width="56" height="56" rx="8" fill="#db2777"/>
+    <rect x="288" y="144" width="56" height="56" rx="8" fill="#3f3f46"/>
+    <rect x="360" y="144" width="56" height="56" rx="8"/>
+    <rect x="0" y="216" width="56" height="56" rx="8"/>
+    <rect x="72" y="216" width="56" height="56" rx="8"/>
+    <rect x="144" y="216" width="56" height="56" rx="8" fill="#be185d"/>
+    <rect x="216" y="216" width="56" height="56" rx="8"/>
+    <rect x="288" y="216" width="56" height="56" rx="8"/>
+    <rect x="360" y="216" width="56" height="56" rx="8" fill="#3f3f46"/>
+  </g>
+
+  <g font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+    <rect x="96" y="112" width="96" height="96" rx="21" fill="#db2777"/>
+    <text x="144" y="160" dy="0.35em" text-anchor="middle" font-size="48" font-weight="600" fill="#ffffff">H</text>
+    <text x="224" y="160" dy="0.35em" font-size="88" font-weight="700" fill="#fafafa">Hawkeye</text>
+    <text x="96" y="290" font-size="36" font-weight="500" fill="#e4e4e7">Block logging, rollbacks and network sync</text>
+    <text x="96" y="340" font-size="36" font-weight="500" fill="#e4e4e7">for Paper and Folia</text>
+    <text x="96" y="400" font-size="26" fill="#a1a1aa">1.21.1 to 26.3 · SQLite · MySQL · MariaDB · PostgreSQL</text>
+  </g>
+</svg>

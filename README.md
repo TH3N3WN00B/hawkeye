@@ -416,6 +416,8 @@ given server's API.
   `build/libs/Hawkeye-26.4.B<build>.jar` only (it first deletes every jar already in `build/libs`).
 - A GitHub release tagged `26.4` (a leading `v` is allowed) runs `.github/workflows/release.yml`, which builds
   that version and attaches `Hawkeye-26.4.jar` to the release.
+- `MODRINTH.md` is the Modrinth project description. `.github/workflows/update-modrinth-description.yml` copies
+  it to Modrinth on a release that changed it, or whenever it is run by hand (secret `MODRINTH_TOKEN`).
 - Nothing publishes to the Moonrise Nexus automatically. `./gradlew publish -Pversion=26.4` with
   `nexusUsername`/`nexusPassword` still can (snapshot versions to `maven-snapshots`, others to
   `maven-releases`).

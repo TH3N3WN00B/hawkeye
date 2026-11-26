@@ -695,9 +695,16 @@ update them in the same change when you learn something durable or an entry stop
   the HEAD commit's date in UTC, so a rebuild of an old commit keeps its version. The build fails on any
   other version. The jar is `build/libs/Hawkeye-<version>.jar`.
 - Jenkins (`ci.moonrise.gg`, `Jenkinsfile`) is the only build and test CI for pushes; GitHub Actions only
-  runs `release.yml`.
+  runs on releases (`release.yml`, `update-modrinth-description.yml`).
 - A release is: publish a GitHub release tagged `26.4` (`v26.4` also works). `release.yml` builds
   `-Pversion=26.4` (jar and `verifyPluginJar`, no tests: Jenkins ran them) and attaches `Hawkeye-26.4.jar`.
   Nothing to bump afterwards.
 - Without GitHub Actions: build locally with `./gradlew build -Pversion=26.4` and attach
   `build/libs/Hawkeye-26.4.jar` with `gh release create 26.4 --verify-tag`.
+- `MODRINTH.md` is the Modrinth project description (Modrinth slug `hawkeye`, free on 2026-11-26). Links and
+  images in it are absolute (GitHub, `raw.githubusercontent.com/.../main/assets/banner.svg`): Modrinth cannot
+  resolve repository paths. `update-modrinth-description.yml` PATCHes it into the project on a published
+  release when it changed since the previous tag (or on the first release), and on every manual run. It needs
+  the repository secret `MODRINTH_TOKEN` (a Modrinth personal access token with "Write projects");
+  `MODRINTH_PROJECT_ID` is optional (defaults to `hawkeye`). The Modrinth badges show "not found" until the
+  project exists. The jar is not uploaded to Modrinth by CI.
