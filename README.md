@@ -29,6 +29,46 @@ focused on clean code, compact storage, multi-server operation and fast reads.
 The storage figures come from `StorageFootprintTest`: 60,000 block events with random positions,
 types and timing (the worst case for compression), written in each layout on SQLite.
 
+## Why you should switch
+
+The same history takes a fraction of the disk once it is in Hawkeye, and moving it over takes
+seconds. A CoreProtect SQLite database (schema 2.24.1) imported with `/he import coreprotect` and the
+default settings, then both files measured as they are and compacted:
+
+| | CoreProtect | Hawkeye after the import |
+|---|---|---|
+| Database file | 1,176,174,592 bytes (**1.18 GB**) | 3,878,912 bytes (**3.9 MB**, **303 times smaller**) |
+| Compacted (`VACUUM`) | 1,101,176,832 bytes | 3,866,624 bytes |
+| Per block event | 87.0 bytes (`co_block` 30.8, its three indexes 56.2) | 0.29 bytes (the whole file) |
+| The same file compressed | `zstd -3` 225 MB, `gzip -6` 296 MB, and unreadable until unpacked | Every lookup, rollback and restore reads it as it is |
+
+| Import | |
+|---|---|
+| Rows | 13,509,310 (13,509,220 block, 72 command, 11 item, 6 session, 1 container) |
+| Imported | **All 13,509,310**, none skipped, into 51 archive segments |
+| Time | **17.5-17.9 s** in three runs on an idle host, about 760,000 rows a second (21-25 s with the host busy) |
+
+What the database holds matters for the ratio. This one is 35 minutes of mass edits in one world:
+11.4 million blocks broken by one player, 2.0 million placed by flowing water and the rest by lava,
+gravity, leaf decay and growth, over 181 block types. That is the kind of history that fills
+a CoreProtect database fastest, and the kind Hawkeye's column segments pack best. Across
+every kind of history Hawkeye measured:
+
+| History | CoreProtect | Hawkeye |
+|---|---|---|
+| Mass edits, 13.5 million events in 35 minutes (above) | 87.0 bytes per event | 0.29 |
+| A real server, 1.4 billion events over 59 days (`ReplayBenchmark`) | 2.43 bytes per row, and only in the packed SQLite format of the `ericlmao/CoreProtect` fork | 1.085 |
+| Random positions, types and timing, 60,000 events (`StorageFootprintTest`) | about 80 | about 6.2 |
+
+Measured 2026-11-25 on an Apple M5 (10 cores, 24 GB) with the source on the internal SSD, through
+`ImportBenchmark` (opt-in; it runs the real `ImportService` on MockBukkit, and its report is
+`import-report.json`):
+
+```sh
+HAWKEYE_BENCH_COREPROTECT=/path/to/database.db HAWKEYE_BENCH_DIR=/path/to/report \
+  ./gradlew test --tests '*ImportBenchmark' --rerun
+```
+
 ## Requirements
 
 - Paper or Folia 1.21.1 to 1.21.11, 26.1.2 or 26.3, all from the same jar (`api-version: '1.21.1'`), on the
