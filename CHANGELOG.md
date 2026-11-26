@@ -155,6 +155,14 @@ second release in a quarter).
   every push or publishes to the Moonrise Nexus: `release.yml` only attaches the jar to a published release.
 - plugin-engine 1.10.2 and Moss 1.2.3 come from Maven Central; the build no longer uses
   `repo.moonrise.gg`, and at server start the engine downloads its libraries from Maven Central only.
+- Runtime libraries the plugin loader downloads at server start: HikariCP 7.1.0, sqlite-jdbc 3.54.1.0,
+  MariaDB Connector/J 4.0.0, PostgreSQL JDBC 42.7.14, Caffeine 3.3.1, Lettuce 7.9.0 and zstd-jni 1.5.7-28.
+  Connector/J 4 defaults to TLS with a verified certificate (`sslMode=verify-full`); a MySQL or MariaDB
+  storage connection keeps the former default instead, `sslMode=disable`, plus `allowPublicKeyRetrieval=true`
+  so MySQL 8's `caching_sha2_password` works over it. Set `sslMode` (or the legacy `useSsl`) in
+  `storage.parameters` to encrypt, for example `sslMode: verify-full` or `sslMode: trust`.
+  Built with Gradle 9.9.2. Paper API stays at 26.3 build 249: build 256 adds the `minecraft:world_clock`
+  registry, which no MockBukkit release up to 4.125.0 has data for, so every MockBukkit test fails on it.
 
 - Breaking (before the first release): the archive format and its settings. Schema version 3 drops the
   development archive (`segment` and `segment_actor`); its segments are discarded, not converted, and

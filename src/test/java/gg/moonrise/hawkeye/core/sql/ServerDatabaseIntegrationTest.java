@@ -133,9 +133,13 @@ public class ServerDatabaseIntegrationTest {
             }
             String all = text.toString();
             // The server did answer: MariaDB "Access denied for user", PostgreSQL "authentication failed" or
-            // "role ... does not exist" (trust authentication refuses an unknown role).
+            // "role ... does not exist" (trust authentication refuses an unknown role). MySQL 8 answers an
+            // unknown user as a decoy account whose plugin it picks at random; when that is sha256_password,
+            // which Connector/J does not implement, the driver stops at "Client does not support
+            // authentication protocol requested by server" before any "Access denied".
             assertTrue(all.contains("Access denied") || all.contains("authentication failed")
-                    || all.contains("does not exist"), all);
+                    || all.contains("does not exist") || all.contains("does not support authentication protocol"),
+                    all);
             assertFalse(all.contains(user), all);
             assertFalse(all.contains(password), all);
         } finally {

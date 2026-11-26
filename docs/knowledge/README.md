@@ -403,6 +403,17 @@ update them in the same change when you learn something durable or an entry stop
   `assureReadOnly` is set, so a write still succeeds; `SET SESSION TRANSACTION READ ONLY` makes the session
   refuse writes. `useSsl=true` is a deprecated alias that turns into `sslMode=verify-full` (with a warning);
   CoreProtect's `enable-ssl` does not check certificates, so the import uses `sslMode=trust`.
+- MariaDB Connector/J 4.0 (CONJ-1321) changed the default `sslMode` from `disable` to `verify-full`. Against
+  MySQL 8.4 and its self-signed certificate a login then fails with "Cannot use authentication plugin
+  caching_sha2_password with a Self signed certificates" (verified 2026-11-25 with `HAWKEYE_TEST_MYSQL`).
+  Dependabot's catalog bump (#13) did not show it: only `HAWKEYE_TEST_MYSQL` against a real MySQL does.
+  `DatabaseFactory` therefore sets `sslMode=disable` unless the operator sets `sslMode` or `useSsl`, in any
+  case, and defaults `allowPublicKeyRetrieval=true`. That is the importer's choice too (`SourceDialect`).
+  Any `useSsl` makes Connector/J apply its legacy mapping (`useSSL=true` is `verify-full`).
+- MySQL 8 answers a login for an unknown user as a decoy account with an authentication plugin picked at
+  random. When it picks `sha256_password`, which Connector/J (3.5 and 4.0) does not implement, the driver
+  reports "Client does not support authentication protocol requested by server" instead of "Access
+  denied". `ServerDatabaseIntegrationTest.aRefusedLoginShowsNoCredential` accepts both.
 - sqlite-jdbc's read-only `open_mode` is 65 (read-only plus the URI flag); opening a missing file read-only
   fails and creates nothing.
 - CoreProtect's `/co purge` (`command/PurgeCommand.java`, 24.x/25.x) on SQLite copies each table into a
@@ -523,6 +534,14 @@ update them in the same change when you learn something durable or an entry stop
 - Moss lifecycle: `Loadable` (after the context refresh in `onLoad`), `Enableable`, `Disableable` and
   the engine's `Reloadable` (run by `PaperPlugin.reload()`); `@PostConstruct` works. Every `Listener`
   bean is registered at enable.
+- Dependabot bumps only `gradle/libs.versions.toml`. `HawkeyePluginLoader.LIBRARIES` holds the runtime
+  library coordinates by hand, so a Dependabot pull request that moves HikariCP, sqlite-jdbc, MariaDB,
+  PostgreSQL, Caffeine, Lettuce or zstd-jni fails `HawkeyePluginLoaderTest` until the loader moves with it
+  (verified 2026-11-25 on ericlmao/hawkeye#13).
+- paper-api `26.3.build.256-stable` adds the `minecraft:world_clock` registry; MockBukkit `mockbukkit-v26.3`
+  4.122.0 up to 4.125.0 has no data for it, so `MockBukkit.mock()` throws `InternalDataLoadException`
+  ("Null JSON element while retrieving `minecraft:world_clock`") and every MockBukkit test fails. paper-api
+  stays at build 249 until a MockBukkit release knows the registry (verified 2026-11-25).
 - `processResources` expands `${version}` in `paper-plugin.yml`; `release.yml` passes `-Pversion=<tag>`.
 - CI pins `gradle/actions/setup-gradle@v5` on purpose. v6 (2026-03) moved caching into the closed-source
   `gradle-actions-caching` component; using v6 accepts the Gradle Terms of Use. Dependabot ignores
