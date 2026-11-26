@@ -46,6 +46,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.TreeMap;
@@ -368,6 +369,46 @@ public class EventWriterTest {
     }
 
     @Test
+    public void aSecondKindOfFailureIsShownAtOnce() throws Exception {
+        StorageState.Ready ready = TestPlugins.awaitStorage();
+        server.addSimpleWorld("world");
+        TestPlugins.flush();
+        Database database = ready.home().database();
+        String table = database.sql().tables().event();
+        HawkeyeConfigProvider config = TestPlugins.bean(HawkeyeConfigProvider.class);
+        EventQueue queue = new EventQueue(config);
+        EventWriter reader = new EventWriter(queue, TestPlugins.bean(StorageManager.class),
+                TestPlugins.bean(EventStore.class), TestPlugins.bean(EventSpool.class),
+                TestPlugins.bean(SpoolReplay.class), TestPlugins.bean(EventClock.class), config);
+        try (ConsoleLines console = ConsoleLines.attach()) {
+            execute(database, "ALTER TABLE " + table + " RENAME TO " + table + "_hidden");
+            boolean hidden = true;
+            reader.onEnable();
+            try {
+                reader.flush().get(20, TimeUnit.SECONDS);
+                execute(database, "ALTER TABLE " + table + "_hidden RENAME TO " + table);
+                hidden = false;
+                execute(database, failInserts(ready));
+                // No write succeeds before this one fails: it continues the run of failures the read began.
+                queue.offer(placed(0));
+
+                String writeFailed = awaitShown(console, reader,
+                        "Could not write 1 event(s), keeping them queued (attempt ");
+                assertFalse(writeFailed.contains("(attempt 1)"), writeFailed);
+                assertTrue(shown(console).stream().anyMatch(line -> line.startsWith(
+                        "Could not read the newest stored id, keeping captured events queued (attempt 1): ")),
+                        shown(console).toString());
+            } finally {
+                if (hidden) {
+                    execute(database, "ALTER TABLE " + table + "_hidden RENAME TO " + table);
+                }
+                execute(database, "DROP TRIGGER IF EXISTS " + TRIGGER);
+                reader.onDisable();
+            }
+        }
+    }
+
+    @Test
     public void disabledWorldsAreNotRecorded() throws Exception {
         TestPlugins.writeConfig(plugin, "logging:\n  disabled-worlds: [lobby]\n");
         TestPlugins.reload();
@@ -376,6 +417,27 @@ public class EventWriterTest {
         recorder.record(Action.BLOCK_PLACE, Actors.NATURE, lobby, 0, 64, 0, "minecraft:stone", "minecraft:air", 0,
                 null);
         assertEquals(0, TestPlugins.bean(EventQueue.class).size());
+    }
+
+    /** What the writers showed on the console. */
+    private static @NotNull List<String> shown(@NotNull ConsoleLines console) {
+        return console.of(EventWriter.class.getName()).stream()
+                .map(event -> event.getMessage().getFormattedMessage()).toList();
+    }
+
+    /** Flushes until the console shows a line starting with {@code start}, and returns that line. */
+    private static @NotNull String awaitShown(@NotNull ConsoleLines console, @NotNull EventWriter writer,
+                                              @NotNull String start) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        while (System.nanoTime() < deadline) {
+            Optional<String> line = shown(console).stream().filter(text -> text.startsWith(start)).findFirst();
+            if (line.isPresent()) {
+                return line.get();
+            }
+            writer.flush().get(20, TimeUnit.SECONDS);
+            Thread.sleep(20);
+        }
+        throw new AssertionError("not shown: " + start + " in " + shown(console));
     }
 
     /** Flushes until nothing is queued: a flush during the back-off is answered at once. */

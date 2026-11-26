@@ -36,6 +36,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * The single writer thread. It sleeps until a batch is full, the flush interval passes or someone
@@ -92,6 +93,7 @@ public final class EventWriter implements Enableable, Disableable {
     private volatile boolean running;
     private volatile int numberedCount;
     private int consecutiveFailures;
+    private @Nullable Failure lastFailure;
     private boolean spoolReplayed;
     private boolean spoolScanned;
     private long spoolRetryAtMillis;
@@ -177,7 +179,7 @@ public final class EventWriter implements Enableable, Disableable {
         try {
             writeAvailable(!requests.isEmpty());
         } catch (RuntimeException e) {
-            if (countFailure(e)) {
+            if (countFailure(Failure.LOOP, e)) {
                 log.error("The writer loop failed (attempt {}), retrying", consecutiveFailures, e);
             }
             release(requests);
@@ -251,7 +253,7 @@ public final class EventWriter implements Enableable, Disableable {
         try {
             newestId = store.newestId(ready.home());
         } catch (SQLException | RuntimeException e) {
-            if (countFailure(e)) {
+            if (countFailure(Failure.NEWEST_ID, e)) {
                 log.warn("Could not read the newest stored id, keeping captured events queued (attempt {}): {}",
                         consecutiveFailures, lastError.get());
             }
@@ -308,7 +310,7 @@ public final class EventWriter implements Enableable, Disableable {
             consecutiveFailures = 0;
             return true;
         } catch (SQLException | RuntimeException e) {
-            if (countFailure(e)) {
+            if (countFailure(Failure.WRITE, e)) {
                 log.warn("Could not write {} event(s), keeping them queued (attempt {}): {}", batch.size(),
                         consecutiveFailures, lastError.get());
             }
@@ -320,13 +322,18 @@ public final class EventWriter implements Enableable, Disableable {
      * Counts a failure for the stats and the back-off. Each caller logs with a format string of its own:
      * the error log tells problems apart by it.
      *
-     * @return {@code true} when this attempt is to be logged (the first, then every 20th)
+     * @param failure where it failed
+     * @param e       what it threw
+     * @return {@code true} when this attempt is to be logged: the first, one that failed elsewhere than the
+     *         attempt before (so a second kind of failure is shown at once), then every 20th
      */
-    private boolean countFailure(@NotNull Exception e) {
+    private boolean countFailure(@NotNull Failure failure, @NotNull Exception e) {
         failures.incrementAndGet();
         consecutiveFailures++;
         lastError.set(Objects.requireNonNullElse(e.getMessage(), e.getClass().getSimpleName()));
-        return consecutiveFailures == 1 || consecutiveFailures % 20 == 0;
+        boolean changed = failure != lastFailure;
+        lastFailure = failure;
+        return changed || consecutiveFailures == 1 || consecutiveFailures % 20 == 0;
     }
 
     private void backOff() throws InterruptedException {
@@ -400,5 +407,12 @@ public final class EventWriter implements Enableable, Disableable {
 
     private @NotNull WriterSettings settings() {
         return configProvider.get().writer();
+    }
+
+    /** Where an attempt failed; each logs with its own format string. */
+    private enum Failure {
+        LOOP,
+        NEWEST_ID,
+        WRITE
     }
 }
