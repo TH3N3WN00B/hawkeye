@@ -1,6 +1,7 @@
 package gg.moonrise.hawkeye.core.diagnostic;
 
 import gg.moonrise.hawkeye.config.env.Environment;
+import gg.moonrise.hawkeye.config.env.ProcessEnvironment;
 import gg.moonrise.hawkeye.config.file.HawkeyeConfig;
 import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.diagnostic.webhook.DiscordWebhook;
@@ -11,7 +12,6 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
@@ -140,7 +140,7 @@ public final class Diagnostics implements AutoCloseable {
      * a variable that is not set gives no webhook; the configuration provider reports those once it runs.
      */
     private static @NotNull WebhookSettings earlySettings(@NotNull Path dataFolder) {
-        Environment environment = name -> Optional.ofNullable(System.getenv(name));
+        Environment environment = new ProcessEnvironment();
         try {
             HawkeyeConfig config = HawkeyeConfigProvider.readConfig(dataFolder);
             if (!config.errorReports().problems(environment).isEmpty()) {
