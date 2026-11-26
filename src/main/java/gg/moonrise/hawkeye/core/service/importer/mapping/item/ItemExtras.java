@@ -7,6 +7,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import lombok.extern.slf4j.Slf4j;
 import org.bukkit.Color;
 import org.bukkit.FireworkEffect;
@@ -179,9 +180,8 @@ public final class ItemExtras {
             case SuspiciousStewMeta stew -> list.forEach(map -> stew.addCustomEffect(new PotionEffect(map), true));
             case BannerMeta banner -> list.forEach(map -> banner.addPattern(pattern(map)));
             case MapMeta map -> list.forEach(colour -> map.setColor(Color.deserialize(colour)));
-            case BundleMeta bundle -> list.forEach(map -> contained(item, map).ifPresent(bundle::addItem));
-            case CrossbowMeta crossbow -> list.forEach(map -> contained(item, map)
-                    .ifPresent(crossbow::addChargedProjectile));
+            case BundleMeta bundle -> list.forEach(map -> contained(item, map, bundle::addItem));
+            case CrossbowMeta crossbow -> list.forEach(map -> contained(item, map, crossbow::addChargedProjectile));
             case null, default -> {
                 return;
             }
@@ -190,18 +190,21 @@ public final class ItemExtras {
     }
 
     /**
-     * An item CoreProtect stored inside another ({@code ItemUtils.serializeItemStack}). One this server cannot
-     * rebuild is left out and the container keeps the rest, as in CoreProtect's own rollback.
+     * Adds an item CoreProtect stored inside another ({@code ItemUtils.serializeItemStack}). One this server
+     * cannot rebuild, or the container does not accept (a crossbow takes only arrows and rockets), is left out
+     * and the container keeps the rest, as in CoreProtect's own rollback.
      */
-    private static @NotNull Optional<ItemStack> contained(@NotNull ItemStack container,
-            @NotNull Map<String, Object> map) {
+    private static void contained(@NotNull ItemStack container, @NotNull Map<String, Object> map,
+            @NotNull Consumer<ItemStack> add) {
         try {
             ItemStack inside = ItemStack.deserialize(stringKeys(map.get("0")));
             apply(inside, lists(map.getOrDefault("1", List.of())));
-            return inside.getType().isAir() ? Optional.empty() : Optional.of(inside);
-        } catch (IllegalArgumentException | IllegalStateException e) {
+            if (!inside.getType().isAir()) {
+                add.accept(inside);
+            }
+        } catch (RuntimeException e) {
+            // Paper's ItemStack.deserialize also casts and dereferences the map unchecked.
             log.debug("Left out an item inside a {}: {}", container.getType().getKey(), e.toString());
-            return Optional.empty();
         }
     }
 

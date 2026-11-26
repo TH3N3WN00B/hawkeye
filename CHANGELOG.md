@@ -256,7 +256,8 @@ second release in a quarter).
   Paper 1.21.4 could not rebuild from the newest rows of a production CoreProtect 25 database.
 - The CoreProtect import keeps what CoreProtect stores beside an item's meta: the items in a bundle, the
   projectiles loaded in a crossbow and the explosions of a firework rocket or star, which it used to drop.
-  An item inside another that the server cannot rebuild is left out, and the container keeps the rest.
+  An item inside another that the server cannot rebuild, or that the container cannot hold, is left out,
+  and the container keeps the rest.
 - Items a hopper, hopper minecart or dropper moves into or out of a container while a player has it open
   are no longer recorded as that player's deposits and withdrawals (also with `logging.hoppers` off), so
   rolling the player back no longer duplicates or deletes them. What the player moved before the
