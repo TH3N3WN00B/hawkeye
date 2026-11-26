@@ -69,6 +69,14 @@ public class ProblemTest {
         assertEquals("Looped: Exception: first", looped.headline());
     }
 
+    @Test
+    public void aLongReasonIsCutBeforeASurrogatePair() {
+        String smiley = "\uD83D\uDE00";
+        Problem problem = problem("Failed", new IllegalStateException("x".repeat(299) + smiley + "tail"));
+
+        assertEquals("Failed: IllegalStateException: " + "x".repeat(299) + "...", problem.headline());
+    }
+
     private static @NotNull Problem problem(@NotNull String message, @Nullable Throwable thrown) {
         return new Problem(0, ProblemKind.ERROR, "ERROR", "gg.moonrise.hawkeye.Test", "main", TEMPLATE, message,
                 thrown);

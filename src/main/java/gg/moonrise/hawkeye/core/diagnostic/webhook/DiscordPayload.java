@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import gg.moonrise.hawkeye.core.diagnostic.WrittenReport;
 import gg.moonrise.hawkeye.entity.diagnostic.ProblemKind;
+import gg.moonrise.hawkeye.util.text.TextCuts;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -126,7 +127,7 @@ public final class DiscordPayload {
     }
 
     private static @NotNull String cut(@NotNull String text, int max) {
-        return text.length() <= max ? text : text.substring(0, max - 3) + "...";
+        return text.length() <= max ? text : TextCuts.head(text, max - 3) + "...";
     }
 
     private static void write(@NotNull ByteArrayOutputStream body, @NotNull String text) {
