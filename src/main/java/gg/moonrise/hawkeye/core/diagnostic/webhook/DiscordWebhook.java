@@ -32,8 +32,8 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Sends {@link WrittenReport}s to a Discord webhook from its own {@code Hawkeye-Webhook} thread, one at a time, so
  * a slow or unreachable webhook never holds up the error log or a server thread. At most {@link #QUEUE} reports
- * wait; more are counted and named in the next message. A {@code 429} is retried once after Discord's
- * {@code retry_after} (at most {@link #MAX_RETRY_WAIT}). A failure is logged once until a report gets through
+ * wait; more are counted and named in the next message that gets through. A {@code 429} is retried once after
+ * Discord's {@code retry_after} (at most {@link #MAX_RETRY_WAIT}). A failure is logged once until a report gets through
  * again, without the URL (it holds the webhook's token), and never filed by the error log itself
  * ({@link LogMarkers#REPORTED}).
  */
@@ -85,7 +85,7 @@ public final class DiscordWebhook implements AutoCloseable {
         if (!settings.sends(report.kind())) {
             return;
         }
-        byte[] file = read(report.file());
+        byte[] file = read(report.file()).orElse(null);
         try {
             thread.execute(() -> send(report, settings, file));
         } catch (RejectedExecutionException e) {
@@ -119,19 +119,24 @@ public final class DiscordWebhook implements AutoCloseable {
         close(Duration.ofSeconds(5));
     }
 
-    private static byte @Nullable [] read(@NotNull Path file) {
+    /** The file to attach: empty when it is too large or cannot be read. */
+    private static @NotNull Optional<byte[]> read(@NotNull Path file) {
         try {
-            return Files.size(file) <= DiscordPayload.MAX_ATTACHMENT ? Files.readAllBytes(file) : null;
+            return Files.size(file) <= DiscordPayload.MAX_ATTACHMENT ? Optional.of(Files.readAllBytes(file))
+                    : Optional.empty();
         } catch (IOException e) {
-            return null;
+            return Optional.empty();
         }
     }
 
     private void send(@NotNull WrittenReport report, @NotNull WebhookSettings settings, byte @Nullable [] file) {
         Redactor redactor = Redactor.of(secrets(settings.url()), List.of());
+        // Named in this post; counted again when it does not get through, so the next one names them.
+        long notSent = dropped.getAndSet(0);
+        boolean sent = false;
         try {
             JsonObject json = DiscordPayload.json(report, settings.serverName(), server,
-                    shownPath.apply(report.file()), file != null, dropped.getAndSet(0));
+                    shownPath.apply(report.file()), file != null, notSent);
             String boundary = "hawkeye-" + UUID.randomUUID();
             HttpRequest request = HttpRequest.newBuilder(URI.create(settings.url()))
                     .timeout(TIMEOUT)
@@ -147,6 +152,7 @@ public final class DiscordWebhook implements AutoCloseable {
                 response = http.send(request, HttpResponse.BodyHandlers.ofString());
             }
             if (response.statusCode() / 100 == 2) {
+                sent = true;
                 if (failing.compareAndSet(true, false)) {
                     log.info(LogMarkers.REPORTED, "The Discord webhook (error-reports.webhook-url) works again");
                 }
@@ -157,6 +163,10 @@ public final class DiscordWebhook implements AutoCloseable {
             Thread.currentThread().interrupt();
         } catch (IOException | RuntimeException e) {
             failed(redactor.scrub(e.toString()));
+        } finally {
+            if (!sent) {
+                dropped.addAndGet(notSent);
+            }
         }
     }
 
