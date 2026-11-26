@@ -24,7 +24,7 @@ public final class InspectCommand implements PaperCommand {
     private final @NotNull InspectorService inspector;
     private final @NotNull HawkeyeConfigProvider configProvider;
 
-    @Command(Permissions.ROOT + " inspect|i")
+    @Command(Permissions.ROOT + " inspect")
     @CommandDescription("Toggles the inspector")
     @Permission(Permissions.INSPECT)
     public void inspect(@NotNull CommandSourceStack source) {

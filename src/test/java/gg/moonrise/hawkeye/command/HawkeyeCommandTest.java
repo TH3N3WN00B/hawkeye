@@ -52,6 +52,40 @@ public class HawkeyeCommandTest {
     }
 
     @Test
+    public void commandsYmlAddsRootAndSubcommandAliases() {
+        TestPlugins.writeFile(plugin, "commands.yml",
+                "root-aliases: [he, co]\nsubcommand-aliases:\n  help: [h, commands]\n");
+        TestPlugins.reload();
+        TestCommandManager aliased = TestPlugins.commands();
+        int helpLines = new GeneralMessages().getHelp().size();
+
+        aliased.run(console, "co h");
+        assertEquals(helpLines, TestPlugins.drain(console).size());
+        aliased.run(console, "he commands");
+        assertEquals(helpLines, TestPlugins.drain(console).size());
+        aliased.run(console, "hawkeye help");
+        assertEquals(helpLines, TestPlugins.drain(console).size());
+    }
+
+    @Test
+    public void reloadNamesChangedAliasesAsRestartOnly() {
+        TestPlugins.writeFile(plugin, "commands.yml", "root-aliases: [co]\n");
+        commands.run(console, "hawkeye reload");
+        List<String> replies = TestPlugins.drain(console);
+        assertEquals(2, replies.size(), replies.toString());
+        assertTrue(replies.get(1).contains("commands.yml"), replies.get(1));
+    }
+
+    @Test
+    public void reloadRefusesAnInvalidAlias() {
+        TestPlugins.writeFile(plugin, "commands.yml", "root-aliases: ['core protect']\n");
+        commands.run(console, "hawkeye reload");
+        List<String> replies = TestPlugins.drain(console);
+        assertEquals(1, replies.size(), replies.toString());
+        assertTrue(replies.getFirst().contains("commands.yml: root-aliases: 'core protect'"), replies.getFirst());
+    }
+
+    @Test
     public void reloadReportsBothOutcomes() {
         commands.run(console, "hawkeye reload");
         assertEquals(List.of("Hawkeye configuration reloaded."), TestPlugins.drain(console));

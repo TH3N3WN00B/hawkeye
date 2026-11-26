@@ -202,6 +202,11 @@ update them in the same change when you learn something durable or an entry stop
   bean declaring `@Suggestions(QueryInput.SUGGESTIONS)` (`LookupCommand`) is registered first
   (`@Order(Ordered.HIGHEST_PRECEDENCE)`). A `@Suggestions` method can take a `CommandInput`, whose
   `remainingInput()` is the whole greedy argument.
+- Cloud annotations 2.0.0 runs every annotation string (command, description, permission, argument and
+  suggestion names) through the parser's `StringProcessor`, before it parses a command string, so
+  `command.registry.CommandAliasProcessor` rewrites only strings whose first word is `Permissions.ROOT`
+  (`hawkeye`); annotations name the root and subcommands without aliases, which come from
+  `commands.yml`.
 - `Placeholder.parsed` values work inside MiniMessage tag arguments (click commands);
   `Placeholder.unparsed` values do not.
 - CompletableFuture runs a dependent stage's `execute` on the thread that completes the source; an

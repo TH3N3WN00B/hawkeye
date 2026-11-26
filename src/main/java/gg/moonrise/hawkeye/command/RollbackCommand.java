@@ -61,7 +61,7 @@ public final class RollbackCommand implements PaperCommand {
     private final @NotNull ServerThreads threads;
     private final @NotNull NetworkJobService networkJobs;
 
-    @Command(Permissions.ROOT + " rollback|rb [parameters]")
+    @Command(Permissions.ROOT + " rollback [parameters]")
     @CommandDescription("Undoes recorded changes (#preview to preview them first)")
     @Permission(Permissions.ROLLBACK)
     public void rollback(@NotNull CommandSourceStack source,
@@ -69,7 +69,7 @@ public final class RollbackCommand implements PaperCommand {
         start(source.getSender(), RollbackMode.ROLLBACK, "rollback", Objects.requireNonNullElse(parameters, ""));
     }
 
-    @Command(Permissions.ROOT + " restore|rs [parameters]")
+    @Command(Permissions.ROOT + " restore [parameters]")
     @CommandDescription("Redoes rolled-back changes (#preview to preview them first)")
     @Permission(Permissions.ROLLBACK)
     public void restore(@NotNull CommandSourceStack source,
