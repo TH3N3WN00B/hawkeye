@@ -863,7 +863,7 @@ new top-level package (or a new `core.*` package) goes into a layer there in the
 | Plugin | the root package | `HawkeyePlugin` only; may use any layer |
 | Loader | `loader` | `HawkeyePluginLoader` (runtime libraries) |
 | Player-facing | `command` (`command.registry`, `command.query`), `listener.<family>`, `ui.<feature>`, `integration.api` (`type`, `indicator` are reserved) | Cloud commands, Bukkit listeners, chat output, the `HawkeyeApi` implementation other plugins call |
-| Service | `core.service.<feature>` (`capture`, `importer`, `inspect`, `lookup`, `network`, `purge`, `query`, `rollback`, `status`, `thread`) | Use cases: recording, imports, lookups, rollbacks, purges, network jobs, status |
+| Service | `core.service.<feature>` (`capture`, `diagnostic`, `importer`, `inspect`, `lookup`, `network`, `purge`, `query`, `rollback`, `status`, `thread`) | Use cases: recording, imports, lookups, rollbacks, purges, network jobs, status |
 | Backend | `core.repository.<table group>`, `core.sql`, `core.storage.<part>`, `core.queue.<part>`, `core.bus`, `core.scheduler`, `core.time`, `core.diagnostic` | Repositories and SQL, the storage engine, the write queue and spool, the cross-server bus, executors, the clock, the error and crash files |
 | Bottom | `entity.<concept>`, `config.<part>` (`env`, `file`, `message`, `provider`, `permission`), `util.<part>` (`codec`, `codec.binary`, `compat` (server API gates, server software), `event`, `log` (log markers), `nbt`, `position`, `redact`, `serialize`, `text`), `api` | Data model, config model, pure helpers, the public API types |
 

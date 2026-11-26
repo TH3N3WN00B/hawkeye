@@ -3,6 +3,7 @@ package gg.moonrise.hawkeye.core.diagnostic;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
+import gg.moonrise.hawkeye.entity.diagnostic.ProblemKind;
 import java.sql.SQLException;
 import java.util.concurrent.CompletionException;
 import org.jetbrains.annotations.NotNull;

@@ -47,7 +47,7 @@ public class Log4jCaptureTest {
     @BeforeEach
     public void setUp() {
         errorLog = new ErrorLog(folder, Clock.systemDefaultZone(), () -> new ServerSnapshot("1.21.1", "Paper",
-                "Paper", "test", "21", "test", "26.4", List.of()));
+                "Paper", "test", "21", "test", "26.4", List.of()), ReportListener.NONE);
         errorLog.start();
         capture = Log4jCapture.install(errorLog, "Hawkeye", folder).orElseThrow();
         console = ConsoleLines.attach();

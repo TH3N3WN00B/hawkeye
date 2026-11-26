@@ -168,6 +168,14 @@ second release in a quarter).
   Pufferfish or Spigot, told apart by their classes), the server's name and version, Java, the operating system,
   Hawkeye's version and the plugin list. Problems first logged in the same minute share a file; a repeat goes
   into the file of its first time, one line each for the first 100, then one line a minute that counts them.
+- Error and crash review: players with the new `hawkeye.errors` permission (operators by default) are told on
+  join how many files wait to be reviewed (`error-reports.join-notice`); `/hawkeye errors` lists them with the
+  first problem of each and `/hawkeye errors reviewed` moves them to `errors/reviewed/` and `crash/reviewed/`
+  (later repeats of a reviewed problem go to its reviewed file). New `messages.yml` section `errors`.
+- Discord webhook for errors and crashes: `error-reports.webhook-url` (empty by default; `${NAME}` reads an
+  environment variable) gets the first time of every problem with its file attached, `webhook-errors` and
+  `webhook-crashes` choose what is sent. Repeats are never sent, mentions are off, the URL is never logged, and
+  the webhook is read before Hawkeye starts so a failed start is posted too.
 
 ### Changed
 

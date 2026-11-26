@@ -5,18 +5,23 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.sun.net.httpserver.HttpServer;
 import gg.moonrise.hawkeye.core.diagnostic.ConsoleLines;
 import gg.moonrise.hawkeye.core.queue.event.EventWriter;
 import gg.moonrise.hawkeye.support.FailingHawkeyePlugin;
 import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import gg.moonrise.moss.paper.MossPaper;
+import java.io.File;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -121,6 +126,46 @@ public class HawkeyePluginErrorLogTest {
         assertEquals(1, lines.size());
         assertEquals("After the plugin stopped", lines.getFirst().getMessage().getFormattedMessage());
         assertTrue(lines.getFirst().getThrown() instanceof SQLException, "logged as it is");
+    }
+
+    @Test
+    public void theWebhookGetsTheFirstTimeOfEachProblemWithItsFile() throws IOException {
+        HttpServer relay = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        List<String> bodies = new CopyOnWriteArrayList<>();
+        relay.createContext("/api/webhooks/1/token", exchange -> {
+            bodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+        });
+        relay.start();
+        try {
+            File data = server.getPluginManager().createTemporaryDirectory("TestHawkeyePlugin-0.0.0");
+            Files.writeString(data.toPath().resolve("config.yml"), "error-reports:\n  webhook-url: 'http://127.0.0.1:"
+                    + relay.getAddress().getPort() + "/api/webhooks/1/token'\n");
+            TestHawkeyePlugin plugin = TestPlugins.load();
+            Logger writer = LoggerFactory.getLogger(EventWriter.class);
+            for (int attempt = 1; attempt <= 3; attempt++) {
+                writer.error("The writer loop failed (attempt {}), retrying", attempt,
+                        new SQLException("disk I/O error"));
+            }
+
+            server.getPluginManager().disablePlugin(plugin);
+
+            assertTrue(bodies.stream().anyMatch(body -> body.contains("\"title\":\"Crash on server\"")
+                    && body.contains("The commands could not be registered")), "MockBukkit's startup error: " + bodies);
+            // The attached file holds every problem of its minute; the embed names the one reported.
+            List<String> writerReports = bodies.stream()
+                    .filter(body -> body.contains("\"description\":\"```\\nThe writer loop failed")).toList();
+            assertEquals(1, writerReports.size(), "repeats are not sent: " + writerReports);
+            String report = writerReports.getFirst();
+            assertTrue(report.contains("\"title\":\"Error on server\""), report);
+            assertTrue(report.contains("The writer loop failed (attempt 1), retrying: SQLException: disk I/O error"),
+                    report);
+            assertTrue(report.contains("name=\"files[0]\"; filename=\"Error-"), report);
+            assertTrue(report.contains("Hawkeye error report, started "), "the file is attached: " + report);
+        } finally {
+            relay.stop(0);
+        }
     }
 
     private static @NotNull List<Path> files(@NotNull Path folder) throws IOException {

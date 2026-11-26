@@ -1,5 +1,6 @@
 package gg.moonrise.hawkeye.core.diagnostic;
 
+import gg.moonrise.hawkeye.entity.diagnostic.ProblemKind;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
