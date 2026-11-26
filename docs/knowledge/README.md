@@ -577,6 +577,16 @@ update them in the same change when you learn something durable or an entry stop
 - `.gitignore`'s `run/` (for Paper server folders) ignores every folder named `run`, packages included:
   the import's run loop was once written as `core.service.importer.run` and its files were silently left
   out of commits. Never name a package `run`; check `git status --ignored` after adding a package.
+- `ImportBenchmark` (opt-in: `HAWKEYE_BENCH_COREPROTECT=<database.db>`, `HAWKEYE_BENCH_DIR`) runs the real
+  import on MockBukkit with the default settings and writes `import-report.json` (source and target bytes,
+  `dbstat` pages, `VACUUM INTO` sizes, rows, skips, time). Verified 2026-11-25 on an Apple M5 (10 cores) on a
+  CoreProtect SQLite database of 13,509,310 rows (schema 2.24.1, 35 minutes, 13,509,220 `co_block` rows:
+  one player's 11.4 million breaks, 2.0 million `#water`): 1,176,174,592 bytes (`co_block` 30.8 bytes per
+  row, its three indexes 56.2) became 3,878,912 (0.29 bytes per event, 51 segments, nothing skipped) in
+  17.5-17.9 s over three runs at load 3, byte-identical each time. At load 4-5 the same build and the
+  build rebased onto the CoreProtect item fixes (#18) both took 21-25 s, so a slower run there is the host. `zstd -3` of the source file is 225 MB, `gzip -6`
+  296 MB. The copy used is `~/.cache/hawkeye-bench/coreprotect-import/database.db`; the README's "Why you
+  should switch" quotes these figures.
 - `ImportService.tune` (package-private, tests only) lowers the batch size below `archive.segment-events`'
   minimum of 16,384 and the 30 s progress interval, so cancel and resume can be tested on a few hundred
   rows.
