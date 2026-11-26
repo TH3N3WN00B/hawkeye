@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import gg.moonrise.hawkeye.entity.diagnostic.PendingCount;
 import gg.moonrise.hawkeye.entity.diagnostic.PendingReport;
 import gg.moonrise.hawkeye.entity.diagnostic.ProblemKind;
 import java.io.IOException;
@@ -61,6 +62,28 @@ public class ReportFilesTest {
         assertEquals("Could not connect (attempt 1)", errors.firstProblem());
         assertEquals(Files.size(folder.resolve("errors").resolve("Error-2026-11-25-14-03.txt")), errors.sizeBytes());
         assertTrue(errors.modifiedMillis() > 0);
+    }
+
+    @Test
+    public void waitingCountsTheFilesOfEachKindWithoutReadingThem() throws IOException {
+        assertEquals(new PendingCount(0, 0), new ReportFiles(folder).waiting());
+        assertTrue(new ReportFiles(folder).waiting().isEmpty());
+
+        write(new Problem(AT_14_03, ProblemKind.ERROR, "WARN", "gg.moonrise.hawkeye.Test", "main", "A", "A", null),
+                new Problem(AT_14_03 + 120_000, ProblemKind.ERROR, "WARN", "gg.moonrise.hawkeye.Test", "main", "B",
+                        "B", null),
+                new Problem(AT_14_03, ProblemKind.CRASH, "ERROR", "gg.moonrise.hawkeye.Test", "main", "C", "C", null));
+        Files.writeString(folder.resolve("errors").resolve("notes.txt"), "not a report");
+        Files.createDirectories(folder.resolve("errors").resolve(ReportFiles.REVIEWED));
+        Files.writeString(folder.resolve("errors").resolve(ReportFiles.REVIEWED).resolve("Error-2026-11-24-10-00.txt"),
+                "reviewed before");
+
+        PendingCount waiting = new ReportFiles(folder).waiting();
+
+        assertEquals(new PendingCount(1, 2), waiting);
+        assertFalse(waiting.isEmpty());
+        assertEquals(waiting.errors(), (int) new ReportFiles(folder).pending().stream()
+                .filter(report -> report.kind() == ProblemKind.ERROR).count());
     }
 
     @Test

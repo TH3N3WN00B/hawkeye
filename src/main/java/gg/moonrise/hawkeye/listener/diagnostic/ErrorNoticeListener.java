@@ -14,8 +14,8 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * Tells a player with {@link Permissions#ERRORS} (OPs by default) on join how many error and crash files wait to be
- * reviewed ({@code error-reports.join-notice}). The folders are read on the query pool; the notice is sent on the
- * player's own thread, and not at all when nothing waits.
+ * reviewed ({@code error-reports.join-notice}). The folders are listed on the query pool (the files are not read);
+ * the notice is sent on the player's own thread, and not at all when nothing waits.
  */
 @SpringComponent
 @RequiredArgsConstructor
@@ -33,7 +33,7 @@ public final class ErrorNoticeListener implements Listener {
     public void onJoin(@NotNull PlayerJoinEvent event) {
         Player player = event.getPlayer();
         if (reports.joinNotice() && player.hasPermission(Permissions.ERRORS)) {
-            replies.joinNotice(player, reports.pending());
+            replies.joinNotice(player, reports.pendingCount());
         }
     }
 }

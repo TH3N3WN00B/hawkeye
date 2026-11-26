@@ -4,6 +4,7 @@ import gg.moonrise.engine.message.Message;
 import gg.moonrise.hawkeye.config.message.ErrorMessages;
 import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.service.thread.ServerThreads;
+import gg.moonrise.hawkeye.entity.diagnostic.PendingCount;
 import gg.moonrise.hawkeye.entity.diagnostic.PendingReport;
 import gg.moonrise.hawkeye.entity.diagnostic.ProblemKind;
 import gg.moonrise.hawkeye.util.text.ByteSizes;
@@ -85,30 +86,29 @@ public final class ReportReplies {
     }
 
     /**
-     * Tells a joining staff member how many files wait, if any do. When the files cannot be read the player is told
-     * nothing and the failure is logged.
+     * Tells a joining staff member how many files wait, if any do. When the folders cannot be listed the player is
+     * told nothing and the failure is logged.
      *
      * @param receiver the player who joined
-     * @param pending  the files being read
+     * @param pending  the waiting files being counted
      */
-    public void joinNotice(@NotNull CommandSender receiver, @NotNull CompletableFuture<List<PendingReport>> pending) {
-        pending.thenAccept(reports -> {
-            long crashes = reports.stream().filter(report -> report.kind() == ProblemKind.CRASH).count();
-            long errors = reports.size() - crashes;
-            if (crashes + errors == 0) {
+    public void joinNotice(@NotNull CommandSender receiver, @NotNull CompletableFuture<PendingCount> pending) {
+        pending.thenAccept(count -> {
+            if (count.isEmpty()) {
                 return;
             }
             threads.runFor(receiver, () -> {
                 ErrorMessages messages = messages();
                 StringBuilder parts = new StringBuilder();
-                if (crashes > 0) {
-                    parts.append(messages.getJoinNoticeCrashes().replace("<count>", Long.toString(crashes)));
+                if (count.crashes() > 0) {
+                    parts.append(messages.getJoinNoticeCrashes().replace("<count>",
+                            Integer.toString(count.crashes())));
                 }
-                if (errors > 0) {
+                if (count.errors() > 0) {
                     if (!parts.isEmpty()) {
                         parts.append(messages.getJoinNoticeAnd());
                     }
-                    parts.append(messages.getJoinNoticeErrors().replace("<count>", Long.toString(errors)));
+                    parts.append(messages.getJoinNoticeErrors().replace("<count>", Integer.toString(count.errors())));
                 }
                 Message.of(messages.getJoinNotice()).send(receiver, Placeholder.parsed("reports", parts.toString()));
             });

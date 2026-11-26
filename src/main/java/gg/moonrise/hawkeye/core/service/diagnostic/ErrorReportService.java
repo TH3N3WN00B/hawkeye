@@ -5,6 +5,7 @@ import gg.moonrise.hawkeye.config.file.HawkeyeConfig;
 import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.diagnostic.Diagnostics;
 import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
+import gg.moonrise.hawkeye.entity.diagnostic.PendingCount;
 import gg.moonrise.hawkeye.entity.diagnostic.PendingReport;
 import gg.moonrise.hawkeye.entity.diagnostic.WebhookSettings;
 import gg.moonrise.moss.spring.SpringComponent;
@@ -76,6 +77,21 @@ public final class ErrorReportService {
         return run(() -> {
             try {
                 return diagnostics.pendingReports();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
+    }
+
+    /**
+     * How many files wait for review, from the folder listings alone (the join notice needs no more).
+     *
+     * @return the waiting crash and error files; fails when a folder cannot be listed or the query pool is full
+     */
+    public @NotNull CompletableFuture<PendingCount> pendingCount() {
+        return run(() -> {
+            try {
+                return diagnostics.pendingCount();
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }

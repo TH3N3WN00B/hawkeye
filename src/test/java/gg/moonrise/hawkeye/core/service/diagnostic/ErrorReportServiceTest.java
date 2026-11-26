@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import gg.moonrise.hawkeye.core.diagnostic.Diagnostics;
 import gg.moonrise.hawkeye.core.diagnostic.ReportFiles;
 import gg.moonrise.hawkeye.core.scheduler.HawkeyeExecutors;
+import gg.moonrise.hawkeye.entity.diagnostic.PendingCount;
 import gg.moonrise.hawkeye.support.TestHawkeyePlugin;
 import gg.moonrise.hawkeye.support.TestPlugins;
 import java.nio.file.Files;
@@ -44,6 +45,17 @@ public class ErrorReportServiceTest {
     @AfterEach
     public void tearDown() {
         MockBukkit.unmock();
+    }
+
+    @Test
+    public void theWaitingFilesAreCountedFromTheFolders() throws Exception {
+        Files.writeString(Files.createDirectories(plugin.getDataPath().resolve("crash"))
+                .resolve("Crash-2026-11-25-14-03.txt"), "not read");
+        Path errors = Files.createDirectories(plugin.getDataPath().resolve("errors"));
+        Files.writeString(errors.resolve("Error-2026-11-25-14-03.txt"), "not read");
+        Files.writeString(errors.resolve("Error-2026-11-25-14-05.txt"), "not read");
+
+        assertEquals(new PendingCount(1, 2), reports.pendingCount().get(5, TimeUnit.SECONDS));
     }
 
     @Test

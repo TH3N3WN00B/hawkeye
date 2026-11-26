@@ -5,6 +5,7 @@ import gg.moonrise.hawkeye.config.env.ProcessEnvironment;
 import gg.moonrise.hawkeye.config.file.HawkeyeConfig;
 import gg.moonrise.hawkeye.config.provider.HawkeyeConfigProvider;
 import gg.moonrise.hawkeye.core.diagnostic.webhook.DiscordWebhook;
+import gg.moonrise.hawkeye.entity.diagnostic.PendingCount;
 import gg.moonrise.hawkeye.entity.diagnostic.PendingReport;
 import gg.moonrise.hawkeye.entity.diagnostic.WebhookSettings;
 import gg.moonrise.hawkeye.util.log.LogMarkers;
@@ -126,6 +127,16 @@ public final class Diagnostics implements AutoCloseable {
      */
     public @NotNull List<PendingReport> pendingReports() throws IOException {
         return files.pending();
+    }
+
+    /**
+     * How many files wait for review, without reading them. File I/O: call it off the server threads.
+     *
+     * @return the waiting crash and error files
+     * @throws IOException when a folder cannot be listed
+     */
+    public @NotNull PendingCount pendingCount() throws IOException {
+        return files.waiting();
     }
 
     /**

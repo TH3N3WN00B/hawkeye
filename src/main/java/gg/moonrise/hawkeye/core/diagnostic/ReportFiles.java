@@ -1,5 +1,6 @@
 package gg.moonrise.hawkeye.core.diagnostic;
 
+import gg.moonrise.hawkeye.entity.diagnostic.PendingCount;
 import gg.moonrise.hawkeye.entity.diagnostic.PendingReport;
 import gg.moonrise.hawkeye.entity.diagnostic.ProblemKind;
 import java.io.BufferedReader;
@@ -49,6 +50,16 @@ public final class ReportFiles {
             }
         }
         return List.copyOf(reports);
+    }
+
+    /**
+     * How many files wait for review, from the folder listings alone: unlike {@link #pending()} no file is read.
+     *
+     * @return the waiting crash and error files
+     * @throws IOException when a folder cannot be listed
+     */
+    public @NotNull PendingCount waiting() throws IOException {
+        return new PendingCount(files(ProblemKind.CRASH).size(), files(ProblemKind.ERROR).size());
     }
 
     /**
