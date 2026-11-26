@@ -6,6 +6,8 @@ second release in a quarter).
 
 ## [Unreleased]
 
+## [26.4] - 2026-11-26
+
 ### Added
 
 - Storage engine for SQLite, MySQL/MariaDB and PostgreSQL with one schema and idempotent, versioned
@@ -258,3 +260,6 @@ second release in a quarter).
 - Version support: `scripts/compat/api_links.py` checks every Paper call against a server's paper-api jar;
   `scripts/smoke/kill-rollback-basic.txt` and `coreprotect-generate-1.21.txt` run on 1.21.x servers too, and
   `run.py` ignores console colour codes.
+
+[Unreleased]: https://github.com/ericlmao/hawkeye/compare/26.4...HEAD
+[26.4]: https://github.com/ericlmao/hawkeye/releases/tag/26.4
