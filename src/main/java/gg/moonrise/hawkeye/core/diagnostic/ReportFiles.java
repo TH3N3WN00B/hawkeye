@@ -8,7 +8,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -45,12 +44,9 @@ public final class ReportFiles {
     public @NotNull List<PendingReport> pending() throws IOException {
         List<PendingReport> reports = new ArrayList<>();
         for (ProblemKind kind : List.of(ProblemKind.CRASH, ProblemKind.ERROR)) {
-            List<PendingReport> ofKind = new ArrayList<>();
             for (Path file : files(kind)) {
-                ofKind.add(read(kind, file));
+                reports.add(read(kind, file));
             }
-            ofKind.sort(Comparator.comparing(PendingReport::fileName));
-            reports.addAll(ofKind);
         }
         return List.copyOf(reports);
     }
@@ -66,9 +62,12 @@ public final class ReportFiles {
     public @NotNull List<Moved> markReviewed() throws IOException {
         List<Moved> moved = new ArrayList<>();
         for (ProblemKind kind : ProblemKind.values()) {
-            Path reviewed = folder(kind).resolve(REVIEWED);
-            for (Path file : files(kind)) {
-                Files.createDirectories(reviewed);
+            List<Path> files = files(kind);
+            if (files.isEmpty()) {
+                continue;
+            }
+            Path reviewed = Files.createDirectories(folder(kind).resolve(REVIEWED));
+            for (Path file : files) {
                 Path target = free(reviewed, file.getFileName().toString());
                 Files.move(file, target);
                 moved.add(new Moved(file, target));
@@ -90,6 +89,7 @@ public final class ReportFiles {
         return dataFolder.resolve(kind.folder());
     }
 
+    /** A kind's waiting files by name, which is oldest first (the name holds the time). */
     private @NotNull List<Path> files(@NotNull ProblemKind kind) throws IOException {
         Path folder = folder(kind);
         if (!Files.isDirectory(folder)) {
