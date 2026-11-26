@@ -415,9 +415,14 @@ given server's API.
 - `Jenkinsfile` builds and tests every push on `ci.moonrise.gg` and archives that build's
   `build/libs/Hawkeye-26.4.B<build>.jar` only (it first deletes every jar already in `build/libs`).
 - A GitHub release tagged `26.4` (a leading `v` is allowed) runs `.github/workflows/release.yml`, which builds
-  that version and attaches `Hawkeye-26.4.jar` to the release.
+  that version, attaches `Hawkeye-26.4.jar` to the release and uploads it to
+  [Modrinth](https://modrinth.com/plugin/hawkeye) (a pre-release as a beta).
+- Every push to main is tested and uploaded to Modrinth as an alpha (`modrinth-dev-build.yml`, version
+  `26.4-SNAPSHOT+<commit>`).
 - `MODRINTH.md` is the Modrinth project description. `.github/workflows/update-modrinth-description.yml` copies
-  it to Modrinth on a release that changed it, or whenever it is run by hand (secret `MODRINTH_TOKEN`).
+  it to Modrinth on a release that changed it, or whenever it is run by hand.
+- The Modrinth uploads need the repository secret `MODRINTH_TOKEN`. By hand:
+  `MODRINTH_TOKEN=... ./gradlew modrinth -Pversion=26.4` (`MODRINTH_DEBUG=true` prints the upload instead).
 - Nothing publishes to the Moonrise Nexus automatically. `./gradlew publish -Pversion=26.4` with
   `nexusUsername`/`nexusPassword` still can (snapshot versions to `maven-snapshots`, others to
   `maven-releases`).

@@ -1,5 +1,7 @@
 [versions]
 shadow = "9.6.1"
+# Uploads release and development jars to Modrinth (`./gradlew modrinth`).
+modrinthMinotaur = "2.10.0"
 # The newest Paper API: the newerApi source set and the tests compile against it.
 paper = "26.3.build.249-stable"
 # The oldest supported Paper API: main compiles against it, and paper-plugin.yml's api-version names it
@@ -77,3 +79,4 @@ hawkeyeRuntime = ["hikari", "sqlite", "mariadb", "postgresql", "caffeine", "lett
 
 [plugins]
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
+modrinthMinotaur = { id = "com.modrinth.minotaur", version.ref = "modrinthMinotaur" }
